@@ -2,14 +2,14 @@
  * sessionOrder — the display order every "recent sessions" list uses.
  *
  * The feed arrives sorted by `lastActive` alone (the server sorts and then
- * slices the top 15 in getGlobalSessionsSnapshot), which buries the two rows
+ * slices the top 20 in getGlobalSessionsSnapshot), which buries the two rows
  * that are actually asking for attention: the run that is still going and the
  * run that finished while you were elsewhere. So the lists group by status
  * first — done-but-unread, then running, then everything else — and keep
  * newest-first inside each group.
  *
  * This is presentation only. It reorders what was received; it cannot surface a
- * running session that fell outside the server's top-15 slice. In practice a
+ * running session that fell outside the server's top-20 slice. In practice a
  * running session has a fresh `lastActive` and is inside it.
  *
  * Kept dependency-free (no React, no sibling imports) so /m can use it without

@@ -44,7 +44,7 @@ interface PinnedSessionsPanelProps {
  * information you had about it one list up.
  *
  * The detail comes from one fetch of `/api/global-state` per open (the full
- * persisted list, week-bounded, 15-100; local IO <10ms — see CLAUDE.md). A
+ * persisted list, week-bounded, 20-100; local IO <10ms — see CLAUDE.md). A
  * dropdown that is open for seconds does not also need the live socket feed:
  * nobody watches a run finish from in here, that is what the list above is for.
  *

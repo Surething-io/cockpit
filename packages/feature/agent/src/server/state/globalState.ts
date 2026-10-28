@@ -76,9 +76,9 @@ interface GlobalState {
 //   - keep sessions active within the last week …
 //   - … but never fewer than MIN_SESSIONS (pad with older ones if the week is sparse)
 //   - … and never more than MAX_SESSIONS.
-// The sidebar dropdown still shows only the top 15 (sliced on the WS push path).
+// The sidebar dropdown still shows only the top 20 (sliced on the WS push path).
 const MAX_SESSIONS = 100;
-const MIN_SESSIONS = 15;
+const MIN_SESSIONS = 20;
 const RETENTION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // one week
 const MAX_TEXT_LEN = 50; // max character count for title / lastUserMessage
 
@@ -400,7 +400,7 @@ export async function attachEngines<T extends { cwd: string; sessionId: string }
  *   - the /m server page, which SSRs the list so first paint doesn't wait for
  *     JS download + hydration + WS handshake (a ~2s tax on tunneled links).
  */
-export async function getGlobalSessionsSnapshot(limit = 15): Promise<GlobalSessionSnapshot[]> {
+export async function getGlobalSessionsSnapshot(limit = 20): Promise<GlobalSessionSnapshot[]> {
   const state = await readJsonFile<GlobalState>(GLOBAL_STATE_FILE, { sessions: [] });
 
   normalizeStatuses(state.sessions);

@@ -18,8 +18,8 @@ interface RecentSessionsModalProps {
 
 /**
  * RecentSessionsModal — a searchable, cross-project view of every persisted
- * recent session (week-bounded, 15–100). Opened from the GlobalSessionMonitor
- * search button; complements the sidebar dropdown which only shows the top 15.
+ * recent session (week-bounded, 20–100). Opened from the GlobalSessionMonitor
+ * search button; complements the sidebar dropdown which only shows the top 20.
  *
  * Visually aligned with ProjectSessionsModal (same modal shell + grid card
  * layout + absolute timestamps + first/last message preview). The only

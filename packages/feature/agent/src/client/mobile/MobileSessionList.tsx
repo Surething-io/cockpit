@@ -18,7 +18,7 @@ export interface OpenableSession {
 }
 
 // Touch-friendly session list for /m, with two entries:
-//   - Recent: the realtime /ws/global-state feed (cross-project, sorted, top 15).
+//   - Recent: the realtime /ws/global-state feed (cross-project, sorted, top 20).
 //   - Pinned: user's "常用会话" (/api/pinned-sessions via usePinnedSessions).
 interface MobileSessionListProps {
   onOpen: (session: OpenableSession) => void;

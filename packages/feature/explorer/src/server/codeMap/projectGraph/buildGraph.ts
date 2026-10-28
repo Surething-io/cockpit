@@ -179,7 +179,9 @@ const STRIPPABLE_EXT = ['.js', '.jsx', '.mjs', '.cjs'];
  * Returns project-relative path on hit, null on miss. Pure Set lookups, no I/O.
  */
 export function findFileForBase(baseAbs: string, cwd: string, fileSet: Set<string>): string | null {
-  let baseRel = path.relative(cwd, baseAbs);
+  // fileSet holds `git ls-files` paths, which are always `/`-separated;
+  // path.relative yields `\` on Windows, so normalize before any lookup.
+  let baseRel = path.relative(cwd, baseAbs).split(path.sep).join('/');
   if (baseRel.startsWith('..')) return null; // escapes project root
 
   // Strip TS-style explicit extensions (`./foo.js` for a real `./foo.ts`).
@@ -196,7 +198,7 @@ export function findFileForBase(baseAbs: string, cwd: string, fileSet: Set<strin
     if (fileSet.has(c)) return c;
   }
   for (const ext of RESOLUTION_EXT) {
-    const c = path.join(baseRel, 'index' + ext);
+    const c = path.posix.join(baseRel, 'index' + ext);
     if (fileSet.has(c)) return c;
   }
   return null;

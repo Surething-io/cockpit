@@ -55,7 +55,8 @@ export { getSlashCommands, slashCommands, getMarkdown, type SlashCommand } from 
 export { buildResumeCommand } from './resumeCommand';
 
 // Engine queries the app integrator needs (workspace seeds a new ollama tab with this)
-export { loadOllamaDefaultModel, loadRecentSessions, type RecentSessionInfo } from './effect/agentClient';
+export { loadOllamaDefaultModel, loadRecentSessions, loadSessionsByProject, type RecentSessionInfo } from './effect/agentClient';
+export { dateGroupOf, type DateGroupKey } from './ProjectSessionsModal';
 
 // Context
 export { ChatProvider, useChatContext, useChatContextOptional } from './ChatContext';

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SimpleCodeBlock, InteractiveMarkdownPreview } from '@cockpit/feature-explorer';
 import { toast } from '@cockpit/shared-ui';
@@ -32,6 +32,10 @@ interface DirectoryPaneProps {
 type ViewMode = 'preview' | 'source';
 
 const noop = () => {};
+/** File tree column: default width is also the minimum; drag widens it up to +50%. */
+const TREE_WIDTH = 224;
+const TREE_WIDTH_MIN = TREE_WIDTH;
+const TREE_WIDTH_MAX = TREE_WIDTH * 1.5;
 const isMarkdown = (path: string) => /\.(md|markdown)$/i.test(path);
 
 /**
@@ -56,6 +60,30 @@ export function DirectoryPane({ endpoint, id, entryFile, title, actions, onClose
   const [selected, setSelected] = useState(entryFile);
   // The picked file; null while loading.
   const [file, setFile] = useState<DirFileContent | null>(null);
+
+  // File tree width, dragged on the divider to its right. Not persisted — a
+  // transient "widen it to read a long name" tweak, same policy as the explorer
+  // file browser's tree divider (FileBrowserModal), whose handling this mirrors.
+  const [treeWidth, setTreeWidth] = useState(TREE_WIDTH);
+  const treeResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  // Mouse only: on touch, a horizontal drag belongs to the three-panel swipe.
+  const onResizeStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    e.preventDefault(); // no text selection while dragging
+    treeResizeRef.current = { startX: e.clientX, startWidth: treeWidth };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, [treeWidth]);
+  const onResizeMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = treeResizeRef.current;
+    if (!drag) return;
+    const next = drag.startWidth + (e.clientX - drag.startX);
+    setTreeWidth(Math.min(TREE_WIDTH_MAX, Math.max(TREE_WIDTH_MIN, next)));
+  }, []);
+  const onResizeEnd = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!treeResizeRef.current) return;
+    treeResizeRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -183,9 +211,21 @@ export function DirectoryPane({ endpoint, id, entryFile, title, actions, onClose
 
       <div className="flex-1 flex min-h-0">
         {showTree && (
-          <div className="w-56 flex-shrink-0 border-r border-border overflow-y-auto">
-            <DirectoryFileTree files={files} selected={selected} onSelect={setSelected} />
-          </div>
+          <>
+            <div className="flex-shrink-0 overflow-y-auto" style={{ width: treeWidth }}>
+              <DirectoryFileTree files={files} selected={selected} onSelect={setSelected} />
+            </div>
+            {/* Divider — 5px hit area around a 1px line, drag to resize the tree */}
+            <div
+              onPointerDown={onResizeStart}
+              onPointerMove={onResizeMove}
+              onPointerUp={onResizeEnd}
+              onPointerCancel={onResizeEnd}
+              className="w-[5px] flex-shrink-0 relative cursor-col-resize group"
+            >
+              <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border group-hover:bg-brand transition-colors" />
+            </div>
+          </>
         )}
         <div className="flex-1 flex flex-col min-w-0 min-h-0">{renderBody()}</div>
       </div>

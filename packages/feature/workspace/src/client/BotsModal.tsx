@@ -14,12 +14,17 @@ import {
   SessionNumberBadge,
   SessionTranscriptPreview,
   badgeStatus,
+  dateGroupOf,
   formatRelativeTime,
   loadRecentSessions,
-  sortSessionsForDisplay,
+  loadSessionsByProject,
   statusLabelOf,
+  type DateGroupKey,
   type RecentSessionInfo,
+  type SessionListItem,
 } from '@cockpit/feature-agent'
+// Deep subpath, not the barrel — the barrel pulls in paths.ts (node fs/os/path).
+import { encodePath } from '@cockpit/shared-utils/encodePath'
 
 interface BotsModalProps {
   readonly isOpen: boolean
@@ -31,6 +36,18 @@ interface BotsModalProps {
 type RightTab = 'files' | 'sessions'
 
 /**
+ * A session counts as this Bot's when either holds:
+ *   - it runs IN the Bot's directory — how Bots are usually run: a scheduled
+ *     task or a tab opened on the Bot folder, its prompt starting `@name`. These
+ *     never carry a `bot` mark (that is reserved for delegated children, see
+ *     shared/botSession.ts), so the directory is the only evidence;
+ *   - it carries the Bot's `bot` mark — a child the Bot dispatched elsewhere
+ *     (`Task: @name: …`).
+ */
+const isBotSession = (s: RecentSessionInfo, bot: BotInfo) =>
+  s.bot === bot.name || s.cwd === bot.path || s.cwd.startsWith(bot.path + '/')
+
+/**
  * Bot registry manager — same model as SkillsModal: Bots are created by the
  * `/bot` skill (or by hand) as plain directories with a BOT.md, then registered
  * here by path or from the explorer's BOT.md button. Removing only drops the
@@ -40,9 +57,9 @@ type RightTab = 'files' | 'sessions'
  * own, then built-ins), the selected one on the right in two tabs —
  *   - Files: its directory (identity, memory, commitments, reports…), opened on
  *     BOT.md — the skills board's DirectoryPane over /api/bots/files;
- *   - Sessions: the runs it dispatched, read from the recent-sessions list
- *     (week-bounded) by each session's `bot` field, with the same transcript
- *     preview the session boards use.
+ *   - Sessions: its runs — every session in its directory plus children it
+ *     dispatched elsewhere (useBotSessions), date-grouped, with the same
+ *     transcript preview the session boards use.
  */
 export function BotsModal({ isOpen, onClose, onOpenSession }: BotsModalProps) {
   const { t } = useTranslation()
@@ -113,11 +130,6 @@ export function BotsModal({ isOpen, onClose, onOpenSession }: BotsModalProps) {
     setSelectedId(flat[0]?.id ?? null)
   }, [isOpen, selected, flat])
 
-  const sessionCounts = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const s of sessions) if (s.bot) counts.set(s.bot, (counts.get(s.bot) ?? 0) + 1)
-    return counts
-  }, [sessions])
 
   // Built-in Bots ship with Cockpit and are always present, so they must not
   // count towards "is this panel empty?" — otherwise the first-run guidance
@@ -202,7 +214,6 @@ export function BotsModal({ isOpen, onClose, onOpenSession }: BotsModalProps) {
                           key={bot.id}
                           bot={bot}
                           selected={bot.id === selectedId}
-                          sessionCount={sessionCounts.get(bot.name) ?? 0}
                           onSelect={setSelectedId}
                         />
                       ))}
@@ -269,13 +280,11 @@ export function BotsModal({ isOpen, onClose, onOpenSession }: BotsModalProps) {
 interface BotRowProps {
   readonly bot: BotInfo
   readonly selected: boolean
-  /** Recent sessions this Bot dispatched (week-bounded). */
-  readonly sessionCount: number
   /** Stable identity (state setter) so memo holds across modal re-renders. */
   readonly onSelect: (id: string) => void
 }
 
-const BotRow = memo(function BotRow({ bot, selected, sessionCount, onSelect }: BotRowProps) {
+const BotRow = memo(function BotRow({ bot, selected, onSelect }: BotRowProps) {
   const { t } = useTranslation()
   const detail = bot.valid ? bot.description : bot.error
   return (
@@ -287,11 +296,6 @@ const BotRow = memo(function BotRow({ bot, selected, sessionCount, onSelect }: B
         <Bot className="w-4 h-4 text-brand flex-shrink-0" />
         <span className="font-medium text-xs text-foreground truncate flex-1 min-w-0" data-tooltip={bot.path}>@{bot.name}</span>
         {!bot.valid && <span className="text-[10px] text-destructive flex-shrink-0">{t('bots.invalid')}</span>}
-        {sessionCount > 0 && (
-          <span className="text-[10px] tabular-nums text-foreground-subtle flex-shrink-0" data-tooltip={t('bots.sessionCount', { count: sessionCount })}>
-            {sessionCount}
-          </span>
-        )}
       </div>
       <p
         className={`text-xs mt-0.5 pl-6 truncate ${bot.valid ? 'text-muted-foreground' : 'text-destructive'}`}
@@ -322,10 +326,7 @@ function BotDetail({
   bot, tab, onTab, sessions, confirmingRemove, onAskRemove, onCancelRemove, onRemove, onOpenAsProject, onOpenSession, onClose,
 }: BotDetailProps) {
   const { t } = useTranslation()
-  const botSessions = useMemo(
-    () => sortSessionsForDisplay(sessions.filter((s) => s.bot === bot.name)),
-    [sessions, bot.name],
-  )
+  const botSessions = useBotSessions(bot, sessions)
 
   const tabButton = (key: RightTab, label: string) => (
     <button
@@ -342,7 +343,7 @@ function BotDetail({
     <div className="flex items-center gap-2 flex-shrink-0">
       <div className="flex items-center rounded-md border border-border overflow-hidden text-xs">
         {tabButton('files', t('bots.tabFiles'))}
-        {tabButton('sessions', `${t('bots.tabSessions')}${botSessions.length ? ` ${botSessions.length}` : ''}`)}
+        {tabButton('sessions', `${t('bots.tabSessions')}${botSessions.rows.length ? ` ${botSessions.rows.length}` : ''}`)}
       </div>
       <button
         onClick={onOpenAsProject}
@@ -399,63 +400,173 @@ function BotDetail({
         </div>
         {controls}
       </div>
-      <BotSessions sessions={botSessions} onOpenSession={onOpenSession} />
+      <BotSessions data={botSessions} onOpenSession={onOpenSession} />
     </div>
   )
 }
 
+/** One row of the Sessions tab, from either source (see useBotSessions). */
+interface BotSessionRow {
+  cwd: string
+  sessionId: string
+  title: string
+  /** Last activity, ms. */
+  time: number
+  engine?: RecentSessionInfo['engine']
+  bot?: string
+  /** Running / unread — known only for sessions still in the recent list. */
+  status?: string
+  lastMessage?: string
+}
+
+const rowKey = (cwd: string, sessionId: string) => `${cwd}\n${sessionId}`
+
+/**
+ * The Bot's sessions, from two sources merged:
+ *   - every session in its directory (/api/sessions/projects — all engines,
+ *     no time limit beyond the engines' own transcript cleanup);
+ *   - children it dispatched elsewhere (`bot` mark) and runs in a subfolder,
+ *     which only the recent-sessions list (about a week) knows.
+ * Running / unread status comes from the recent list where the session is in it.
+ * Newest first; `loadedAt` is the "now" the date groups are cut against.
+ */
+function useBotSessions(bot: BotInfo, recent: ReadonlyArray<RecentSessionInfo>) {
+  const [dirSessions, setDirSessions] = useState<ReadonlyArray<SessionListItem> | null>(null)
+  const [loadedAt, setLoadedAt] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    void BrowserRuntime.runPromiseExit(loadSessionsByProject<SessionListItem>(encodePath(bot.path))).then((exit) => {
+      if (cancelled) return
+      setDirSessions(exit._tag === 'Success' ? exit.value : [])
+      setLoadedAt(Date.now())
+    })
+    return () => { cancelled = true }
+  }, [bot.path])
+
+  const rows = useMemo(() => {
+    const recentByKey = new Map(recent.map((s) => [rowKey(s.cwd, s.sessionId), s]))
+    const out = new Map<string, BotSessionRow>()
+    for (const item of dirSessions ?? []) {
+      const sessionId = item.sessionId || (item.path.split('/').pop() || '').replace(/\.jsonl$/, '')
+      const key = rowKey(bot.path, sessionId)
+      const live = recentByKey.get(key)
+      out.set(key, {
+        cwd: bot.path,
+        sessionId,
+        title: item.title,
+        time: Math.max(Date.parse(item.modifiedAt) || 0, live?.lastActive ?? 0),
+        engine: item.engine,
+        bot: item.bot,
+        status: live?.status,
+        lastMessage: live?.lastUserMessage ?? item.lastMessages[item.lastMessages.length - 1] ?? item.firstMessages[0],
+      })
+    }
+    for (const s of recent) {
+      if (!isBotSession(s, bot)) continue
+      const key = rowKey(s.cwd, s.sessionId)
+      if (out.has(key)) continue
+      out.set(key, {
+        cwd: s.cwd,
+        sessionId: s.sessionId,
+        title: s.title || s.sessionId.slice(0, 8),
+        time: s.lastActive,
+        engine: s.engine,
+        bot: s.bot,
+        status: s.status,
+        lastMessage: s.lastUserMessage,
+      })
+    }
+    return [...out.values()].sort((a, b) => b.time - a.time)
+  }, [dirSessions, recent, bot])
+
+  return { rows, loading: dirSessions === null, loadedAt }
+}
+
+const DATE_GROUPS: ReadonlyArray<{ key: DateGroupKey; labelKey: string }> = [
+  { key: 'today', labelKey: 'sessions.dateToday' },
+  { key: 'yesterday', labelKey: 'sessions.dateYesterday' },
+  { key: 'last7Days', labelKey: 'sessions.dateLast7Days' },
+  { key: 'earlier', labelKey: 'sessions.dateEarlier' },
+]
+
 interface BotSessionsProps {
-  readonly sessions: ReadonlyArray<RecentSessionInfo>
+  readonly data: ReturnType<typeof useBotSessions>
   readonly onOpenSession: (cwd: string, sessionId: string) => void
 }
 
-const keyOf = (s: RecentSessionInfo) => `${s.cwd}\n${s.sessionId}`
-
-/** The Bot's runs: a list and the selected run's transcript. */
-function BotSessions({ sessions, onOpenSession }: BotSessionsProps) {
+/** The Bot's runs: a date-grouped list and the selected run's transcript. */
+function BotSessions({ data, onOpenSession }: BotSessionsProps) {
   const { t } = useTranslation()
+  const { rows, loading, loadedAt } = data
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
-  const selected = sessions.find((s) => keyOf(s) === selectedKey) ?? sessions[0] ?? null
+  const selected = rows.find((r) => rowKey(r.cwd, r.sessionId) === selectedKey) ?? rows[0] ?? null
 
-  if (sessions.length === 0) {
+  const groups = useMemo(() => {
+    const byGroup = new Map<DateGroupKey, BotSessionRow[]>()
+    for (const r of rows) {
+      const g = dateGroupOf(r.time, loadedAt)
+      const list = byGroup.get(g)
+      if (list) list.push(r)
+      else byGroup.set(g, [r])
+    }
+    return DATE_GROUPS.map((g) => ({ ...g, items: byGroup.get(g.key) ?? [] })).filter((g) => g.items.length > 0)
+  }, [rows, loadedAt])
+
+  if (loading && rows.length === 0) {
+    return <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">{t('common.loading')}</div>
+  }
+  if (rows.length === 0) {
     return <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">{t('bots.noSessions')}</div>
   }
 
   return (
     <div className="flex-1 flex min-h-0">
-      <div className="w-64 flex-shrink-0 border-r border-border overflow-y-auto p-1 space-y-0.5">
-        {sessions.map((s) => {
-          const key = keyOf(s)
-          const title = s.title || s.sessionId.slice(0, 8)
-          return (
-            <div
-              key={key}
-              onClick={() => setSelectedKey(key)}
-              onDoubleClick={() => onOpenSession(s.cwd, s.sessionId)}
-              className={`rounded-md px-2 py-2 cursor-pointer transition-colors ${
-                selected && keyOf(selected) === key ? 'bg-brand/10' : 'hover:bg-hover'
-              }`}
-            >
-              <div className="flex items-center gap-1.5 min-w-0">
-                <EngineBadge engine={s.engine} />
-                <span className="text-xs font-medium text-foreground truncate flex-1 min-w-0" data-tooltip={title}>{title}</span>
-                <span className="text-[10px] text-muted-foreground flex-shrink-0">{formatRelativeTime(t, s.lastActive)}</span>
-                <SessionNumberBadge status={badgeStatus(s.status)} statusLabel={statusLabelOf(t, s.status)} bot={s.bot} />
+      <div className="w-72 flex-shrink-0 border-r border-border overflow-y-auto">
+        <div className="p-2 space-y-2">
+          {groups.map((group) => (
+            <div key={group.key} className="rounded-lg border border-border">
+              <div className="sticky top-0 z-10 px-3 py-1.5 bg-card rounded-t-lg border-b border-border/60 text-[11px] font-medium text-muted-foreground flex items-center">
+                <span>{t(group.labelKey)}</span>
+                <span className="ml-auto tabular-nums text-foreground-subtle">{group.items.length}</span>
               </div>
-              <div className="text-xs text-muted-foreground truncate mt-0.5 pl-[22px]" data-tooltip={s.cwd}>
-                {s.cwd.split('/').filter(Boolean).pop()}
+              <div className="p-1 space-y-0.5">
+                {group.items.map((r) => {
+                  const key = rowKey(r.cwd, r.sessionId)
+                  const isSelected = !!selected && rowKey(selected.cwd, selected.sessionId) === key
+                  return (
+                    <div
+                      key={key}
+                      onClick={() => setSelectedKey(key)}
+                      onDoubleClick={() => onOpenSession(r.cwd, r.sessionId)}
+                      className={`rounded-md px-2 py-2 cursor-pointer transition-colors ${isSelected ? 'bg-brand/10' : 'hover:bg-hover'}`}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <EngineBadge engine={r.engine} />
+                        <span className="text-xs font-medium text-foreground truncate flex-1 min-w-0" data-tooltip={r.title}>{r.title}</span>
+                        <span className="text-[10px] text-muted-foreground flex-shrink-0">{formatRelativeTime(t, r.time)}</span>
+                        <SessionNumberBadge status={badgeStatus(r.status)} statusLabel={statusLabelOf(t, r.status)} bot={r.bot} />
+                      </div>
+                      {r.lastMessage && (
+                        <div className="text-xs text-muted-foreground truncate mt-0.5 pl-[22px]" data-tooltip={r.lastMessage}>
+                          {r.lastMessage}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
-          )
-        })}
+          ))}
+        </div>
       </div>
       <div className="flex-1 flex min-w-0">
         {selected && (
           <SessionTranscriptPreview
-            key={keyOf(selected)}
+            key={rowKey(selected.cwd, selected.sessionId)}
             cwd={selected.cwd}
             sessionId={selected.sessionId}
-            subtitle={selected.title || selected.sessionId.slice(0, 8)}
+            subtitle={selected.title}
             emptyText={t('sessions.noSessionMessages')}
             onOpenSession={() => onOpenSession(selected.cwd, selected.sessionId)}
           />

@@ -288,7 +288,11 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
           {taskProgress && (
             <span className="text-xs text-muted-foreground truncate max-w-[16rem]">{taskProgress}</span>
           )}
-          {expanded && !toolCall.isLoading && !disableOverlays && (
+          {/* Input is offered while the call is still running: a tool call only
+              appears once its assistant block has fully arrived, so `input` is
+              already complete here (the expanded body below shows it too). Only
+              the result has to wait for the call to finish. */}
+          {expanded && !disableOverlays && (
             <>
               <span
                 role="button"
@@ -300,7 +304,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
               >
                 {t('toolCall.input')}
               </span>
-              {toolCall.result && (
+              {!toolCall.isLoading && toolCall.result && (
                 <span
                   role="button"
                   tabIndex={0}

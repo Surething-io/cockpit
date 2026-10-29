@@ -167,6 +167,14 @@ interface XtermRendererProps {
   height?: number;
   /** When true, parent writes data via ref.write() — output prop is ignored. xterm scrollback manages memory. */
   directWrite?: boolean;
+  /**
+   * Render at exactly this size instead of fitting the container — for a
+   * read-only view of a PTY someone else sized (TerminalPreview). Its output
+   * was laid out for those columns, so refitting would re-wrap it. The
+   * container scrolls when the terminal is larger than it. Leave undefined
+   * until the size is known; the terminal fits as usual meanwhile.
+   */
+  fixedSize?: { cols: number; rows: number };
 }
 
 /**
@@ -182,6 +190,7 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
   maximized,
   height,
   directWrite,
+  fixedSize,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -190,6 +199,8 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
   const writtenLenRef = useRef(0);
   const onInputRef = useRef(onInput);
   const onResizeRef = useRef(onResize);
+  const fixedSizeRef = useRef(fixedSize);
+  fixedSizeRef.current = fixedSize;
   useEffect(() => { onInputRef.current = onInput; }, [onInput]);
   useEffect(() => { onResizeRef.current = onResize; }, [onResize]);
 
@@ -380,6 +391,8 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
     const term = termRef.current;
     const fitAddon = fitAddonRef.current;
     if (!term || !fitAddon) return;
+    // A fixed-size terminal never follows its container (see `fixedSize`).
+    if (fixedSizeRef.current) return;
     try {
       fitAddon.fit();
       if (onResizeRef.current) {
@@ -387,6 +400,16 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
       }
     } catch { /* ignore */ }
   }, []);
+
+  // Apply a fixed size when it arrives or changes. Primitive deps, so a fresh
+  // object with the same numbers does not resize again.
+  const fixedCols = fixedSize?.cols;
+  const fixedRows = fixedSize?.rows;
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term || !fixedCols || !fixedRows) return;
+    try { term.resize(fixedCols, fixedRows); } catch { /* disposed */ }
+  }, [fixedCols, fixedRows]);
 
   // Trigger fit when maximized changes
   // Needs multi-frame delay: container size may take a few frames to stabilize after DOM move (useLayoutEffect)
@@ -431,7 +454,7 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
     <div
       ref={containerRef}
       className="xterm-renderer px-2"
-      style={{ height: height ?? '100%', overflow: 'hidden' }}
+      style={{ height: height ?? '100%', overflow: fixedSize ? 'auto' : 'hidden' }}
     />
   );
 }));

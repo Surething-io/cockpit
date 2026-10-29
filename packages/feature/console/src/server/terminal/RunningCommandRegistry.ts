@@ -159,6 +159,14 @@ export interface RunningCommand {
   ptyProcess?: PtyHandle;
   /** Whether PTY mode is enabled */
   usePty?: boolean;
+  /**
+   * PTY mode: the size the PTY currently has — set at spawn, updated on every
+   * resize. Read-only viewers (the sidebar terminals board) render at exactly
+   * this size, since the output was laid out for it. Unknown (undefined) for a
+   * PTY re-adopted from the pty-host after a server restart, until its next
+   * resize.
+   */
+  ptySize?: { cols: number; rows: number };
   outputLines: string[];
   outputPartial: string;
   /** PTY raw output ring buffer — only set in PTY mode, released on finalize */

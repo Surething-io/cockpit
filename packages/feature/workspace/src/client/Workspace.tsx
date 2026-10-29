@@ -212,6 +212,8 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
   // — same shape resolveSessionNumbers() returns, but standing and live rather
   // than requested on dropdown open. Panels that are always mounted (pinned
   // sessions, scheduled tasks) read this one.
+  // Sidebar order, for the notes board's project number chips.
+  const noteProjectOrder = useMemo(() => projects.map((p) => p.cwd), [projects]);
   const liveSessionNumbers = useMemo(() => {
     const numbers: Record<string, string> = {};
     projects.forEach((project, projectIndex) => {
@@ -791,7 +793,8 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
         isOpen={isNoteOpen}
         onClose={() => { setIsNoteOpen(false); setNoteProjectCwd(null); }}
         projectCwd={noteProjectCwd}
-        projectName={noteProjectCwd ? noteProjectCwd.split('/').pop() : null}
+        currentCwd={projects[activeIndex]?.cwd}
+        projectOrder={noteProjectOrder}
       />
 
       {/* Skills Modal */}
@@ -803,6 +806,7 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
       <BotsModal
         isOpen={isBotsOpen}
         onClose={() => setIsBotsOpen(false)}
+        onOpenSession={handleSwitchProject}
       />
 
       {/* HTML Apps Modal */}

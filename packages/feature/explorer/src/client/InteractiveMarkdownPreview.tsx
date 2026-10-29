@@ -48,6 +48,9 @@ interface InteractiveMarkdownPreviewProps {
   /** Explorer-only: after a cross-file link navigation, scroll to this heading
    *  anchor once the new content has rendered. One-shot; cleared by the host. */
   scrollToAnchor?: string | null;
+  /** Start with the TOC sidebar collapsed (skills board: already two columns
+   *  to its left). Defaults to expanded. */
+  tocDefaultCollapsed?: boolean;
 }
 
 interface InputCardData {
@@ -94,6 +97,7 @@ export function InteractiveMarkdownPreview({
   embedded = false,
   onLocalMdLink,
   scrollToAnchor,
+  tocDefaultCollapsed = false,
 }: InteractiveMarkdownPreviewProps) {
   // Derive sourceFile (relative path)
   const sourceFile = sourceFileProp
@@ -448,7 +452,7 @@ export function InteractiveMarkdownPreview({
 
       {/* Body: TOC sidebar + content */}
       <div className="flex-1 flex overflow-hidden">
-        <TocSidebar content={content} containerRef={containerRef} />
+        <TocSidebar content={content} containerRef={containerRef} defaultCollapsed={tocDefaultCollapsed} />
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-auto relative" ref={containerRef}>

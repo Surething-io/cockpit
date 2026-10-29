@@ -52,12 +52,14 @@ interface TocSidebarProps {
   containerRef: React.RefObject<HTMLElement | null>;
   /** Sidebar width class, defaults to w-80 */
   width?: string;
+  /** Start collapsed to the thin rail — for hosts already short on width. */
+  defaultCollapsed?: boolean;
 }
 
-export function TocSidebar({ content, containerRef, width = 'w-80' }: TocSidebarProps) {
+export function TocSidebar({ content, containerRef, width = 'w-80', defaultCollapsed = false }: TocSidebarProps) {
   const { t } = useTranslation();
   const tocItems = useMemo(() => extractToc(content), [content]);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const [activeHeadingLine, setActiveHeadingLine] = useState<number | null>(null);
 
   // Click TOC item → scroll to corresponding heading

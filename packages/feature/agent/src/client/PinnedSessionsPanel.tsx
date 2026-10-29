@@ -1,19 +1,20 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Effect } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { MODAL_SHELL_CLASS } from '@cockpit/shared-ui';
 import type { PinnedSession } from './usePinnedSessions';
 import { SessionNumberBadge, badgeStatus } from './SessionNumberBadge';
 import { EngineBadge } from './EngineBadge';
+import { SessionTranscriptPreview } from './SessionTranscriptPreview';
 import { loadRecentSessions } from './effect/agentClient';
 import {
-  SessionHoverCard,
-  useSessionHoverCard,
   formatRelativeTime,
   statusLabelOf,
-  projectNameOf,
+  groupByProject,
+  ProjectGroupHeader,
   type SessionRowInfo,
 } from './SessionRowParts';
 
@@ -25,7 +26,9 @@ interface PinnedSessionsPanelProps {
   /** Live "project.session" coordinates keyed `${cwd}\n${sessionId}`. A pinned
    *  session whose project has no open tab for it simply has no coordinate. */
   sessionNumbers?: Record<string, string>;
-  /** Project of the active tab — highlighted the same way the recent list does. */
+  /** Sidebar project order — numbers each group's chip like the project list. */
+  projectOrder: readonly string[];
+  /** Project of the active tab — its group chip is drawn active. */
   currentCwd?: string;
   onSwitchProject: (cwd: string, sessionId: string) => void;
   onUnpin: (sessionId: string) => void;
@@ -34,19 +37,23 @@ interface PinnedSessionsPanelProps {
 }
 
 /**
- * PinnedSessionsPanel — the user-curated list, directly below the recent list
- * in the sidebar.
+ * PinnedSessionsPanel — the sidebar star button plus the full-viewport board it
+ * opens: the user-curated list on the left, the selected session's transcript
+ * on the right. Same shell and split as ScheduledTasksPanel, so the two
+ * neighbouring sidebar entries behave alike — look first, then open.
+ *
+ * The list is grouped by project, groups in order of each project's first
+ * appearance in the user's own list, rows in the user's order inside a group.
+ * Dragging reorders within a group only — a row cannot be dropped into another
+ * project's group. A drop rewrites the stored list group-contiguous (groupwise
+ * flatten), so the group order the user sees is exactly what gets saved and
+ * cannot jump on the next render.
  *
  * Rows are built from the same parts as the recent list (SessionRowParts):
- * status dot, engine mark, project name, relative time, status-tinted session
- * chip, title, last-message preview, and the rich hover card with the path,
- * branch and message excerpt. Pinning a session must not cost you the
- * information you had about it one list up.
- *
- * The detail comes from one fetch of `/api/global-state` per open (the full
- * persisted list, week-bounded, 20-100; local IO <10ms — see CLAUDE.md). A
- * dropdown that is open for seconds does not also need the live socket feed:
- * nobody watches a run finish from in here, that is what the list above is for.
+ * engine mark, project name, relative time, status-tinted session chip, title,
+ * last-message preview. The detail comes from one fetch of `/api/global-state`
+ * per open (the full persisted list, week-bounded, 20-100; local IO <10ms — see
+ * CLAUDE.md); the transcript pane polls its own session for live updates.
  *
  * A session favourited months ago has aged out of that list entirely. Such a
  * row degrades to what the stored record itself holds (project + custom title)
@@ -57,11 +64,15 @@ interface PinnedSessionsPanelProps {
  * `isPinned`/`onTogglePin` props, `/api/pinned-sessions` and the file it
  * persists to. That split is deliberate: renaming the route would orphan every
  * existing user's saved list. Do not "fix" one half of it in isolation.
+ *
+ * Uses a full-viewport `fixed inset-0` overlay so it escapes the three-panel
+ * SwipeableViewContainer boundaries (see CLAUDE.md UI layout notes).
  */
 export function PinnedSessionsPanel({
   collapsed,
   pinnedSessions,
   sessionNumbers,
+  projectOrder,
   currentCwd,
   onSwitchProject,
   onUnpin,
@@ -70,18 +81,21 @@ export function PinnedSessionsPanel({
 }: PinnedSessionsPanelProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const editInputRef = useRef<HTMLInputElement>(null);
 
-  // Row anatomy shared with GlobalSessionMonitor — see SessionRowParts.
-  const hover = useSessionHoverCard();
-  const { show: showCard, hide: hideCard } = hover;
+  // Which favorite the right-hand transcript follows. Reset on close so every
+  // open lands on the top of the list again.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = selectedId ? pinnedSessions.find(s => s.sessionId === selectedId) ?? null : null;
 
-  // Drag-to-reorder state
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const groups = useMemo(() => groupByProject(pinnedSessions), [pinnedSessions]);
+
+  // Drag-to-reorder state, by sessionId. `dragCwd` limits drops to one group.
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const dragCwd = dragId ? pinnedSessions.find(s => s.sessionId === dragId)?.cwd : undefined;
 
   // Row detail, keyed `${cwd}\n${sessionId}`; empty until the first open.
   const [fetched, setFetched] = useState<Record<string, SessionRowInfo>>({});
@@ -100,31 +114,31 @@ export function PinnedSessionsPanel({
     );
   }, [isOpen]);
 
-  // Close on outside click
+  // Auto-select the first row so opening the board shows a transcript without a
+  // click. Only fills a hole (nothing selected, or the selection was unpinned);
+  // it never steals a selection the user made.
+  useEffect(() => {
+    if (!isOpen || selected) return;
+    setSelectedId(pinnedSessions[0]?.sessionId ?? null);
+  }, [isOpen, selected, pinnedSessions]);
+
+  const closeBoard = useCallback(() => {
+    setIsOpen(false);
+    setSelectedId(null);
+    setEditingId(null);
+  }, []);
+
+  // Close on ESC — unless a title is being edited: the input handles its own ESC
+  // (cancel the edit), and that must not also close the board under it.
   useEffect(() => {
     if (!isOpen) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-        setEditingId(null);
-      }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || editingId) return;
+      closeBoard();
     };
-    const handleBlur = () => {
-      setIsOpen(false);
-      setEditingId(null);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    window.addEventListener('blur', handleBlur);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      window.removeEventListener('blur', handleBlur);
-    };
-  }, [isOpen]);
-
-  // Drop the hover card whenever the dropdown closes
-  useEffect(() => {
-    if (!isOpen) hideCard();
-  }, [isOpen, hideCard]);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, editingId, closeBoard]);
 
   // Auto-focus in edit mode
   useEffect(() => {
@@ -134,18 +148,16 @@ export function PinnedSessionsPanel({
     }
   }, [editingId]);
 
-  const handleSessionClick = useCallback((session: PinnedSession) => {
-    if (editingId) return; // Do not navigate while editing
+  const openSession = useCallback((session: PinnedSession) => {
     onSwitchProject(session.cwd, session.sessionId);
-    setIsOpen(false);
-  }, [onSwitchProject, editingId]);
+    closeBoard();
+  }, [onSwitchProject, closeBoard]);
 
   const startEdit = useCallback((session: PinnedSession, e: React.MouseEvent) => {
     e.stopPropagation();
-    hideCard();
     setEditingId(session.sessionId);
     setEditValue(session.customTitle || '');
-  }, [hideCard]);
+  }, []);
 
   const saveEdit = useCallback(() => {
     if (editingId && editValue.trim()) {
@@ -154,40 +166,156 @@ export function PinnedSessionsPanel({
     setEditingId(null);
   }, [editingId, editValue, onUpdateTitle]);
 
-  // Drag-to-reorder
-  const handleDragStart = useCallback((index: number) => {
-    hideCard();
-    setDragIndex(index);
-  }, [hideCard]);
-
-  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    setDragOverIndex(index);
+  // Drag-to-reorder, within one project group
+  const handleDragStart = useCallback((session: PinnedSession) => {
+    setDragId(session.sessionId);
   }, []);
 
-  const handleDrop = useCallback((index: number) => {
-    if (dragIndex === null || dragIndex === index) {
-      setDragIndex(null);
-      setDragOverIndex(null);
-      return;
-    }
-    const newSessions = [...pinnedSessions];
-    const [moved] = newSessions.splice(dragIndex, 1);
-    newSessions.splice(index, 0, moved);
-    onReorder(newSessions);
-    setDragIndex(null);
-    setDragOverIndex(null);
-  }, [dragIndex, pinnedSessions, onReorder]);
+  const handleDragOver = useCallback((e: React.DragEvent, session: PinnedSession) => {
+    // Not calling preventDefault is what refuses the drop: the browser shows the
+    // no-drop cursor over another project's rows.
+    if (session.cwd !== dragCwd) return;
+    e.preventDefault();
+    setDragOverId(session.sessionId);
+  }, [dragCwd]);
 
   const handleDragEnd = useCallback(() => {
-    setDragIndex(null);
-    setDragOverIndex(null);
+    setDragId(null);
+    setDragOverId(null);
   }, []);
 
+  const handleDrop = useCallback((target: PinnedSession) => {
+    if (!dragId || dragId === target.sessionId || target.cwd !== dragCwd) {
+      handleDragEnd();
+      return;
+    }
+    const reordered = groups.flatMap((group) => {
+      if (group.cwd !== target.cwd) return group.items;
+      const items = [...group.items];
+      const from = items.findIndex(s => s.sessionId === dragId);
+      const to = items.findIndex(s => s.sessionId === target.sessionId);
+      const [moved] = items.splice(from, 1);
+      items.splice(to, 0, moved);
+      return items;
+    });
+    onReorder(reordered);
+    handleDragEnd();
+  }, [dragId, dragCwd, groups, onReorder, handleDragEnd]);
+
+  /** The pin record's own title wins — it is the name the user chose. Only when
+   *  there is none do we fall back to the live title, and only then to the id. */
+  const titleOf = (session: PinnedSession) =>
+    session.customTitle || fetched[keyOf(session.cwd, session.sessionId)]?.title || session.sessionId.slice(0, 8);
+
+  const renderRow = (session: PinnedSession) => {
+    const info = fetched[keyOf(session.cwd, session.sessionId)];
+    const isEditing = editingId === session.sessionId;
+    const isSelected = session.sessionId === selectedId;
+    return (
+      <div
+        key={session.sessionId}
+        draggable={!isEditing}
+        onDragStart={() => handleDragStart(session)}
+        onDragOver={(e) => handleDragOver(e, session)}
+        onDrop={() => handleDrop(session)}
+        onDragEnd={handleDragEnd}
+        onClick={() => { if (!isEditing) setSelectedId(session.sessionId); }}
+        onDoubleClick={() => { if (!isEditing) openSession(session); }}
+        className={`group rounded-md px-2 py-2 cursor-pointer transition-colors flex items-start gap-1.5 ${
+          isSelected ? 'bg-brand/10' : 'hover:bg-hover'
+        } ${dragId === session.sessionId ? 'opacity-50' : ''} ${
+          dragOverId === session.sessionId && dragId !== session.sessionId ? 'ring-1 ring-inset ring-brand' : ''
+        }`}
+      >
+        {/* Drag handle */}
+        <span className="mt-1 text-muted-foreground/30 flex-shrink-0 cursor-grab">
+          <svg className="w-3 h-3" viewBox="0 0 10 16" fill="currentColor">
+            <circle cx="3" cy="2" r="1.5"/><circle cx="7" cy="2" r="1.5"/>
+            <circle cx="3" cy="8" r="1.5"/><circle cx="7" cy="8" r="1.5"/>
+            <circle cx="3" cy="14" r="1.5"/><circle cx="7" cy="14" r="1.5"/>
+          </svg>
+        </span>
+        <div className="flex-1 min-w-0">
+          {/* The project is the group header now, so the row leads with the title. */}
+          <div className="flex items-center gap-1.5">
+            {/* Unconditional, exactly like the recent list. `engine` is attached
+                at read time only for sessions the project's engines map names,
+                and Claude — the default — is usually absent from it, so gating
+                on it left every Claude row with a blank where the row above had
+                a mark. `undefined` means Claude across the whole app;
+                EngineBadge resolves it. */}
+            <EngineBadge engine={info?.engine} />
+            {isEditing ? (
+              <input
+                ref={editInputRef}
+                type="text"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
+                  if (e.key === 'Enter') saveEdit();
+                  if (e.key === 'Escape') setEditingId(null);
+                }}
+                onBlur={saveEdit}
+                onClick={(e) => e.stopPropagation()}
+                className="flex-1 min-w-0 text-xs px-1 py-0.5 border border-border rounded bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            ) : (
+              <span className="text-xs font-medium text-foreground truncate flex-1 min-w-0" data-tooltip={titleOf(session)}>
+                {titleOf(session)}
+              </span>
+            )}
+            {!isEditing && info?.lastActive ? (
+              <span className="text-[10px] text-muted-foreground flex-shrink-0 group-hover:hidden">
+                {formatRelativeTime(t, info.lastActive)}
+              </span>
+            ) : null}
+            <SessionNumberBadge
+              coordinate={sessionNumbers?.[keyOf(session.cwd, session.sessionId)]}
+              status={badgeStatus(info?.status)}
+              statusLabel={statusLabelOf(t, info?.status)}
+              bot={info?.bot}
+            />
+            {/* Hover action buttons */}
+            {!isEditing && (
+              <div className="flex-shrink-0 hidden group-hover:flex items-center gap-0.5">
+                {/* Edit */}
+                <button
+                  onClick={(e) => startEdit(session, e)}
+                  className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                  title={t('sessions.editTitle')}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </button>
+                {/* Unfavorite */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); onUnpin(session.sessionId); }}
+                  className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-destructive"
+                  title={t('sessions.removeFavorite')}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            )}
+          </div>
+          {!isEditing && info?.lastUserMessage && (
+            <div className="text-xs text-muted-foreground truncate mt-0.5 pl-[22px]" data-tooltip={info.lastUserMessage}>
+              {info.lastUserMessage}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="relative" ref={dropdownRef}>
+    <>
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => setIsOpen(true)}
         className={`relative flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-hover transition-colors ${
           collapsed ? 'w-full justify-center' : 'w-full'
         }`}
@@ -207,138 +335,85 @@ export function PinnedSessionsPanel({
         )}
       </button>
 
-      {/* Dropdown panel */}
+      {/* Favorites board */}
       {isOpen && (
-        <div className="absolute left-full bottom-0 ml-2 w-80 max-h-[450px] bg-popover border border-border rounded-lg shadow-lv2 z-50 flex flex-col">
-          <div className="px-3 py-2 border-b border-border bg-muted/50 flex-shrink-0 rounded-t-lg">
-            <span className="text-sm font-medium">{t('sessions.favorites')}</span>
-          </div>
-          <div className="flex-1 min-h-0 overflow-y-auto">
-            {pinnedSessions.length === 0 ? (
-              <div className="px-3 py-4 text-sm text-muted-foreground text-center">
-                {t('sessions.noFavorites')}
+        <div className="fixed inset-0 z-[70] flex items-center justify-center">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-scrim" onClick={closeBoard} />
+
+          {/* Modal */}
+          <div className={MODAL_SHELL_CLASS}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+              <div className="flex items-center gap-3 min-w-0">
+                <h2 className="text-sm font-medium text-foreground">{t('sessions.favorites')}</h2>
+                {pinnedSessions.length > 0 && (
+                  <span className="text-xs text-muted-foreground">{pinnedSessions.length}</span>
+                )}
               </div>
-            ) : (
-              pinnedSessions.map((session, index) => {
-                const info = fetched[keyOf(session.cwd, session.sessionId)];
-                const isEditing = editingId === session.sessionId;
-                return (
-                <div
-                  key={session.sessionId}
-                  draggable
-                  onDragStart={() => handleDragStart(index)}
-                  onDragOver={(e) => handleDragOver(e, index)}
-                  onDrop={() => handleDrop(index)}
-                  onDragEnd={handleDragEnd}
-                  onClick={() => handleSessionClick(session)}
-                  onMouseEnter={(e) => {
-                    if (!isEditing) showCard(info ?? { cwd: session.cwd, sessionId: session.sessionId, title: session.customTitle }, e);
-                  }}
-                  onMouseLeave={hideCard}
-                  className={`group w-full px-3 py-2 text-left hover:bg-hover transition-colors flex items-start gap-2 cursor-pointer ${
-                    index !== pinnedSessions.length - 1 ? 'border-b border-border/50' : ''
-                  } ${currentCwd === session.cwd ? 'bg-accent/50' : ''} ${
-                    dragIndex === index ? 'opacity-50' : ''
-                  } ${dragOverIndex === index ? 'border-t-2 border-brand' : ''}`}
-                >
-                  {/* Drag handle */}
-                  <span className="mt-1.5 text-muted-foreground/30 flex-shrink-0 cursor-grab">
-                    <svg className="w-3 h-3" viewBox="0 0 10 16" fill="currentColor">
-                      <circle cx="3" cy="2" r="1.5"/><circle cx="7" cy="2" r="1.5"/>
-                      <circle cx="3" cy="8" r="1.5"/><circle cx="7" cy="8" r="1.5"/>
-                      <circle cx="3" cy="14" r="1.5"/><circle cx="7" cy="14" r="1.5"/>
-                    </svg>
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      {/* Unconditional, exactly like the recent list. `engine` is
-                          attached at read time only for sessions the project's
-                          engines map names, and Claude — the default — is
-                          usually absent from it, so gating on it left every
-                          Claude row with a blank where the row above had a
-                          mark. `undefined` means Claude across the whole app;
-                          EngineBadge resolves it. */}
-                      <EngineBadge engine={info?.engine} />
-                      <span className="font-medium text-sm truncate">
-                        {projectNameOf(session.cwd)}
-                      </span>
-                      {info?.lastActive ? (
-                        <span className="text-xs text-muted-foreground flex-shrink-0">
-                          {formatRelativeTime(t, info.lastActive)}
-                        </span>
-                      ) : null}
-                      <SessionNumberBadge
-                        coordinate={sessionNumbers?.[keyOf(session.cwd, session.sessionId)]}
-                        status={badgeStatus(info?.status)}
-                        statusLabel={statusLabelOf(t, info?.status)}
-                        bot={info?.bot}
-                        className="ml-auto"
-                      />
+              <button
+                onClick={closeBoard}
+                className="p-1 text-foreground-subtle hover:text-foreground hover:bg-hover rounded transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content — favorites on the left, transcript on the right */}
+            <div className="flex-1 flex min-h-0">
+              {pinnedSessions.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="text-xs text-muted-foreground">{t('sessions.noFavorites')}</div>
+                </div>
+              ) : (
+                <>
+                  {/* Left: fixed width because the right pane renders real
+                      message bubbles and needs the remaining space. Below `md`
+                      the preview is dropped and the list takes the full width.
+                      Padding stays off the scroll node so the sticky group
+                      header does not leave a strip of rows visible above it. */}
+                  <div className="w-full md:w-[360px] min-h-0 flex-shrink-0 md:border-r border-border overflow-y-auto">
+                    <div className="p-3 space-y-3">
+                      {groups.map((group) => (
+                        /* One card per project. No overflow-hidden here: it would
+                           make the card the sticky header's scroll container. */
+                        <div key={group.cwd} className="rounded-lg border border-border">
+                          <ProjectGroupHeader cwd={group.cwd} projectOrder={projectOrder} currentCwd={currentCwd}>
+                            <span className="ml-auto tabular-nums text-foreground-subtle">{group.items.length}</span>
+                          </ProjectGroupHeader>
+                          <div className="p-1 space-y-0.5">{group.items.map(renderRow)}</div>
+                        </div>
+                      ))}
                     </div>
-                    {isEditing ? (
-                      <input
-                        ref={editInputRef}
-                        type="text"
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.nativeEvent.isComposing) return;
-                          if (e.key === 'Enter') saveEdit();
-                          if (e.key === 'Escape') setEditingId(null);
-                        }}
-                        onBlur={saveEdit}
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-full text-xs px-1 py-0.5 border border-border rounded bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-ring mt-0.5"
+                  </div>
+
+                  {/* Right: the selected favorite's transcript */}
+                  <div className="hidden md:flex flex-1 min-w-0">
+                    {selected ? (
+                      <SessionTranscriptPreview
+                        // Remount per session: transcript, fingerprint and scroll
+                        // position only make sense for one session.
+                        key={keyOf(selected.cwd, selected.sessionId)}
+                        cwd={selected.cwd}
+                        sessionId={selected.sessionId}
+                        subtitle={titleOf(selected)}
+                        emptyText={t('sessions.noSessionMessages')}
+                        onOpenSession={() => openSession(selected)}
                       />
                     ) : (
-                      /* The pin record's own title wins — it is the name the
-                         user chose. Only when there is none do we fall back to
-                         the live title, and only then to the raw id. */
-                      <div className="text-xs font-medium text-foreground truncate">
-                        {session.customTitle || info?.title || session.sessionId.slice(0, 8)}
-                      </div>
-                    )}
-                    {!isEditing && info?.lastUserMessage && (
-                      <div className="text-xs text-foreground/80 truncate">
-                        {info.lastUserMessage}
+                      <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">
+                        {t('sessions.selectFavoriteHint')}
                       </div>
                     )}
                   </div>
-                  {/* Hover action buttons */}
-                  {!isEditing && (
-                    <div className="flex-shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
-                      {/* Edit */}
-                      <button
-                        onClick={(e) => startEdit(session, e)}
-                        className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-                        title={t('sessions.editTitle')}
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                        </svg>
-                      </button>
-                      {/* Delete */}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); hideCard(); onUnpin(session.sessionId); }}
-                        className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-destructive"
-                        title={t('sessions.removeFavorite')}
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                  )}
-                </div>
-                );
-              })
-            )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
-
-      {/* Rich hover card: path + branch + first/last user-message preview */}
-      <SessionHoverCard {...hover} />
-    </div>
+    </>
   );
 }

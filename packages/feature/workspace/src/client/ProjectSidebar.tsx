@@ -278,7 +278,7 @@ export function ProjectSidebar({
   // content area is a per-project <iframe> (see Workspace.tsx), so clicks
   // there never reach this document — but they do steal the parent
   // window's focus, hence the blur listener (same pattern as
-  // GlobalSessionMonitor). Capture phase on mousedown so in-document
+  // the old recent-sessions dropdown). Capture phase on mousedown so in-document
   // components that stopPropagation (e.g. xterm) can't swallow it.
   useEffect(() => {
     if (!updatePopoverOpen) return;
@@ -538,6 +538,7 @@ export function ProjectSidebar({
       <div className="p-2 border-t border-border space-y-1">
         {/* Recent sessions */}
         <GlobalSessionMonitor
+          projectOrder={projectOrder}
           currentCwd={currentCwd}
           onSwitchProject={onSwitchProject}
           onResolveSessionNumbers={onResolveSessionNumbers}
@@ -547,9 +548,10 @@ export function ProjectSidebar({
         {/* Pinned sessions */}
         <PinnedSessionsPanel
           collapsed={collapsed}
+          projectOrder={projectOrder}
+          currentCwd={currentCwd}
           pinnedSessions={pinnedSessions}
           sessionNumbers={sessionNumbers}
-          currentCwd={currentCwd}
           onSwitchProject={onSwitchProject}
           onUnpin={unpinSession}
           onUpdateTitle={updateTitle}
@@ -558,6 +560,8 @@ export function ProjectSidebar({
         {/* Scheduled tasks */}
         <ScheduledTasksPanel
           collapsed={collapsed}
+          projectOrder={projectOrder}
+          currentCwd={currentCwd}
           tasks={scheduledTasks}
           unreadCount={scheduledUnread}
           sessionNumbers={sessionNumbers}

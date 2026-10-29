@@ -76,11 +76,15 @@ interface GlobalState {
 //   - keep sessions active within the last week …
 //   - … but never fewer than MIN_SESSIONS (pad with older ones if the week is sparse)
 //   - … and never more than MAX_SESSIONS.
-// The sidebar dropdown still shows only the top 20 (sliced on the WS push path).
+// The live WS feed carries only the top 20 (sliced on the WS push path).
 const MAX_SESSIONS = 100;
 const MIN_SESSIONS = 20;
 const RETENTION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // one week
-const MAX_TEXT_LEN = 50; // max character count for title / lastUserMessage
+const MAX_TEXT_LEN = 50; // max character count for title and other short labels
+// lastUserMessage gets more room: when a session's transcript is gone, this
+// persisted copy is all the boards have, and their row tooltip shows it whole.
+// Matches the length the live preview path serves.
+const MAX_LAST_MESSAGE_LEN = 300;
 
 function migrateLegacyStatuses(sessions: GlobalSession[]): void {
   for (const session of sessions) {
@@ -100,10 +104,10 @@ function retainRecentSessions(state: GlobalState): void {
 }
 
 /** Truncate by Unicode characters, appending an ellipsis if over the limit */
-function truncate(s: string | undefined): string | undefined {
+function truncate(s: string | undefined, max = MAX_TEXT_LEN): string | undefined {
   if (!s) return s;
   const chars = [...s]; // expand to code-point array; each emoji/CJK char counts as 1
-  return chars.length <= MAX_TEXT_LEN ? s : chars.slice(0, MAX_TEXT_LEN).join('') + '…';
+  return chars.length <= max ? s : chars.slice(0, max).join('') + '…';
 }
 
 /**
@@ -142,7 +146,7 @@ export async function updateGlobalState(
       lastActive: Date.now(),
       status,
       title: truncate(title || existing?.title),
-      lastUserMessage: truncate(lastUserMessage || existing?.lastUserMessage),
+      lastUserMessage: truncate(lastUserMessage || existing?.lastUserMessage, MAX_LAST_MESSAGE_LEN),
       // Carried like title/lastUserMessage: status-only updates (the client's
       // /api/global-state PATCH) pass no engine and must not erase it.
       engine: engine || existing?.engine,

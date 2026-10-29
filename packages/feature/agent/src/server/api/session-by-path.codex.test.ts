@@ -254,6 +254,46 @@ const loadSession = async (sessionId: string, extra: Record<string, unknown> = {
   return response.json();
 };
 
+// Codex has its own parser, but it must page like every other engine: a long
+// Codex session used to ship in full on every read whatever `limit` asked for.
+describe('session-by-path codex paging', () => {
+  const turn = (n: number) => [
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: `q${n}` }] } },
+    { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: `a${n}` }] } },
+  ];
+  const post = async (body: Record<string, unknown>) => {
+    const { POST } = await import('./session-by-path');
+    const response = await POST(
+      new Request('http://test.local/api/session-by-path', { method: 'POST', body: JSON.stringify(body) })
+    );
+    return response.json();
+  };
+  const userTexts = (messages: { role: string; content: string }[]) =>
+    messages.filter((m) => m.role === 'user').map((m) => m.content);
+
+  it('returns only the last `limit` turns, then pages back from startTurnIndex', async () => {
+    const sessionId = 'codex-paging';
+    writeCodexTranscript(sessionId, [1, 2, 3, 4, 5].flatMap(turn));
+
+    const last = await post({ cwd: '/tmp', sessionId, limit: 2 });
+    expect(userTexts(last.messages)).toEqual(['q4', 'q5']);
+    expect(last).toMatchObject({ totalTurns: 5, hasMore: true, startTurnIndex: 3 });
+
+    const earlier = await post({ cwd: '/tmp', sessionId, limit: 2, beforeTurnIndex: last.startTurnIndex });
+    expect(userTexts(earlier.messages)).toEqual(['q2', 'q3']);
+    expect(earlier).toMatchObject({ hasMore: true, startTurnIndex: 1 });
+  });
+
+  it('still returns the whole session when no page is asked for', async () => {
+    const sessionId = 'codex-paging-all';
+    writeCodexTranscript(sessionId, [1, 2, 3].flatMap(turn));
+
+    const all = await post({ cwd: '/tmp', sessionId });
+    expect(userTexts(all.messages)).toEqual(['q1', 'q2', 'q3']);
+    expect(all).toMatchObject({ totalTurns: 3, hasMore: false, startTurnIndex: 0 });
+  });
+});
+
 describe('session-by-path codex subagents', () => {
   it('renders one Task bubble per sub-agent, completed by its wait_agent report', async () => {
     const sessionId = 'codex-spawn-wait';

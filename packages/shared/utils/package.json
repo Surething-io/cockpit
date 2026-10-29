@@ -13,6 +13,7 @@
     "./pathWithin": "./src/pathWithin.ts",
     "./outputProgress": "./src/outputProgress.ts",
     "./encodePath": "./src/encodePath.ts",
+    "./dirFiles": "./src/dirFiles.ts",
     "./sessionLink": "./src/sessionLink.ts"
   }
 }

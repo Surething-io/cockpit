@@ -114,6 +114,24 @@ export const loadNote = (
   cwd?: string | null
 ): Effect.Effect<NoteResponse, AppError> => httpJson(noteUrl(cwd))
 
+/** One row of /api/note/list (server/api/noteList.ts). */
+export interface NoteListEntry {
+  /** null = the global note. */
+  cwd: string | null
+  /** False when `cwd` is the server's best-effort decode of a data dir name. */
+  exact: boolean
+  mtime: number
+  firstLine: string
+  /** Whole note, lowercased. */
+  searchText: string
+}
+
+/** Every non-empty note (global + per project), for the notes board. */
+export const loadNoteList = (): Effect.Effect<NoteListEntry[], AppError> =>
+  httpJson<{ notes?: NoteListEntry[] }>("/api/note/list").pipe(
+    Effect.map((r) => r.notes ?? [])
+  )
+
 /**
  * Saves the note with an optimistic-concurrency check. Unlike the generic
  * `httpPostJson` helper, a 409 here is a normal outcome (a detected conflict),

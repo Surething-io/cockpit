@@ -1,27 +1,19 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { History } from 'lucide-react';
 import { sessionNumberClass } from '@cockpit/shared-ui';
 import { RecentSessionsModal } from './RecentSessionsModal';
-import { EngineBadge } from './EngineBadge';
-import { SessionNumberBadge, badgeStatus } from './SessionNumberBadge';
 import type { GlobalSessionInfo } from '../shared/sessionDto';
-import { sortSessionsForDisplay } from './sessionOrder';
-import {
-  SessionHoverCard,
-  useSessionHoverCard,
-  formatRelativeTime,
-  statusLabelOf,
-  projectNameOf,
-} from './SessionRowParts';
 
 /** The session rows this panel renders. Field list: shared/sessionDto.ts — the
  *  same declaration the server builds the payload against. */
 export type GlobalSession = GlobalSessionInfo;
 
 interface GlobalSessionMonitorProps {
+  /** Sidebar project order and the active project — the board's group chips. */
+  projectOrder: readonly string[];
   currentCwd?: string;
   onSwitchProject: (cwd: string, sessionId: string) => void;
   onResolveSessionNumbers: () => Promise<Record<string, string>>;
@@ -29,74 +21,38 @@ interface GlobalSessionMonitorProps {
   sessions: GlobalSession[];
 }
 
-export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSessionNumbers, collapsed, sessions }: GlobalSessionMonitorProps) {
+/**
+ * GlobalSessionMonitor — the sidebar "recent sessions" entry: the button with
+ * its live running/unread badges, and the RecentSessionsModal board it opens
+ * (list + transcript preview + search, fed by `sessions` live).
+ */
+export function GlobalSessionMonitor({ projectOrder, currentCwd, onSwitchProject, onResolveSessionNumbers, collapsed, sessions }: GlobalSessionMonitorProps) {
   const { t } = useTranslation();
-  // Done-but-unread first, then running, then the rest (see sessionOrder).
-  const orderedSessions = useMemo(() => sortSessionsForDisplay(sessions), [sessions]);
   const [isOpen, setIsOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [sessionNumbers, setSessionNumbers] = useState<Record<string, string>>({});
   const numberRequestRef = useRef(0);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  // Row anatomy shared with PinnedSessionsPanel — see SessionRowParts.
-  const hover = useSessionHoverCard();
-  const { show: showCard, hide: hideCard } = hover;
 
-  // Drop the hover card whenever the dropdown closes (e.g. outside click / blur)
-  useEffect(() => {
-    if (!isOpen) hideCard();
-  }, [isOpen, hideCard]);
+  const handleOpen = useCallback(() => {
+    setIsOpen(true);
+    const request = ++numberRequestRef.current;
+    setSessionNumbers({});
+    void onResolveSessionNumbers().then((numbers) => {
+      if (numberRequestRef.current === request) setSessionNumbers(numbers);
+    });
+  }, [onResolveSessionNumbers]);
 
-  // Close on outside click (including clicking into an iframe)
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    // Clicking an iframe causes the parent window to lose focus
-    const handleBlur = () => {
-      setIsOpen(false);
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    window.addEventListener('blur', handleBlur);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      window.removeEventListener('blur', handleBlur);
-    };
-  }, [isOpen]);
-
-  // Switch to the specified session (iframe SWITCH_SESSION handler writes state.json status=normal)
-  const handleSessionClick = useCallback((session: GlobalSession) => {
-    onSwitchProject(session.cwd, session.sessionId);
+  const handleClose = useCallback(() => {
     setIsOpen(false);
-  }, [onSwitchProject]);
-
-  const handleToggle = useCallback(() => {
-    const nextOpen = !isOpen;
-    setIsOpen(nextOpen);
-    if (nextOpen) {
-      const request = ++numberRequestRef.current;
-      setSessionNumbers({});
-      void onResolveSessionNumbers().then((numbers) => {
-        if (numberRequestRef.current === request) setSessionNumbers(numbers);
-      });
-    } else {
-      numberRequestRef.current += 1;
-    }
-  }, [isOpen, onResolveSessionNumbers]);
+    numberRequestRef.current += 1;
+  }, []);
 
   const loadingCount = sessions.filter(s => s.status === 'loading').length;
   const unreadCount = sessions.filter(s => s.status === 'unread').length;
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <>
       <button
-        onClick={handleToggle}
+        onClick={handleOpen}
         className={`relative flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-hover transition-colors ${
           collapsed ? 'w-full justify-center' : 'w-full'
         }`}
@@ -128,92 +84,15 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
         )}
       </button>
 
-      {/* Dropdown list - pops up to the upper right */}
-      {isOpen && (
-        <div className="absolute left-full bottom-0 ml-2 w-80 h-[600px] bg-popover border border-border rounded-lg shadow-lv2 z-50 flex flex-col">
-          <div className="px-3 py-2 border-b border-border bg-muted/50 flex-shrink-0 rounded-t-lg flex items-center">
-            <span className="text-sm font-medium">{t('sessions.recentSessions')}</span>
-            {loadingCount > 0 && (
-              <span className="ml-2 text-xs text-orange-11">({t('sessions.runningCount', { count: loadingCount })})</span>
-            )}
-            {unreadCount > 0 && (
-              <span className="ml-2 text-xs text-orange-11">({t('sessions.unreadCount', { count: unreadCount })})</span>
-            )}
-            {/* Expand into the full searchable recent-sessions panel (up to 100) */}
-            <button
-              onClick={() => { setIsOpen(false); setSearchOpen(true); }}
-              className="ml-auto flex items-center gap-1 p-1 -mr-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
-              title={t('sessions.searchRecentSessions')}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-4.35-4.35m2.35-5.4a7.75 7.75 0 1 1-15.5 0 7.75 7.75 0 0 1 15.5 0Z" />
-              </svg>
-              <span className="text-xs">{t('sessions.search')}</span>
-            </button>
-          </div>
-          <div className="flex-1 min-h-0 overflow-y-auto">
-            {orderedSessions.length === 0 ? (
-              <div className="px-3 py-4 text-sm text-muted-foreground text-center">
-                {t('sessions.noSessions')}
-              </div>
-            ) : (
-              orderedSessions.map((session, index) => (
-                <button
-                  key={`${session.cwd}-${session.sessionId}`}
-                  onClick={() => handleSessionClick(session)}
-                  onMouseEnter={(e) => showCard(session, e)}
-                  onMouseLeave={hideCard}
-                  className={`w-full px-3 py-2 text-left hover:bg-hover transition-colors flex items-start gap-2 ${
-                    index !== orderedSessions.length - 1 ? 'border-b border-border/50' : ''
-                  } ${currentCwd === session.cwd ? 'bg-accent/50' : ''}`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <EngineBadge engine={session.engine} />
-                      <span className="font-medium text-sm truncate">
-                        {projectNameOf(session.cwd)}
-                      </span>
-                      <span className="text-xs text-muted-foreground flex-shrink-0">
-                        {formatRelativeTime(t, session.lastActive)}
-                      </span>
-                      {/* Running/done is carried by the round session chip. When its
-                          coordinate is unknown it uses the project-list `·` marker. */}
-                      <SessionNumberBadge
-                        coordinate={sessionNumbers[`${session.cwd}\n${session.sessionId}`]}
-                        status={badgeStatus(session.status)}
-                        statusLabel={statusLabelOf(t, session.status)}
-                        bot={session.bot}
-                        className="ml-auto"
-                      />
-                    </div>
-                    {session.title && (
-                      <div className="text-xs font-medium text-foreground truncate" data-tooltip={session.title}>
-                        {session.title}
-                      </div>
-                    )}
-                    {session.lastUserMessage && (
-                      <div className="text-xs text-foreground/80 truncate">
-                        {session.lastUserMessage}
-                      </div>
-                    )}
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Rich hover card: path + branch + first/last user-message preview */}
-      <SessionHoverCard {...hover} />
-
-      {/* Searchable full recent-sessions panel (up to 100) */}
       <RecentSessionsModal
-        isOpen={searchOpen}
-        onClose={() => setSearchOpen(false)}
+        isOpen={isOpen}
+        onClose={handleClose}
         onSwitchProject={onSwitchProject}
         sessionNumbers={sessionNumbers}
+        projectOrder={projectOrder}
+        currentCwd={currentCwd}
+        liveSessions={sessions}
       />
-    </div>
+    </>
   );
 }

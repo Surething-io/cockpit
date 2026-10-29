@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { AlarmClock } from 'lucide-react';
 import { toast, MODAL_SHELL_CLASS } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
-import { getProjectName, getTaskSummary } from './useScheduledTasks';
+import { getTaskSummary } from './useScheduledTasks';
 import type { ScheduledTask } from './useScheduledTasks';
 import { ScheduleTaskPopover } from './ScheduleTaskPopover';
 import { MdPreviewModal } from './MdPreviewModal';
@@ -14,6 +14,7 @@ import { SessionNumberBadge } from './SessionNumberBadge';
 import { ScheduledTaskPreview } from './ScheduledTaskPreview';
 import { readFileForPreview } from './effect/agentClient';
 import { formatMinutes } from './scheduleDuration';
+import { groupByProject, ProjectGroupHeader } from './SessionRowParts';
 
 interface ScheduledTasksPanelProps {
   collapsed?: boolean;
@@ -22,6 +23,10 @@ interface ScheduledTasksPanelProps {
   /** Live "project.session" coordinates keyed `${cwd}\n${sessionId}`. A task
    *  whose target session has no open tab simply has no coordinate. */
   sessionNumbers?: Record<string, string>;
+  /** Sidebar project order — numbers each group's chip like the project list. */
+  projectOrder: readonly string[];
+  /** Project of the active tab — its group chip is drawn active. */
+  currentCwd?: string;
   onSwitchProject: (cwd: string, sessionId: string) => void;
   onPause: (id: string) => void;
   onResume: (id: string) => void;
@@ -108,8 +113,11 @@ function occurredAt(task: ScheduledTask): number {
 }
 
 /**
- * Split the board into the three lists the left column shows, each sorted by the
- * time that group is actually read by:
+ * Order the board by status — three tiers, each sorted by the time that tier is
+ * actually read by — and return them concatenated. The left column then groups
+ * this list by project in order of first appearance, so a project with a result
+ * waiting to be reviewed floats to the top, and the tiers keep their order
+ * inside each project:
  *
  * - `pendingReview` — anything that has finished and is worth looking at: an
  *   unread result, or a one-off that has run to completion. Unread first, then
@@ -123,9 +131,9 @@ function occurredAt(task: ScheduledTask): number {
  * NOTE: this ordering deliberately overrides the server's `sortIndex`
  * (getTasks sorts by `sortIndex ?? createdAt`, and a `reorder` action exists).
  * Manual ordering has no entry point in this UI and cannot coexist with
- * grouping — the board is status-first now.
+ * grouping — the board is status-ordered, then project-grouped.
  */
-function groupTasks(tasks: ScheduledTask[]) {
+function orderTasks(tasks: ScheduledTask[]): ScheduledTask[] {
   const pendingReview: ScheduledTask[] = [];
   const upcoming: ScheduledTask[] = [];
   const paused: ScheduledTask[] = [];
@@ -141,15 +149,11 @@ function groupTasks(tasks: ScheduledTask[]) {
   const nextFire = (task: ScheduledTask) => task.nextFireTime || Number.MAX_SAFE_INTEGER;
   upcoming.sort((a, b) => nextFire(a) - nextFire(b));
   paused.sort((a, b) => occurredAt(b) - occurredAt(a));
-  return { pendingReview, upcoming, paused };
+  return [...pendingReview, ...upcoming, ...paused];
 }
 
-/** Left-column groups, top to bottom. Order is the board's reading order. */
-const GROUP_ORDER = [
-  { key: 'pendingReview', labelKey: 'scheduledTasks.groupPendingReview' },
-  { key: 'upcoming', labelKey: 'scheduledTasks.groupUpcoming' },
-  { key: 'paused', labelKey: 'scheduledTasks.paused' },
-] as const;
+/** The first tier of orderTasks — what a group header counts as "to review". */
+const isPendingReview = (task: ScheduledTask) => !!task.unread || isFinished(task);
 
 /**
  * ScheduledTasksPanel — the sidebar clock button plus the full-viewport task
@@ -170,6 +174,8 @@ export function ScheduledTasksPanel({
   tasks,
   unreadCount,
   sessionNumbers,
+  projectOrder,
+  currentCwd,
   onSwitchProject,
   onPause,
   onResume,
@@ -211,16 +217,16 @@ export function ScheduledTasksPanel({
   const activeTasks = tasks.filter(t => !isFinished(t));
   const runningCount = activeTasks.filter(t => !t.paused).length;
 
-  const groups = useMemo(() => groupTasks(tasks), [tasks]);
+  const groups = useMemo(() => groupByProject(orderTasks(tasks)), [tasks]);
   const selectedTask = selectedId ? tasks.find(t => t.id === selectedId) ?? null : null;
 
-  // Auto-select the first card in board order — with the "pending review" group
-  // on top, opening the board shows the newest finished run without a click.
+  // Auto-select the first card in board order — with pending-review tasks
+  // ordered first, opening the board shows the newest finished run without a click.
   // Only fills a hole (nothing selected, or the selection was deleted); it never
   // steals a selection the user made.
   useEffect(() => {
     if (!isOpen || selectedTask) return;
-    const first = groups.pendingReview[0] ?? groups.upcoming[0] ?? groups.paused[0];
+    const first = groups[0]?.items[0];
     setSelectedId(first?.id ?? null);
   }, [isOpen, selectedTask, groups]);
 
@@ -475,25 +481,25 @@ export function ScheduledTasksPanel({
         key={task.id}
         onClick={() => setSelectedId(task.id)}
         onMouseLeave={() => setConfirmDeleteId(id => (id === task.id ? null : id))}
-        className={`group p-3 rounded border cursor-pointer transition-all hover:border-brand hover:shadow-lv2 ${
+        className={`group rounded-md px-3 py-2 cursor-pointer transition-colors ${
           isSelected
-            ? 'border-brand bg-brand/5 shadow-lv2'
+            ? 'bg-brand/10'
             : task.unread
-              ? 'border-brand/40 bg-brand/5'
-              : 'border-border'
+              ? 'bg-brand/5 hover:bg-hover'
+              : 'hover:bg-hover'
         } ${isFinished(task) ? 'opacity-70' : ''}`}
       >
-        {/* Project name + engine. Task state is already explicit in the group,
-            status text and result row, so a leading colour dot would duplicate it. */}
+        {/* Engine + status. The project is the group header, so the row no
+            longer repeats it; task state is explicit in the status text and the
+            result row, so a leading colour dot would duplicate it. */}
         <div className="flex items-center gap-1.5 mb-1">
           <EngineBadge engine={getTaskEngine(task)} tooltip={getEngineTooltip(task)} />
-          <h4 className="text-xs font-medium text-foreground truncate flex-1" data-tooltip={task.cwd}>
-            {getProjectName(task.cwd)}
-          </h4>
-          <SessionNumberBadge coordinate={sessionNumbers?.[`${task.cwd}\n${task.sessionId}`]} />
-          <span className="text-[10px] text-muted-foreground flex-shrink-0 group-hover:hidden">
+          {/* Status leads, beside the engine: with the project name gone this
+              line has room, and the right end is reserved for the hover actions. */}
+          <span className="text-[10px] text-muted-foreground flex-1 min-w-0 truncate">
             {getStatusText(task, t)}
           </span>
+          <SessionNumberBadge coordinate={sessionNumbers?.[`${task.cwd}\n${task.sessionId}`]} />
           {renderActions(task)}
         </div>
 
@@ -598,7 +604,7 @@ export function ScheduledTasksPanel({
                 </div>
               ) : (
                 <>
-                  {/* Left: one column of cards, split into the three status groups.
+                  {/* Left: one card per project, tasks in status order inside it.
                       Fixed width because the right pane renders real message bubbles
                       (code blocks, tool calls) and needs the remaining space. Below
                       `md` the preview is dropped and the list takes the full width. */}
@@ -606,18 +612,21 @@ export function ScheduledTasksPanel({
                       scrollport's padding edge as its inset, which left a strip
                       of old cards visible above the group label while scrolling. */}
                   <div className="w-full md:w-[360px] min-h-0 flex-shrink-0 md:border-r border-border overflow-y-auto">
-                    <div className="p-3 space-y-4">
-                      {GROUP_ORDER.map(({ key, labelKey }) => {
-                        const groupItems = groups[key];
-                        // Empty groups render nothing at all — no header, no gap.
-                        if (groupItems.length === 0) return null;
+                    <div className="p-3 space-y-3">
+                      {groups.map((group) => {
+                        const pending = group.items.filter(isPendingReview).length;
                         return (
-                          <div key={key}>
-                            <div className="sticky top-0 z-10 -mx-3 px-3 py-1 bg-card text-[11px] font-medium text-muted-foreground">
-                              {t(labelKey)} ({groupItems.length})
-                            </div>
-                            <div className="mt-1 space-y-2">
-                              {groupItems.map((task) => renderCard(task))}
+                          /* One card per project. No overflow-hidden here: it would
+                             make the card the sticky header's scroll container. */
+                          <div key={group.cwd} className="rounded-lg border border-border">
+                            <ProjectGroupHeader cwd={group.cwd} projectOrder={projectOrder} currentCwd={currentCwd}>
+                              {pending > 0 && (
+                                <span className="text-orange-11">· {t('scheduledTasks.pendingCount', { count: pending })}</span>
+                              )}
+                              <span className="ml-auto tabular-nums text-foreground-subtle">{group.items.length}</span>
+                            </ProjectGroupHeader>
+                            <div className="p-1 space-y-0.5">
+                              {group.items.map((task) => renderCard(task))}
                             </div>
                           </div>
                         );

@@ -38,7 +38,12 @@ export { MobileApp } from './mobile/MobileApp';
 export { PinnedSessionsPanel } from './PinnedSessionsPanel';
 export { ScheduledTasksPanel } from './ScheduledTasksPanel';
 export { GlobalSessionMonitor, type GlobalSession } from './GlobalSessionMonitor';
-export { SessionNumberBadge } from './SessionNumberBadge';
+export { SessionNumberBadge, badgeStatus } from './SessionNumberBadge';
+// Session-board parts reused by the Bots board (feature-workspace): its
+// "sessions" tab lists the runs a Bot dispatched, with the same rows + preview.
+export { SessionTranscriptPreview } from './SessionTranscriptPreview';
+export { formatRelativeTime, statusLabelOf } from './SessionRowParts';
+export { sortSessionsForDisplay } from './sessionOrder';
 export { SessionCompleteToastContainer, showSessionCompleteToast } from './SessionCompleteToast';
 
 // Chat ancillary UI
@@ -50,7 +55,7 @@ export { getSlashCommands, slashCommands, getMarkdown, type SlashCommand } from 
 export { buildResumeCommand } from './resumeCommand';
 
 // Engine queries the app integrator needs (workspace seeds a new ollama tab with this)
-export { loadOllamaDefaultModel } from './effect/agentClient';
+export { loadOllamaDefaultModel, loadRecentSessions, type RecentSessionInfo } from './effect/agentClient';
 
 // Context
 export { ChatProvider, useChatContext, useChatContextOptional } from './ChatContext';

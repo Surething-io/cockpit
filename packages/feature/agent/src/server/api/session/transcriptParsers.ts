@@ -175,7 +175,6 @@ export async function parseTranscriptFile(
   /** Index of the first returned turn — the cursor a further scroll-up pages before. */
   startTurnIndex: number;
 }> {
-  const { limit, beforeTurnIndex, fromTurnIndex } = page;
   const rl = openTranscriptLines(filePath);
 
   const rawMessages: TranscriptMessage[] = [];
@@ -244,36 +243,42 @@ export async function parseTranscriptFile(
   // answer on every page of a paginated read (this parse always walks the whole file).
   const bot = detectBotName(userTextMessages[0]);
 
+  return { ...pageTurns(allMessages, page), title, bot, usage: lastUsage };
+}
+
+/**
+ * Cut one page of turns out of a fully converted session — the slice every
+ * engine's transcript is served in, so a paginated read means the same thing
+ * whichever parser produced the messages.
+ *
+ * No `limit` and no `fromTurnIndex` returns everything. Otherwise `limit` turns
+ * going back from `beforeTurnIndex` (default: the end), unless `fromTurnIndex`
+ * pins the start outright.
+ */
+export function pageTurns(
+  allMessages: ChatMessage[],
+  page: TurnPage = {}
+): { messages: ChatMessage[]; totalTurns: number; hasMore: boolean; startTurnIndex: number } {
+  const { limit, beforeTurnIndex, fromTurnIndex } = page;
   const turns = splitTurns(allMessages);
   const totalTurns = turns.length;
 
-  // If there are no pagination params, return all messages
   if (limit === undefined && fromTurnIndex === undefined) {
-    return {
-      messages: allMessages,
-      title,
-      bot,
-      usage: lastUsage,
-      totalTurns,
-      hasMore: false,
-      startTurnIndex: 0,
-    };
+    return { messages: allMessages, totalTurns, hasMore: false, startTurnIndex: 0 };
   }
 
-  // Pagination logic: take `limit` turns going back from beforeTurnIndex, unless
-  // fromTurnIndex pins the start outright.
   const endIndex = beforeTurnIndex !== undefined ? beforeTurnIndex : totalTurns;
   const startIndex =
     fromTurnIndex !== undefined
       ? Math.min(Math.max(0, fromTurnIndex), endIndex)
       : Math.max(0, endIndex - (limit as number));
-  const hasMore = startIndex > 0;
 
-  // Extract the specified range of turns and flatten into a message array
-  const selectedTurns = turns.slice(startIndex, endIndex);
-  const messages = selectedTurns.flat();
-
-  return { messages, title, bot, usage: lastUsage, totalTurns, hasMore, startTurnIndex: startIndex };
+  return {
+    messages: turns.slice(startIndex, endIndex).flat(),
+    totalTurns,
+    hasMore: startIndex > 0,
+    startTurnIndex: startIndex,
+  };
 }
 
 /**
@@ -325,9 +330,8 @@ export async function parseUserMessageIndex(
   filePath: TranscriptSource,
   engine: string
 ): Promise<{ entries: UserMessageIndexEntry[]; totalTurns: number; title: string }> {
-  // Codex rollouts have no pagination (parseCodexTranscriptFile takes no limit),
-  // so their turnIndex is only ever informational — the client already holds the
-  // whole session. Producing it anyway keeps one shape across all engines.
+  // Codex rollouts are paged the same way (session-by-path runs the parsed
+  // messages through pageTurns), so turnIndex is a real cursor for every engine.
   const parsed =
     engine === 'codex'
       ? await parseCodexTranscriptFile(filePath)

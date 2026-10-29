@@ -2,11 +2,19 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { SquareTerminal } from 'lucide-react';
-import { toast, ProjectNumberChip } from '@cockpit/shared-ui';
+import { SquareTerminal, ScrollText, X } from 'lucide-react';
+import { Effect } from 'effect';
+import { toast, ProjectNumberChip, MODAL_SHELL_CLASS } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { useRunningTerminals } from './useRunningTerminals';
-import { interruptRunningTerminal, type RunningTerminal } from './effect/consoleClient';
+import {
+  interruptRunningTerminal,
+  registerRunningCommand,
+  unregisterRunningCommand,
+  type RunningTerminal,
+} from './effect/consoleClient';
+import { ShortIdBadge } from './ShortIdBadge';
+import { TerminalPreview } from './TerminalPreview';
 
 /** A stop that has not produced an exit by then is reported as failed. */
 const STOP_TIMEOUT_MS = 3000;
@@ -42,9 +50,20 @@ function subdir(cwd: string, projectCwd: string): string {
   return cwd.startsWith(projectCwd + '/') ? cwd.slice(projectCwd.length + 1) : cwd;
 }
 
+/** Second line of a row / the preview header: the command when a title is
+ *  showing in the first line, plus the sub-directory it runs in. */
+function detailOf(term: RunningTerminal): string {
+  const dir = subdir(term.cwd, term.projectCwd);
+  const cmd = term.title ? term.command.split('\n')[0] : '';
+  return [cmd, dir].filter(Boolean).join(' · ');
+}
+
 /**
  * Sidebar row + board listing every live terminal bubble across projects.
- * Sits under the scheduled-tasks row and shares its board shell.
+ * Sits under the scheduled-tasks row and shares its board shell and split:
+ * grouped list on the left, the selected terminal's live output on the right
+ * (TerminalPreview, read-only). Click selects, double-click / Enter / the
+ * preview's button jumps to the bubble.
  */
 export function RunningTerminalsPanel({ collapsed, currentCwd, projectOrder, onFocusTerminal }: RunningTerminalsPanelProps) {
   const { t } = useTranslation();
@@ -85,7 +104,17 @@ export function RunningTerminalsPanel({ collapsed, currentCwd, projectOrder, onF
   const closeBoard = useCallback(() => {
     setIsOpen(false);
     setConfirmStopId(null);
+    setSelectedId(null);
   }, []);
+
+  // Auto-select the first row so the board opens on a live preview. Only fills
+  // a hole (nothing selected, or the selected terminal exited and left the
+  // list); never steals a selection the user made.
+  const selected = selectedId ? flat.find((term) => term.commandId === selectedId) ?? null : null;
+  useEffect(() => {
+    if (!isOpen || selected) return;
+    setSelectedId(flat[0]?.commandId ?? null);
+  }, [isOpen, selected, flat]);
 
   const openBoard = useCallback(() => {
     refresh();
@@ -152,17 +181,23 @@ export function RunningTerminalsPanel({ collapsed, currentCwd, projectOrder, onF
     });
   }, [refresh, t]);
 
-  // Keyboard: ↑/↓ select, Enter jump (or confirm an armed stop),
+  // Keyboard: ↑/↓ select, Enter open (or confirm an armed stop),
   // Delete/Backspace arm stop, Esc disarm first, then close.
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      // Keys typed while the preview's xterm has focus belong to it: the
+      // terminal takes input (a PTY preview is interactive), so Backspace must
+      // not arm a stop on the row — and Esc must reach vim and friends rather
+      // than close the board. Click outside the terminal first to use the keys.
+      const inTerminal = !!(e.target as HTMLElement | null)?.closest?.('.xterm');
+      if (e.key === 'Escape' && !inTerminal) {
         e.preventDefault();
         if (confirmStopId) setConfirmStopId(null);
         else closeBoard();
         return;
       }
+      if (inTerminal) return;
       if (flat.length === 0) return;
       const index = flat.findIndex((term) => term.commandId === selectedId);
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -173,15 +208,15 @@ export function RunningTerminalsPanel({ collapsed, currentCwd, projectOrder, onF
         setConfirmStopId(null);
         return;
       }
-      const selected = index >= 0 ? flat[index] : null;
-      if (!selected) return;
+      const current = index >= 0 ? flat[index] : null;
+      if (!current) return;
       if (e.key === 'Enter') {
         e.preventDefault();
-        if (confirmStopId === selected.commandId) stopTerminal(selected);
-        else focusTerminal(selected);
+        if (confirmStopId === current.commandId) stopTerminal(current);
+        else focusTerminal(current);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        if (!stoppingIds.has(selected.commandId)) setConfirmStopId(selected.commandId);
+        if (!stoppingIds.has(current.commandId)) setConfirmStopId(current.commandId);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -191,26 +226,65 @@ export function RunningTerminalsPanel({ collapsed, currentCwd, projectOrder, onF
   const renderRow = (term: RunningTerminal) => {
     const stopping = stoppingIds.has(term.commandId);
     const confirming = confirmStopId === term.commandId;
-    const dir = subdir(term.cwd, term.projectCwd);
+    const detail = detailOf(term);
     const label = term.title || term.command.split('\n')[0];
     return (
       <div
         key={term.commandId}
         data-running-terminal={term.commandId}
-        onClick={() => { if (!stopping) focusTerminal(term); }}
-        onMouseEnter={() => setSelectedId(term.commandId)}
-        title={`${term.command}\npid ${term.pid}`}
-        className={`group rounded-md px-3 py-2 transition-colors ${
-          stopping ? 'opacity-50 cursor-default' : 'cursor-pointer'
+        onClick={() => setSelectedId(term.commandId)}
+        onDoubleClick={() => { if (!stopping) focusTerminal(term); }}
+        className={`group rounded-md px-3 py-2 transition-colors cursor-pointer ${
+          stopping ? 'opacity-50' : ''
         } ${
-          // No per-row border: the selected (hover or ↑/↓) row is the only one with a wash.
-          !stopping && selectedId === term.commandId ? 'bg-hover' : ''
+          // No per-row border: the selected (click or ↑/↓) row carries the brand
+          // wash that marks what the preview is showing; hover gets a lighter one.
+          selectedId === term.commandId ? 'bg-brand/10' : 'hover:bg-hover'
         }`}
       >
         <div className="flex items-center gap-2 min-w-0">
-          <span className="flex-shrink-0 font-mono text-[10px] px-1 rounded bg-muted text-muted-foreground">{term.shortId}</span>
-          <span className="flex-1 min-w-0 truncate text-sm font-mono text-foreground">{label}</span>
-          {term.usePty && <span className="flex-shrink-0 text-[10px] text-foreground-subtle">PTY</span>}
+          {/* Mode first: an interactive PTY vs an output-only pipe. The icon
+              is the whole label; the tooltip spells it out. */}
+          <span
+            className="flex-shrink-0 text-muted-foreground"
+            title={t(term.usePty ? 'runningTerminals.modePty' : 'runningTerminals.modePipe')}
+            aria-label={t(term.usePty ? 'runningTerminals.modePty' : 'runningTerminals.modePipe')}
+          >
+            {term.usePty ? <SquareTerminal className="w-3.5 h-3.5" /> : <ScrollText className="w-3.5 h-3.5" />}
+          </span>
+          {/* The Console bubble's own badge, so a click does what it does there:
+              register the terminal for `cockpit terminal <id>` and copy that
+              command; click again to disconnect. No title chip — no fullId —
+              titles are edited on the bubble. Stops propagation itself, so the
+              click does not also select the row. */}
+          <ShortIdBadge
+            shortId={term.shortId}
+            type="terminal"
+            onRegister={() => {
+              BrowserRuntime.runFork(
+                registerRunningCommand({
+                  tabId: term.tabId,
+                  commandId: term.commandId,
+                  command: term.command,
+                  projectCwd: term.projectCwd,
+                }).pipe(Effect.orElse(() => Effect.void))
+              );
+            }}
+            onUnregister={() => {
+              BrowserRuntime.runFork(
+                unregisterRunningCommand({ commandId: term.commandId }).pipe(Effect.orElse(() => Effect.void))
+              );
+            }}
+          />
+          {/* The app's tooltip (instant, wraps, keeps newlines of a multi-line
+              command), on the text itself rather than the whole row — the row
+              also hosts the short-id badge and stop button, which have their own. */}
+          <span
+            className="flex-1 min-w-0 truncate text-sm font-mono text-foreground"
+            data-tooltip={`${term.command}\npid ${term.pid}`}
+          >
+            {label}
+          </span>
           <span className="flex-shrink-0 text-xs tabular-nums text-muted-foreground">
             {formatDuration(now - new Date(term.timestamp).getTime())}
           </span>
@@ -219,16 +293,21 @@ export function RunningTerminalsPanel({ collapsed, currentCwd, projectOrder, onF
           ) : confirming ? null : (
             <button
               onClick={(e) => { e.stopPropagation(); setConfirmStopId(term.commandId); }}
-              className="flex-shrink-0 px-1.5 py-0.5 text-xs rounded text-muted-foreground hover:text-destructive hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
+              onDoubleClick={(e) => e.stopPropagation()}
+              className="flex-shrink-0 p-0.5 rounded text-muted-foreground hover:text-destructive hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
+              title={t('runningTerminals.stop')}
+              aria-label={t('runningTerminals.stop')}
             >
-              {t('runningTerminals.stop')}
+              <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
-        {(dir || term.title) && !confirming && (
-          <div className="mt-0.5 pl-9 text-xs text-muted-foreground truncate font-mono">
-            {term.title ? term.command.split('\n')[0] : dir}
-            {term.title && dir ? ` · ${dir}` : ''}
+        {detail && !confirming && (
+          <div
+            className="mt-0.5 pl-[22px] text-xs text-muted-foreground truncate font-mono"
+            data-tooltip={[term.title ? term.command : '', term.cwd].filter(Boolean).join('\n')}
+          >
+            {detail}
           </div>
         )}
         {confirming && (
@@ -279,10 +358,7 @@ export function RunningTerminalsPanel({ collapsed, currentCwd, projectOrder, onF
       {isOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center">
           <div className="absolute inset-0 bg-scrim" onClick={closeBoard} />
-          <div
-            className="relative w-[min(calc(100vw-2rem),max(42rem,60vw))] max-w-6xl h-[70vh] mx-4 bg-card rounded-lg shadow-lv3 flex flex-col overflow-hidden"
-            data-testid="running-terminals-board"
-          >
+          <div className={MODAL_SHELL_CLASS} data-testid="running-terminals-board">
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <div className="flex items-center gap-3 min-w-0">
                 <h2 className="text-sm font-medium text-foreground">{t('runningTerminals.title')}</h2>
@@ -302,26 +378,47 @@ export function RunningTerminalsPanel({ collapsed, currentCwd, projectOrder, onF
                 {t('runningTerminals.empty')}
               </div>
             ) : (
-              /* Padding stays off the scroll node so the sticky group header
-                 does not leave a strip of rows visible above it. */
-              <div className="flex-1 min-h-0 overflow-y-auto">
-                <div className="p-3 space-y-3">
-                  {groups.map((group) => (
-                    /* One card per project. No overflow-hidden here: it would make
-                       the card the sticky header's scroll container. */
-                    <div key={group.cwd} className="rounded-lg border border-border">
-                      <div className="sticky top-0 z-10 px-3 py-1.5 bg-card rounded-t-lg border-b border-border/60 text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
-                        {group.number > 0 && (
-                          <ProjectNumberChip number={group.number} isActive={group.cwd === currentCwd} />
-                        )}
-                        <span className="truncate" title={group.cwd}>{projectName(group.cwd)}</span>
-                        {group.cwd === currentCwd && (
-                          <span className="text-foreground-subtle">· {t('runningTerminals.currentProject')}</span>
-                        )}
+              <div className="flex-1 flex min-h-0">
+                {/* Left: grouped list. Fixed width so the preview gets the rest;
+                    below `md` the preview is dropped and the list is full width.
+                    Padding stays off the scroll node so the sticky group header
+                    does not leave a strip of rows visible above it. */}
+                <div className="w-full md:w-[360px] min-h-0 flex-shrink-0 md:border-r border-border overflow-y-auto">
+                  <div className="p-3 space-y-3">
+                    {groups.map((group) => (
+                      /* One card per project. No overflow-hidden here: it would make
+                         the card the sticky header's scroll container. */
+                      <div key={group.cwd} className="rounded-lg border border-border">
+                        <div className="sticky top-0 z-10 px-3 py-1.5 bg-card rounded-t-lg border-b border-border/60 text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+                          {group.number > 0 && (
+                            <ProjectNumberChip number={group.number} isActive={group.cwd === currentCwd} />
+                          )}
+                          <span className="truncate" data-tooltip={group.cwd}>{projectName(group.cwd)}</span>
+                          {group.cwd === currentCwd && (
+                            <span className="text-foreground-subtle">· {t('runningTerminals.currentProject')}</span>
+                          )}
+                        </div>
+                        <div className="p-1 space-y-0.5">{group.items.map(renderRow)}</div>
                       </div>
-                      <div className="p-1 space-y-0.5">{group.items.map(renderRow)}</div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Right: the selected terminal's live output */}
+                <div className="hidden md:flex flex-1 min-w-0">
+                  {selected ? (
+                    <TerminalPreview
+                      // Remount per command: the xterm buffer and its socket belong to one.
+                      key={selected.commandId}
+                      terminal={selected}
+                      subtitle={[projectName(selected.projectCwd), detailOf(selected)].filter(Boolean).join(' · ')}
+                      onOpenTerminal={() => focusTerminal(selected)}
+                    />
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">
+                      {t('runningTerminals.selectHint')}
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
             )}

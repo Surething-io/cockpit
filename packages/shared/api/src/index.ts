@@ -40,9 +40,15 @@ export {
 export { notifySkillsChanged, onSkillsChanged } from './skillsBus';
 export {
   loadSkillsList,
+  loadBuiltinSkills,
   addSkill,
   deleteSkill,
   loadSkillContent,
+  loadDirFiles,
+  loadDirFile,
+  type DirFilesEndpoint,
+  type DirFileLite,
+  type DirFileContent,
   type SkillInfoLite,
   type SkillPreviewLite,
   type AddSkillResult,

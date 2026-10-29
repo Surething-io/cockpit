@@ -1,16 +1,17 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Joystick } from 'lucide-react';
-import { toast, MODAL_SHELL_CLASS, MODAL_CARD_GRID_CLASS } from '@cockpit/shared-ui';
+import { toast, MODAL_SHELL_CLASS } from '@cockpit/shared-ui';
 import {
   loadSkillsList,
+  loadBuiltinSkills,
   addSkill,
   deleteSkill,
   notifySkillsChanged,
 } from '@cockpit/shared-api';
-import { SkillPreviewModal } from './SkillPreviewModal';
+import { SkillPreviewPane } from './SkillPreviewPane';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 
 export interface SkillInfo {
@@ -29,6 +30,23 @@ interface SkillsModalProps {
   onClose: () => void;
 }
 
+const BUILTIN_GROUP = 'builtin';
+
+/** The folder a skill was registered from: its path minus `<skill>/SKILL.md`. */
+const sourceDirOf = (path: string) => path.split('/').slice(0, -2).join('/') || '/';
+
+/** Home directory shown as `~`, as a shell would. */
+const tildify = (path: string) => path.replace(/^\/(?:Users|home)\/[^/]+(?=\/|$)/, '~');
+
+/**
+ * SkillsModal — the skills board: every skill on the left, grouped by the
+ * folder it was registered from (largest group first) with the builtin skills
+ * last, and the selected skill's SKILL.md on the right (SkillPreviewPane).
+ *
+ * Builtins ship with the package: read-only, no delete. Their ids are
+ * `builtin:<cmd>` (server lib/builtinSkillsList), which the content route
+ * accepts and the delete route never sees.
+ */
 export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
   const { t, i18n } = useTranslation();
   const [skills, setSkills] = useState<SkillInfo[]>([]);
@@ -37,7 +55,10 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
   const [showAdd, setShowAdd] = useState(false);
   const [addPath, setAddPath] = useState('');
   const [adding, setAdding] = useState(false);
-  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [builtins, setBuiltins] = useState<SkillInfo[]>([]);
+  // Which skill the right-hand pane shows.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(async () => {
@@ -48,10 +69,16 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
     } else {
       console.error('Failed to load skills', exit.cause);
     }
+    const builtinExit = await BrowserRuntime.runPromiseExit(loadBuiltinSkills<SkillInfo>());
+    if (builtinExit._tag === 'Success') setBuiltins(builtinExit.value as SkillInfo[]);
     setLoading(false);
   }, []);
 
   useEffect(() => {
+    if (!isOpen) {
+      setSelectedId(null);
+      setConfirmDeleteId(null);
+    }
     if (isOpen) {
       reload();
       // Focus and select the retained keyword so typing replaces it
@@ -67,8 +94,6 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
     if (!isOpen) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        // If a sub-modal is open, let it handle ESC itself
-        if (previewId) return;
         if (showAdd) {
           setShowAdd(false);
           setAddPath('');
@@ -79,18 +104,44 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [isOpen, onClose, showAdd, previewId]);
+  }, [isOpen, onClose, showAdd]);
 
-  const filtered = useMemo(() => {
+  const matches = useCallback((s: SkillInfo) => {
     const q = query.trim().toLowerCase();
-    if (!q) return skills;
-    return skills.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q) ||
-        s.path.toLowerCase().includes(q)
-    );
-  }, [skills, query]);
+    return !q ||
+      s.name.toLowerCase().includes(q) ||
+      s.description.toLowerCase().includes(q) ||
+      s.path.toLowerCase().includes(q);
+  }, [query]);
+
+  // Registered skills by source folder, largest folder first (then by path);
+  // names sorted inside a folder; builtins as the last group.
+  const groups = useMemo(() => {
+    const byDir = new Map<string, SkillInfo[]>();
+    for (const s of skills) {
+      if (!matches(s)) continue;
+      const dir = sourceDirOf(s.path);
+      const list = byDir.get(dir);
+      if (list) list.push(s);
+      else byDir.set(dir, [s]);
+    }
+    const out = [...byDir.entries()]
+      .sort(([a, x], [b, y]) => y.length - x.length || a.localeCompare(b))
+      .map(([dir, items]) => ({ key: dir, items: [...items].sort((x, y) => x.name.localeCompare(y.name)) }));
+    const visibleBuiltins = builtins.filter(matches);
+    if (visibleBuiltins.length > 0) out.push({ key: BUILTIN_GROUP, items: visibleBuiltins });
+    return out;
+  }, [skills, builtins, matches]);
+
+  const flat = useMemo(() => groups.flatMap((g) => g.items), [groups]);
+  const selected = selectedId ? [...skills, ...builtins].find((s) => s.id === selectedId) ?? null : null;
+
+  // Auto-select the first row so the board opens on a SKILL.md. Only fills a
+  // hole (nothing selected, or the selection was deleted).
+  useEffect(() => {
+    if (!isOpen || selected) return;
+    setSelectedId(flat[0]?.id ?? null);
+  }, [isOpen, selected, flat]);
   const docsUrl = i18n.resolvedLanguage?.startsWith('zh')
     ? 'https://opencockpit.dev/zh/docs/agent/skills/'
     : 'https://opencockpit.dev/en/docs/agent/skills/';
@@ -128,15 +179,6 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
     },
     [t]
   );
-
-  const handleCopyPath = useCallback(async (path: string) => {
-    try {
-      await navigator.clipboard.writeText(path);
-      toast(t('common.copiedPath'), 'success');
-    } catch {
-      toast(t('common.copyFailed'), 'error');
-    }
-  }, [t]);
 
   if (!isOpen) return null;
 
@@ -195,14 +237,18 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
             </div>
           </div>
 
-          {/* List */}
-          <div className="flex-1 overflow-y-auto p-4">
-            {loading ? (
-              <div className="text-center text-muted-foreground py-8 text-sm">{t('common.loading')}</div>
-            ) : filtered.length === 0 ? (
-              <div className="text-center text-muted-foreground py-8 text-sm space-y-2">
-                {skills.length === 0 ? (
-                  <>
+          {/* Body — grouped list on the left, the selected SKILL.md on the right */}
+          {loading && skills.length === 0 && builtins.length === 0 ? (
+            <div className="flex-1 text-center text-muted-foreground py-8 text-sm">{t('common.loading')}</div>
+          ) : (
+            <div className="flex-1 flex min-h-0">
+              {/* Left. Padding stays off the scroll node so the sticky group
+                  header does not leave a strip of rows visible above it. */}
+              <div className="w-full md:w-[340px] min-h-0 flex-shrink-0 md:border-r border-border overflow-y-auto">
+                {skills.length === 0 && (
+                  // No skill of the user's own yet: the old empty state, above
+                  // the builtins so it is still the first thing read.
+                  <div className="text-center text-muted-foreground px-4 pt-6 pb-2 text-xs space-y-2">
                     <p>{t('skills.emptyNoSkills')}</p>
                     <p>
                       {t('skills.emptyIntroPrefix')}{' '}
@@ -210,40 +256,97 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
                       {' '}{t('skills.emptyIntroSuffix')}
                     </p>
                     <p>
-                      <button
-                        type="button"
-                        onClick={() => setShowAdd(true)}
-                        className="text-brand hover:underline"
-                      >
+                      <button type="button" onClick={() => setShowAdd(true)} className="text-brand hover:underline">
                         {t('skills.addSkill')}
                       </button>
                       {' · '}
-                      <a
-                        href={docsUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-brand hover:underline"
-                      >
+                      <a href={docsUrl} target="_blank" rel="noreferrer" className="text-brand hover:underline">
                         {t('skills.viewDocs')}
                       </a>
                     </p>
-                  </>
-                ) : t('skills.emptyNoMatch')}
+                  </div>
+                )}
+                <div className="p-3 space-y-3">
+                  {groups.length === 0 && query ? (
+                    <div className="text-center text-muted-foreground py-6 text-xs">{t('skills.emptyNoMatch')}</div>
+                  ) : (
+                    groups.map((group) => (
+                      /* One card per group. No overflow-hidden here: it would
+                         make the card the sticky header's scroll container. */
+                      <div key={group.key} className="rounded-lg border border-border">
+                        <div
+                          className="sticky top-0 z-10 px-3 py-1.5 bg-card rounded-t-lg border-b border-border/60 text-[11px] font-medium text-muted-foreground flex items-center gap-1.5"
+                          data-tooltip={group.key === BUILTIN_GROUP ? undefined : group.key}
+                        >
+                          <span className="truncate font-mono">
+                            {group.key === BUILTIN_GROUP ? t('skills.builtinGroup') : tildify(group.key)}
+                          </span>
+                          <span className="ml-auto tabular-nums text-foreground-subtle">{group.items.length}</span>
+                        </div>
+                        <div className="p-1 space-y-0.5">
+                          {group.items.map((skill) => (
+                            <SkillRow
+                              key={skill.id}
+                              skill={skill}
+                              selected={skill.id === selectedId}
+                              onSelect={() => { setSelectedId(skill.id); setConfirmDeleteId(null); }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
-            ) : (
-              <div className={MODAL_CARD_GRID_CLASS}>
-                {filtered.map((skill) => (
-                  <SkillCard
-                    key={skill.id}
-                    skill={skill}
-                    onPreview={() => setPreviewId(skill.id)}
-                    onDelete={() => handleDelete(skill.id)}
-                    onCopyPath={() => handleCopyPath(skill.path)}
+
+              {/* Right: the selected skill */}
+              <div className="hidden md:flex flex-1 min-w-0">
+                {selected ? (
+                  <SkillPreviewPane
+                    // Remount per skill: content and the preview/source mode reset.
+                    key={selected.id}
+                    skillId={selected.id}
+                    name={selected.name}
+                    onClose={onClose}
+                    actions={
+                      selected.id.startsWith('builtin:') ? (
+                        <span className="text-[11px] text-foreground-subtle flex-shrink-0">{t('skills.builtinReadOnly')}</span>
+                      ) : confirmDeleteId === selected.id ? (
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            onClick={() => { setConfirmDeleteId(null); handleDelete(selected.id); }}
+                            className="px-2 py-1 text-xs rounded bg-red-9 text-white hover:bg-red-10"
+                          >
+                            {t('common.confirm')}
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="px-2 py-1 text-xs rounded border border-border text-muted-foreground hover:text-foreground"
+                          >
+                            {t('common.cancel')}
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmDeleteId(selected.id)}
+                          className="p-1.5 text-muted-foreground hover:text-red-11 hover:bg-red-9/10 rounded transition-colors flex-shrink-0"
+                          title={t('common.delete')}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
+                          </svg>
+                        </button>
+                      )
+                    }
                   />
-                ))}
+                ) : (
+                  <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">
+                    {t('skills.selectHint')}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -298,153 +401,51 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
         </div>
       )}
 
-      {/* Preview modal */}
-      {previewId && (
-        <SkillPreviewModal
-          skillId={previewId}
-          onClose={() => setPreviewId(null)}
-        />
-      )}
     </>
   );
 }
 
 // ============================================
-// Card
+// Row
 // ============================================
 
-interface SkillCardProps {
+interface SkillRowProps {
   skill: SkillInfo;
-  onPreview: () => void;
-  onDelete: () => void;
-  onCopyPath: () => void;
+  selected: boolean;
+  onSelect: () => void;
 }
 
-/**
- * Fixed-height card: the grid reads as a grid only if a wordy description can't
- * make one cell taller than its neighbours. Path and description are clamped,
- * the argument hint is pinned to the bottom, and the full text is recovered on
- * hover through the global `data-tooltip` popover (which wraps + preserves
- * newlines, so nothing is lost). The whole card is the preview affordance —
- * there is no separate eye button.
- */
-function SkillCard({ skill, onPreview, onDelete, onCopyPath }: SkillCardProps) {
+/** One list row: icon, `/name`, an invalid badge, and the description's first line. */
+function SkillRow({ skill, selected, onSelect }: SkillRowProps) {
   const { t } = useTranslation();
-  const [confirmDel, setConfirmDel] = useState(false);
-
-  const stop = (e: MouseEvent) => e.stopPropagation();
-
   return (
     <div
-      onClick={skill.valid ? onPreview : undefined}
-      role={skill.valid ? 'button' : undefined}
-      tabIndex={skill.valid ? 0 : undefined}
-      onKeyDown={(e) => {
-        if (!skill.valid) return;
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onPreview();
-        }
-      }}
-      className={`group flex flex-col h-56 border border-border rounded-lg p-3 hover:border-brand hover:shadow-lv2 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-        skill.valid ? 'cursor-pointer' : 'opacity-60'
-      }`}
+      onClick={onSelect}
+      className={`rounded-md px-2 py-2 cursor-pointer transition-colors ${
+        selected ? 'bg-brand/10' : 'hover:bg-hover'
+      } ${skill.valid ? '' : 'opacity-60'}`}
     >
-      {/* Header: icon + name + badge + actions */}
-      <div className="flex items-center gap-2.5 flex-shrink-0">
-        <div className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-md bg-brand/10 text-brand text-lg">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="w-5 h-5 flex-shrink-0 flex items-center justify-center rounded bg-brand/10 text-brand text-xs">
           {skill.icon ? (
             <span>{skill.icon}</span>
           ) : (
             /* Fallback when SKILL.md declares no emoji. Must match the sidebar's
                Skills entry — a star here would say "favourite", which is what
                that mark means everywhere else in the app. */
-            <Joystick className="w-5 h-5" />
+            <Joystick className="w-3.5 h-3.5" />
           )}
-        </div>
-        <span className="font-mono text-sm font-medium text-foreground truncate flex-1 min-w-0" data-tooltip={`/${skill.name}`}>
-          /{skill.name}
         </span>
+        <span className="font-mono text-xs font-medium text-foreground truncate flex-1 min-w-0">/{skill.name}</span>
         {!skill.valid && (
-          <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-red-9/15 text-red-11">
+          <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-red-9/15 text-red-11">
             {t('skills.invalid')}
           </span>
         )}
-        {/* Actions — appear on hover */}
-        <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-          {confirmDel ? (
-            <>
-              <button
-                onClick={(e) => {
-                  stop(e);
-                  setConfirmDel(false);
-                  onDelete();
-                }}
-                className="px-2 py-1 text-xs rounded bg-red-9 text-white hover:bg-red-10"
-              >
-                {t('common.confirm')}
-              </button>
-              <button
-                onClick={(e) => {
-                  stop(e);
-                  setConfirmDel(false);
-                }}
-                className="px-2 py-1 text-xs rounded border border-border text-muted-foreground hover:text-foreground"
-              >
-                {t('common.cancel')}
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={(e) => {
-                stop(e);
-                setConfirmDel(true);
-              }}
-              className="p-1.5 text-muted-foreground hover:text-red-11 hover:bg-red-9/10 rounded transition-colors"
-              title={t('common.delete')}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
-              </svg>
-            </button>
-          )}
-        </div>
       </div>
-
-      {/* Path — clamped to two lines; full value on hover and via the copy icon. */}
-      <div
-        className="font-mono text-xs text-muted-foreground mt-2 flex-shrink-0 break-all line-clamp-2"
-        data-tooltip={skill.path}
-      >
-        {skill.path}
-        <button
-          onClick={(e) => {
-            stop(e);
-            onCopyPath();
-          }}
-          className="inline-flex align-middle ml-1 p-0.5 hover:text-foreground hover:bg-hover rounded transition-colors"
-          title={t('skills.copyPath')}
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Description — clamped; hover shows it in full. */}
-      <p
-        className="text-sm text-muted-foreground mt-2 pt-2 border-t border-border/60 break-words line-clamp-4"
-        data-tooltip={skill.description || undefined}
-      >
+      <div className="text-xs text-muted-foreground truncate mt-0.5 pl-7" data-tooltip={skill.description || undefined}>
         {skill.description || <span className="italic opacity-60">{t('skills.noDescription')}</span>}
-      </p>
-
-      {/* Argument hint — pinned to the bottom so cards line up. */}
-      {skill.argumentHint && (
-        <div className="font-mono text-xs text-muted-foreground mt-auto pt-1 truncate flex-shrink-0" data-tooltip={skill.argumentHint}>
-          {skill.argumentHint}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

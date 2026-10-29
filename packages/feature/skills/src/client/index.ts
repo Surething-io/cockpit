@@ -6,3 +6,4 @@
 // import them from there, not through this barrel.
 export { SkillsModal, type SkillInfo } from './SkillsModal';
 export { SkillPreviewModal } from './SkillPreviewModal';
+export { DirectoryPane } from './DirectoryPane';

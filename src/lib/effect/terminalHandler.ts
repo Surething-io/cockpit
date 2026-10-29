@@ -395,8 +395,14 @@ const dispatchMessage = (
               ).pipe(
                 Effect.flatMap((ptyProcess) =>
                   Effect.sync(() => {
-                    registerCommand({ ...meta, pid: ptyProcess.pid, ptyProcess, usePty: true })
                     const size = pendingPtySizes.get(commandId)
+                    registerCommand({
+                      ...meta,
+                      pid: ptyProcess.pid,
+                      ptyProcess,
+                      usePty: true,
+                      ptySize: size ?? { cols: cols || 120, rows: rows || 30 },
+                    })
                     if (size) ptyProcess.resize(size.cols, size.rows)
                     Effect.runFork(send({ type: "pid", commandId, pid: ptyProcess.pid, command: ptyTarget.name }))
                     Effect.runFork(
@@ -510,7 +516,18 @@ const dispatchMessage = (
         )
         return
       }
-      Effect.runFork(send({ type: "pid", commandId, pid: cmd.pid, command: cmd.command }))
+      // `cols`/`rows`: the PTY's current size, for read-only viewers that must
+      // render at it (TerminalPreview). The Console bubble ignores them — it
+      // sizes the PTY itself.
+      Effect.runFork(
+        send({
+          type: "pid",
+          commandId,
+          pid: cmd.pid,
+          command: cmd.command,
+          ...(cmd.usePty && cmd.ptySize ? cmd.ptySize : {}),
+        })
+      )
 
       if (cmd.usePty && cmd.ptyRingBuffer) {
         const snap = cmd.ptyRingBuffer.snapshot()
@@ -553,6 +570,7 @@ const dispatchMessage = (
       if (cmd?.usePty && cmd.ptyProcess) {
         try {
           cmd.ptyProcess.resize(cols, rows)
+          cmd.ptySize = { cols, rows }
         } catch {
           /* exited */
         }

@@ -17,6 +17,7 @@ import {
   parseCodexSubAgentActivity,
 } from './session/codexTools';
 import {
+  pageTurns,
   parseCodexTranscriptFile,
   parseTranscriptFile,
 } from './session/transcriptParsers';
@@ -397,7 +398,12 @@ export const POST = handler((req) =>
     const parseResult = yield* Effect.tryPromise({
       try: async () => {
         const source = view.source();
-        if (engine === 'codex') return parseCodexTranscriptFile(source);
+        // The Codex parser has no paging of its own, so page its output the same
+        // way — otherwise every read of a long Codex session ships all of it.
+        if (engine === 'codex') {
+          const codex = await parseCodexTranscriptFile(source);
+          return { ...codex, ...pageTurns(codex.messages, { limit, beforeTurnIndex, fromTurnIndex }) };
+        }
         // Everything else (claude/ollama/deepseek/kimi/glm) writes Claude-style
         // transcripts, so one parser covers them.
         // ollama has done so since v1.0.186; the AI SDK ModelMessage legacy fallback
@@ -409,11 +415,10 @@ export const POST = handler((req) =>
     });
 
     const { messages, title, bot, usage } = parseResult;
-    const totalTurns = 'totalTurns' in parseResult ? parseResult.totalTurns : 0;
-    const hasMore = 'hasMore' in parseResult ? parseResult.hasMore : false;
-    // Index of the first returned turn, resolved server-side. Clients page further
-    // back from this instead of inferring it by counting rendered user bubbles.
-    const startTurnIndex = 'startTurnIndex' in parseResult ? parseResult.startTurnIndex : 0;
+    // startTurnIndex: index of the first returned turn, resolved server-side.
+    // Clients page further back from this instead of inferring it by counting
+    // rendered user bubbles.
+    const { totalTurns, hasMore, startTurnIndex } = parseResult;
     return ok({
       messages,
       sessionId,

@@ -295,3 +295,73 @@ export function dispose(): void {
   wsUrl = '';
   retryCount = 0;
 }
+
+/**
+ * Terminal-generated replies that xterm emits through `onData` exactly like
+ * keystrokes: cursor position reports (CSI … R), device attributes (CSI ? … c /
+ * CSI > … c) and OSC colour answers (ESC ] n ; … BEL|ST). A preview replays
+ * buffered output on attach, so it re-answers queries the program asked long
+ * ago — forwarded, those answers would reach the program as typed input. The
+ * Console bubble that owns the PTY already answers the live ones.
+ */
+const TERMINAL_REPORT = /^(?:\x1b\[\??[\d;]*R|\x1b\[[?>][\d;]*c|\x1b\]\d+;[^\x07\x1b]*(?:\x07|\x1b\\))$/;
+
+export function isTerminalReport(data: string): boolean {
+  return TERMINAL_REPORT.test(data);
+}
+
+/**
+ * Tap on a running command for the sidebar terminals board (TerminalPreview):
+ * replayed + live output, and keystrokes back in.
+ *
+ * Deliberately its OWN socket rather than the shared one above: that one is a
+ * per-window singleton keyed by commandId, so a preview attaching the same id
+ * would steal the callback, and `ensureConnection` for another project would
+ * tear down every attach in the window. Server-side, listeners are scoped to
+ * the connection, so closing this socket is the whole cleanup.
+ *
+ * Sends `attach` and `stdin` — never `resize`. The preview must not reflow the
+ * real terminal; it renders the output at the size the PTY already has, which
+ * the attach reply reports (`onAttached`). The Console bubble alone sizes it.
+ *
+ * No reconnect: a preview lives for seconds and is remounted on every
+ * selection change anyway.
+ */
+export function openTerminalPreview(options: {
+  projectCwd: string;
+  commandId: string;
+  /** Replay of the buffered output first, then live output as it arrives. */
+  onOutput: (data: string) => void;
+  /** The command exited, or was already gone when attached. */
+  onEnd: () => void;
+  /**
+   * Attach acknowledged — arrives before any output. Carries the PTY's current
+   * size when the server knows it (PTY mode, not re-adopted after a restart).
+   */
+  onAttached?: (size?: { cols: number; rows: number }) => void;
+}): { close: () => void; sendInput: (data: string) => void } {
+  const { projectCwd, commandId, onOutput, onEnd, onAttached } = options;
+  const sock = new WebSocket(getWsUrl(projectCwd));
+  sock.onopen = () => sock.send(JSON.stringify({ type: 'attach', commandId }));
+  sock.onmessage = (event: MessageEvent) => {
+    let msg: Record<string, unknown>;
+    try { msg = JSON.parse(event.data); } catch { return; }
+    if (msg.commandId !== commandId) return;
+    if (msg.type === 'pid') {
+      const sized = typeof msg.cols === 'number' && typeof msg.rows === 'number';
+      onAttached?.(sized ? { cols: msg.cols as number, rows: msg.rows as number } : undefined);
+    } else if (msg.type === 'stdout' || msg.type === 'stderr') onOutput(String(msg.data ?? ''));
+    else if (msg.type === 'exit' || msg.type === 'error') onEnd();
+  };
+  return {
+    close: () => {
+      sock.onopen = null;
+      sock.onmessage = null;
+      sock.close();
+    },
+    sendInput: (data: string) => {
+      if (isTerminalReport(data) || sock.readyState !== WebSocket.OPEN) return;
+      sock.send(JSON.stringify({ type: 'stdin', commandId, data }));
+    },
+  };
+}

@@ -10,6 +10,7 @@ import {
   ValidationError,
 } from "@cockpit/effect-core"
 import { parseSkillMd } from "../lib/parseSkillMd"
+import { BUILTIN_ID_PREFIX, builtinSkillFile } from "../lib/builtinSkillsList"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -32,6 +33,25 @@ export const GET = handler((req) =>
         new ValidationError({ field: "id", reason: "missing" })
       )
     }
+    // Builtin (`builtin:<cmd>`, see builtinSkillsList): read straight from the
+    // package's skills/ directory. The command name is constrained to a plain
+    // directory name so the id cannot walk out of it.
+    if (id.startsWith(BUILTIN_ID_PREFIX)) {
+      const cmd = id.slice(BUILTIN_ID_PREFIX.length)
+      if (!/^[A-Za-z0-9_-]+$/.test(cmd)) {
+        return yield* Effect.fail(new ValidationError({ field: "id", reason: "invalid" }))
+      }
+      const path = builtinSkillFile(cmd)
+      const parsed = yield* Effect.tryPromise({
+        try: () => parseSkillMd(path),
+        catch: (cause) => new FSError({ path, op: "read", cause }),
+      })
+      if (!parsed.valid) {
+        return yield* Effect.fail(new NotFoundError({ resource: "skill", id }))
+      }
+      return ok({ id, path, ...parsed, name: cmd })
+    }
+
     const data = yield* Effect.tryPromise({
       try: () => readJsonFile<SkillsFile>(SKILLS_FILE, DEFAULT),
       catch: (cause) =>

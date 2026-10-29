@@ -49,6 +49,7 @@ export { SessionCompleteToastContainer, showSessionCompleteToast } from './Sessi
 // Chat ancillary UI
 export { ScheduleTaskPopover, type TaskParams as ScheduleTaskParams } from './ScheduleTaskPopover';
 export { scheduleTarget } from './scheduleTarget';
+export { COLUMN_HEADER_ROW } from './columnHeaderRow';
 export { QuickInstructionsPopover } from './QuickInstructionsPopover';
 export { TokenStatsModal } from './TokenStatsModal';
 export { SlashCommandMenu } from './SlashCommandMenu';

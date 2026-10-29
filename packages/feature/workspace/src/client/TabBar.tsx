@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useCallback, useLayoutEffect } from
 
 import { TabInfo } from './useTabState';
 import { SessionNumberChip, sessionNumberRing, sessionNumberWash, type SessionNumberStatus } from '@cockpit/shared-ui';
-import { EngineBadge, EngineIcon, ENGINE_IDS, ENGINE_LABELS, ScheduleTaskPopover, type EngineAccentId, type ScheduleTaskParams } from '@cockpit/feature-agent';
+import { COLUMN_HEADER_ROW, EngineBadge, EngineIcon, ENGINE_IDS, ENGINE_LABELS, ScheduleTaskPopover, type EngineAccentId, type ScheduleTaskParams } from '@cockpit/feature-agent';
 import { Portal, usePanelPortalTarget } from '@cockpit/shared-ui';
 import { useTranslation } from 'react-i18next';
 import { AlarmClock, History, ListX, Plus, Star } from 'lucide-react';
@@ -53,6 +53,8 @@ function NewTabButton({ onNewTab, onNewCodexTab, onNewKimiTab, onNewGlmTab, onNe
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ top: 0, left: 0 });
+  // Button top in portal coordinates, for flipping the menu above it.
+  const flipTopRef = useRef(0);
   const panelTarget = usePanelPortalTarget();
   const { t } = useTranslation();
 
@@ -84,9 +86,21 @@ function NewTabButton({ onNewTab, onNewCodexTab, onNewKimiTab, onNewGlmTab, onNe
         top: rect.bottom + 4 - oy,
         left: rect.left - ox,
       });
+      flipTopRef.current = rect.top - 4 - oy;
     }
     setOpen(v => !v);
   };
+
+  // The button trails the session list, so with many rows it sits near the
+  // bottom edge — open upwards when the menu would run off the window.
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!open || !el) return;
+    const r = el.getBoundingClientRect();
+    if (r.bottom > window.innerHeight - 8) {
+      setPos(p => ({ ...p, top: Math.max(8, flipTopRef.current - r.height) }));
+    }
+  }, [open]);
 
   const pick = (engine: EngineAccentId) => {
     setOpen(false);
@@ -103,9 +117,9 @@ function NewTabButton({ onNewTab, onNewCodexTab, onNewKimiTab, onNewGlmTab, onNe
       <button
         ref={btnRef}
         onClick={toggle}
-        className="flex-shrink-0 flex items-center gap-1 pl-1.5 pr-2 py-1 text-xs text-foreground hover:bg-hover rounded transition-colors"
+        className="flex-shrink-0 flex items-center gap-1.5 pl-2 pr-3 py-1.5 text-sm text-foreground hover:bg-hover rounded-md transition-colors"
       >
-        <Plus className="w-4 h-4" />
+        <Plus className="w-5 h-5" />
         {t('tabBar.newTab')}
       </button>
       {open && <Portal>
@@ -211,10 +225,10 @@ const LIST_WIDTH_MAX = LIST_WIDTH_MIN * 1.5;
 
 /**
  * The open sessions of this project as a resizable column on the left of the
- * agent panel (it replaced the horizontal tab strip): an action row (new,
- * close all, project sessions, side-by-side) over one row per tab — number chip
- * carrying run/unread state, title, engine mark that turns into a close button
- * on hover. Drag rows to reorder. Only OPEN tabs live here; past sessions are
+ * agent panel (it replaced the horizontal tab strip): an action row
+ * (side-by-side, close all) over one row per tab — number chip carrying
+ * run/unread state, title, engine mark that turns into a close button on hover —
+ * followed by new session and project sessions. Drag rows to reorder. Only OPEN tabs live here; past sessions are
  * reached through the project-sessions board.
  */
 export function TabBar({
@@ -297,57 +311,53 @@ export function TabBar({
       >
         <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px group-hover:bg-brand transition-colors" />
       </div>
-      {/* Action row */}
-      <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-border flex-shrink-0">
-        <NewTabButton onNewTab={onNewTab} onNewCodexTab={onNewCodexTab} onNewKimiTab={onNewKimiTab} onNewGlmTab={onNewGlmTab} onNewOllamaTab={onNewOllamaTab} onNewDeepseekTab={onNewDeepseekTab} />
-        {/* Left group ADDS rows: new session, then past sessions of this project
-            (only when a project is open). Clock, not a chat bubble — every row
-            here is a conversation already, so the bubble said nothing. */}
-        {onOpenProjectSessions && (
-          <button
-            onClick={onOpenProjectSessions}
-            className="flex-shrink-0 p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
-            title={t('sessions.projectSessions')}
-            aria-label={t('sessions.projectSessions')}
-          >
-            <History className="w-4 h-4" />
-          </button>
-        )}
-        {/* Right group: the split toggle changes the chat area's layout, not the
-            list, so it sits apart from the left group. */}
-        {onToggleSideBySide && (
-          <button
-            onClick={onToggleSideBySide}
-            className="ml-auto flex-shrink-0 p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
-            title={sideBySide ? t('chat.singlePane') : t('chat.splitPane')}
-            aria-label={sideBySide ? t('chat.singlePane') : t('chat.splitPane')}
-            aria-pressed={sideBySide}
-          >
-            {/* The icon shows the layout you will GET, not the one you are in —
-                it reads as the action, like every other button in this row. */}
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <rect x="3" y="4" width="18" height="16" rx="2" strokeWidth={2} />
-              {!sideBySide && <path strokeWidth={2} d="M12 4v16" />}
-            </svg>
-          </button>
-        )}
-        {/* Close-all — one click closes every tab (resets to a single blank
-            tab). Last, behind a divider: destructive, kept apart from the rest. */}
-        {onCloseAllTabs && (
-          <>
-            {onToggleSideBySide && <div className="w-px h-4 mx-1 bg-border flex-shrink-0" aria-hidden />}
+      {/* Action row — layout controls only; the actions that ADD rows sit at the
+          end of the list below, where the new row will land. Same declared
+          height as the chat column's header beside it, so the two bottom
+          borders form one line (see columnHeaderRow.ts). The inner wrapper
+          keeps this row's tighter gap instead of the shared one. */}
+      <div className={`${COLUMN_HEADER_ROW} px-2`}>
+        <div className="flex-1 min-w-0 flex items-center gap-0.5">
+          {/* Column title, so the bar is not just two icons floating right. */}
+          <span className="pl-1 text-sm font-medium text-foreground truncate">
+            {t('sessions.projectSessions')}
+            <span className="ml-1.5 text-xs font-normal text-muted-foreground tabular-nums">{tabs.length}</span>
+          </span>
+          {/* The split toggle changes the chat area's layout, not the list. */}
+          {onToggleSideBySide && (
             <button
-              onClick={onCloseAllTabs}
-              className={`${onToggleSideBySide ? '' : 'ml-auto '}flex-shrink-0 p-1.5 text-muted-foreground hover:text-destructive hover:bg-hover rounded transition-colors`}
-              title={t('tabBar.closeAll')}
-              aria-label={t('tabBar.closeAll')}
+              onClick={onToggleSideBySide}
+              className="ml-auto flex-shrink-0 p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
+              title={sideBySide ? t('chat.singlePane') : t('chat.splitPane')}
+              aria-label={sideBySide ? t('chat.singlePane') : t('chat.splitPane')}
+              aria-pressed={sideBySide}
             >
-              {/* List-with-x, not a bare x: a lone x at the column's corner reads as
-                  "close this sidebar", while this clears every row below it. */}
-              <ListX className="w-4 h-4" />
+              {/* The icon shows the layout you will GET, not the one you are in —
+                  it reads as the action, like every other button in this row. */}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <rect x="3" y="4" width="18" height="16" rx="2" strokeWidth={2} />
+                {!sideBySide && <path strokeWidth={2} d="M12 4v16" />}
+              </svg>
             </button>
-          </>
-        )}
+          )}
+          {/* Close-all — one click closes every tab (resets to a single blank
+              tab). Last, behind a divider: destructive, kept apart from the rest. */}
+          {onCloseAllTabs && (
+            <>
+              {onToggleSideBySide && <div className="w-px h-4 mx-1 bg-border flex-shrink-0" aria-hidden />}
+              <button
+                onClick={onCloseAllTabs}
+                className={`${onToggleSideBySide ? '' : 'ml-auto '}flex-shrink-0 p-1.5 text-muted-foreground hover:text-destructive hover:bg-hover rounded transition-colors`}
+                title={t('tabBar.closeAll')}
+                aria-label={t('tabBar.closeAll')}
+              >
+                {/* List-with-x, not a bare x: a lone x at the column's corner reads as
+                    "close this sidebar", while this clears every row below it. */}
+                <ListX className="w-4 h-4" />
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Open sessions */}
@@ -417,8 +427,8 @@ export function TabBar({
                   data-tooltip={t('chat.scheduledTasks')}
                   aria-label={t('chat.scheduledTasks')}
                 >
-                  {/* AlarmClock, not a plain clock: the clock is "history" in the
-                      action row above. */}
+                  {/* AlarmClock, not a plain clock: the clock is "history" at
+                      the end of the list. */}
                   <AlarmClock className="h-3.5 w-3.5" />
                 </button>
               )}
@@ -445,6 +455,23 @@ export function TabBar({
             </div>
           );
         })}
+        {/* Add rows: new session, then past sessions of this project (only when
+            a project is open). Right under the last row, so it follows the list
+            and the new session appears where the button was. Clock, not a chat
+            bubble — every row here is a conversation already. */}
+        <div className="flex items-center justify-center gap-1 pt-1">
+          <NewTabButton onNewTab={onNewTab} onNewCodexTab={onNewCodexTab} onNewKimiTab={onNewKimiTab} onNewGlmTab={onNewGlmTab} onNewOllamaTab={onNewOllamaTab} onNewDeepseekTab={onNewDeepseekTab} />
+          {onOpenProjectSessions && (
+            <button
+              onClick={onOpenProjectSessions}
+              className="flex-shrink-0 p-2 text-muted-foreground hover:text-foreground hover:bg-hover rounded-md transition-colors"
+              title={t('sessions.projectSessions')}
+              aria-label={t('sessions.projectSessions')}
+            >
+              <History className="w-5 h-5" />
+            </button>
+          )}
+        </div>
       </div>
       {scheduling && onScheduleTask && (
         <RowSchedulePopover

@@ -1207,9 +1207,9 @@
     "notSelected": "(未选择)"
   },
   "tabBar": {
-    "closeTab": "关闭标签",
-    "closeAll": "关闭所有标签",
-    "newTab": "新建标签"
+    "closeTab": "关闭会话",
+    "closeAll": "关闭所有会话",
+    "newTab": "新会话"
   },
   "tabManagerTopBar": {
     "copyPageUrl": "复制页面地址",

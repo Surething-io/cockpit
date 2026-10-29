@@ -47,7 +47,8 @@ export { sortSessionsForDisplay } from './sessionOrder';
 export { SessionCompleteToastContainer, showSessionCompleteToast } from './SessionCompleteToast';
 
 // Chat ancillary UI
-export { ScheduleTaskPopover } from './ScheduleTaskPopover';
+export { ScheduleTaskPopover, type TaskParams as ScheduleTaskParams } from './ScheduleTaskPopover';
+export { scheduleTarget } from './scheduleTarget';
 export { QuickInstructionsPopover } from './QuickInstructionsPopover';
 export { TokenStatsModal } from './TokenStatsModal';
 export { SlashCommandMenu } from './SlashCommandMenu';

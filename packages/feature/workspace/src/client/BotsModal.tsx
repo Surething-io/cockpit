@@ -469,7 +469,7 @@ function useBotSessions(bot: BotInfo, recent: ReadonlyArray<RecentSessionInfo>) 
       out.set(key, {
         cwd: s.cwd,
         sessionId: s.sessionId,
-        title: s.title || s.sessionId.slice(0, 8),
+        title: s.title || s.sessionId,
         time: s.lastActive,
         engine: s.engine,
         bot: s.bot,

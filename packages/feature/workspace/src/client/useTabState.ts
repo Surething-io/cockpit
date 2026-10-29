@@ -21,6 +21,14 @@ import { createLatestTaskRunner, type LatestTaskRunner } from './latestTaskRunne
 // Types
 // ============================================
 
+/**
+ * Title shown until the session's real title arrives from its transcript (and
+ * kept for good when none does, e.g. the transcript is gone). Carries the FULL
+ * id: the tab list truncates with CSS and shows the whole title on hover, so
+ * pre-cutting it here would only fake an ellipsis and hide the id.
+ */
+const placeholderTitle = (sessionId: string) => `Session ${sessionId}`;
+
 export interface TabInfo {
   id: string;
   cwd?: string;
@@ -200,7 +208,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     id: `tab-${Date.now()}`,
     cwd: initialCwd,
     sessionId: initialSessionId,
-    title: initialSessionId ? `Session ${initialSessionId.slice(0, 6)}...` : 'New Chat',
+    title: initialSessionId ? placeholderTitle(initialSessionId) : 'New Chat',
   }]);
 
   // Panes. There are one or two slots that can show a chat, and one index
@@ -370,7 +378,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
               id: `tab-${Date.now()}-${index}`,
               cwd: initialCwd,
               sessionId,
-              title: `Session ${sessionId.slice(0, 6)}...`,
+              title: placeholderTitle(sessionId),
               engine: (savedEngines[sessionId] as ChatEngine) || prev?.engine || undefined,
               ollamaModel: savedOllamaModels[sessionId] || prev?.ollamaModel || undefined,
               deepseekModel: (savedDeepseekModels[sessionId] as DeepseekModel) || prev?.deepseekModel || undefined,
@@ -655,7 +663,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
         id: `tab-${Date.now()}-sync-${i}`,
         cwd: initialCwd,
         sessionId: sid,
-        title: `Session ${sid.slice(0, 6)}...`,
+        title: placeholderTitle(sid),
         engine: (engines[sid] as ChatEngine) || undefined,
         ollamaModel: ollamaModels[sid] || undefined,
         deepseekModel: (deepseekModels[sid] as DeepseekModel) || undefined,
@@ -753,7 +761,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
       id: `tab-${Date.now()}`,
       cwd,
       sessionId,
-      title: title || (sessionId ? `Session ${sessionId.slice(0, 6)}...` : 'New Chat'),
+      title: title || (sessionId ? placeholderTitle(sessionId) : 'New Chat'),
       engine,
       ollamaModel,
       deepseekModel,

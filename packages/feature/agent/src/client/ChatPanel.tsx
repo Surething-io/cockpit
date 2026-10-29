@@ -58,30 +58,13 @@ interface ChatPanelProps {
   onStateChange: (tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string; bot?: string }) => void;
   onShowGitStatus?: () => void;
   onOpenNote?: () => void;
-  isFavorite?: boolean;
-  onToggleFavorite?: (tabId: string) => void;
-  onCreateScheduledTask?: (params: {
-    cwd: string;
-    tabId: string;
-    sessionId: string;
-    engine?: string;
-    model?: string;
-    message: string;
-    type: 'once' | 'interval' | 'cron';
-    delayMinutes?: number;
-    intervalMinutes?: number;
-    activeFrom?: string;
-    activeTo?: string;
-    startAt?: number | null;
-    cron?: string;
-  }) => void;
   onOpenSession?: (sessionId: string, title?: string) => void;
   onContentSearch?: (query: string) => void;
   onShowFileDiff?: (messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, live?: boolean) => void;
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
 }
 
-export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, outputStyle, onOutputStyleChange, isActive, isFocused, peerTabId, peerSide, refreshSignal, onDraftChange, onStateChange, onShowGitStatus, onOpenNote, isFavorite, onToggleFavorite, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink }: ChatPanelProps) {
+export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, outputStyle, onOutputStyleChange, isActive, isFocused, peerTabId, peerSide, refreshSignal, onDraftChange, onStateChange, onShowGitStatus, onOpenNote, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink }: ChatPanelProps) {
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
   }, [tabId, onStateChange]);
@@ -160,10 +143,6 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollam
     onOutputStyleChange?.(tabId, v);
   }, [tabId, onOutputStyleChange]);
 
-  const handleToggleFavorite = useCallback(() => {
-    onToggleFavorite?.(tabId);
-  }, [tabId, onToggleFavorite]);
-
   return (
     <Chat
       tabId={tabId}
@@ -211,9 +190,6 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollam
       onBotChange={handleBotChange}
       onShowGitStatus={onShowGitStatus}
       onOpenNote={onOpenNote}
-      isFavorite={isFavorite}
-      onToggleFavorite={sessionId && onToggleFavorite ? handleToggleFavorite : undefined}
-      onCreateScheduledTask={onCreateScheduledTask}
       onOpenSession={onOpenSession}
       onContentSearch={onContentSearch}
       onShowFileDiff={onShowFileDiff}

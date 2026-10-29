@@ -123,25 +123,6 @@ interface ChatProps {
   onBotChange?: (bot: string | null) => void;
   onShowGitStatus?: () => void;
   onOpenNote?: () => void;
-  isFavorite?: boolean;
-  onToggleFavorite?: () => void;
-  onCreateScheduledTask?: (params: {
-    cwd: string;
-    tabId: string;
-    sessionId: string;
-    engine?: string;
-    model?: string;
-    language?: string;
-    message: string;
-    taskFile?: string;
-    type: 'once' | 'interval' | 'cron';
-    delayMinutes?: number;
-    intervalMinutes?: number;
-    activeFrom?: string;
-    activeTo?: string;
-    startAt?: number | null;
-    cron?: string;
-  }) => void;
   onOpenSession?: (sessionId: string, title?: string) => void; // Open a new session (used for Fork)
   onContentSearch?: (query: string) => void; // Selected text → project-wide search
   onShowFileDiff?: (messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, live?: boolean) => void; // Message file changes → Explorer panel + auto-swipe
@@ -180,7 +161,7 @@ interface ChatProps {
  */
 const ENGINE_OPTIONS_ROW = `${COLUMN_HEADER_ROW} pl-3 pr-14 bg-card/50`;
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, outputStyle: outputStyleProp, onOutputStyleChange, hideHeader, hideSidebar, isActive = true, isFocused = isActive, peerTabId, peerSide, refreshSignal, onLoadingChange, onDraftPresenceChange, onSessionIdChange, onTitleChange, onBotChange, onShowGitStatus, onOpenNote, isFavorite, onToggleFavorite, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, outputStyle: outputStyleProp, onOutputStyleChange, hideHeader, hideSidebar, isActive = true, isFocused = isActive, peerTabId, peerSide, refreshSignal, onLoadingChange, onDraftPresenceChange, onSessionIdChange, onTitleChange, onBotChange, onShowGitStatus, onOpenNote, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();
   const composerSlot = useComposerSlot();
   // Owned here, not in ChatInput: the composer is portalled when this pane is
@@ -810,28 +791,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     }
   }, [ensureTurnLoaded]);
 
-  const handleCreateScheduledTask = useMemo(() => {
-    if (!onCreateScheduledTask || !initialCwd || !tabId) return undefined;
-    return (params: { message: string; taskFile?: string; type: 'once' | 'interval' | 'cron'; delayMinutes?: number; intervalMinutes?: number; activeFrom?: string; activeTo?: string; startAt?: number | null; cron?: string }) => {
-      onCreateScheduledTask({
-        ...params,
-        cwd: initialCwd,
-        tabId,
-        // A brand-new chat has no session yet. Rather than block scheduling, hand the
-        // task a random id: it misses every engine's session-file lookup, so the first
-        // fire takes the existing startFresh path (see scheduledTasks.ts) and rebinds
-        // the task to the session the engine mints. Must NOT be '': an empty id is not a
-        // session key in any store, and lookups that build paths from it (a glob in the
-        // old codex resolver) can land on an unrelated file.
-        sessionId: sessionId ?? crypto.randomUUID(),
-        engine,
-        ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),
-        ...(apiKeyEngine && engineModel && { model: engineModel }),
-        ...(isClaudeEngine && { model: effectiveClaudeModel }),
-        ...(isCodexEngine && { model: effectiveCodexModel }),
-      });
-    };
-  }, [onCreateScheduledTask, initialCwd, tabId, sessionId, engine, ollamaModel, apiKeyEngine, engineModel, isClaudeEngine, effectiveClaudeModel, isCodexEngine, effectiveCodexModel]);
 
   /* Independent task: each message is sent WITHOUT the prior turns. Stays on until unchecked —
      it's a session-level mode, not a one-shot. The transcript keeps recording, so the history
@@ -1039,9 +998,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
               onShowComments={initialCwd ? handleShowComments : undefined}
               hasComments={hasComments}
               onOpenNote={onOpenNote}
-              isFavorite={isFavorite}
-              onToggleFavorite={onToggleFavorite}
-              onCreateScheduledTask={handleCreateScheduledTask}
               draft={draft}
               setDraft={setDraft}
               draftImages={draftImages}

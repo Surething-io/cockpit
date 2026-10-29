@@ -100,7 +100,7 @@ function describeCron(expr: string): string | null {
   }
 }
 
-interface TaskParams {
+export interface TaskParams {
   /** Mutually exclusive with taskFile; the unused one is sent empty so the server clears it. */
   message: string;
   taskFile?: string;
@@ -115,6 +115,9 @@ interface TaskParams {
 
 interface ScheduleTaskPopoverProps {
   onClose: () => void;
+  /** The caller positions the popover itself (e.g. a fixed portal) instead of
+   *  it floating above its parent. Edit mode is always unanchored. */
+  unanchored?: boolean;
   onCreate: (params: TaskParams) => void;
   /** Edit mode: pass in existing task data */
   editTask?: {
@@ -172,7 +175,7 @@ function toLocalInputValue(ms: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: ScheduleTaskPopoverProps) {
+export function ScheduleTaskPopover({ onClose, unanchored, onCreate, editTask, onUpdate }: ScheduleTaskPopoverProps) {
   const { t } = useTranslation();
   const isEdit = !!editTask;
   const [type, setType] = useState<TaskType>(editTask?.type || 'once');
@@ -293,7 +296,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
   return (
     <div
       ref={popoverRef}
-      className={`w-[28rem] max-w-[calc(100vw-1.5rem)] bg-popover border border-border rounded-lg shadow-lv2 z-50 ${isEdit ? '' : 'absolute bottom-full left-0 mb-2'}`}
+      className={`w-[28rem] max-w-[calc(100vw-1.5rem)] bg-popover border border-border rounded-lg shadow-lv2 z-50 ${isEdit || unanchored ? '' : 'absolute bottom-full left-0 mb-2'}`}
       onKeyDown={handleKeyDown}
     >
       <div className="px-3 py-2 border-b border-border bg-muted/50 rounded-t-lg">

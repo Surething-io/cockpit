@@ -1210,9 +1210,9 @@
     "notSelected": "(not selected)"
   },
   "tabBar": {
-    "closeTab": "Close tab",
-    "closeAll": "Close all tabs",
-    "newTab": "New tab"
+    "closeTab": "Close session",
+    "closeAll": "Close all sessions",
+    "newTab": "New session"
   },
   "tabManagerTopBar": {
     "copyPageUrl": "Copy page URL",

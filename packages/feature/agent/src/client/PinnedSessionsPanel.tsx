@@ -205,7 +205,7 @@ export function PinnedSessionsPanel({
   /** The pin record's own title wins — it is the name the user chose. Only when
    *  there is none do we fall back to the live title, and only then to the id. */
   const titleOf = (session: PinnedSession) =>
-    session.customTitle || fetched[keyOf(session.cwd, session.sessionId)]?.title || session.sessionId.slice(0, 8);
+    session.customTitle || fetched[keyOf(session.cwd, session.sessionId)]?.title || session.sessionId;
 
   const renderRow = (session: PinnedSession) => {
     const info = fetched[keyOf(session.cwd, session.sessionId)];

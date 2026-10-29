@@ -3,9 +3,8 @@
 import { useState, useLayoutEffect, useRef, KeyboardEvent, ClipboardEvent, useCallback, useMemo, memo } from 'react';
 import type { ImageInfo, ChatEngine } from './types';
 import { useTranslation } from 'react-i18next';
-import { AlarmClock, Star, TextCursorInput } from 'lucide-react';
+import { TextCursorInput } from 'lucide-react';
 import { ImagePreview } from '@cockpit/shared-ui';
-import { ScheduleTaskPopover } from './ScheduleTaskPopover';
 import { QuickInstructionsPopover } from './QuickInstructionsPopover';
 import { useCommandAutocomplete, CommandAutocompleteMenu, type CommandInfo } from './commandAutocomplete';
 
@@ -25,18 +24,6 @@ interface ChatInputProps {
   /** Tint the comments button only when the project has comments */
   hasComments?: boolean;
   onOpenNote?: () => void;
-  isFavorite?: boolean;
-  onToggleFavorite?: () => void;
-  onCreateScheduledTask?: (params: {
-    message: string;
-    type: 'once' | 'interval' | 'cron';
-    delayMinutes?: number;
-    intervalMinutes?: number;
-    activeFrom?: string;
-    activeTo?: string;
-    startAt?: number | null;
-    cron?: string;
-  }) => void;
   /** Draft text and pending images, optionally owned by the parent.
    *
    *  Side-by-side portals the focused pane's composer into a shared slot, and a
@@ -53,14 +40,13 @@ interface ChatInputProps {
   suggestion?: string | null;
 }
 
-export const ChatInput = memo(function ChatInput({ onSend, disabled, running, cwd, engine: _engine, onShowGitStatus, onShowComments, hasComments, onOpenNote, isFavorite, onToggleFavorite, onCreateScheduledTask, draft, setDraft, draftImages, setDraftImages, suggestion }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({ onSend, disabled, running, cwd, engine: _engine, onShowGitStatus, onShowComments, hasComments, onOpenNote, draft, setDraft, draftImages, setDraftImages, suggestion }: ChatInputProps) {
   const { t } = useTranslation();
   const localInput = useState('');
   const localImages = useState<ImageInfo[]>([]);
   const [input, setInput] = draft !== undefined && setDraft ? ([draft, setDraft] as const) : localInput;
   const [images, setImages] =
     draftImages !== undefined && setDraftImages ? ([draftImages, setDraftImages] as const) : localImages;
-  const [showScheduler, setShowScheduler] = useState(false);
   const [showQuickInstructions, setShowQuickInstructions] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Wraps the quick-instructions trigger + its popover; the popover measures
@@ -278,50 +264,6 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, running, cw
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
           </button>
-        )}
-
-        {/* Favorite button */}
-        {onToggleFavorite && (
-          <button
-            onClick={onToggleFavorite}
-            className={`p-2 rounded-lg transition-all ${
-              isFavorite
-                ? 'text-amber-9 hover:text-amber-10 hover:bg-amber-9/10 active:bg-amber-9/20 active:scale-95'
-                : 'text-muted-foreground hover:text-amber-9 hover:bg-amber-9/10 active:bg-amber-9/20 active:scale-95'
-            }`}
-            title={t(isFavorite ? 'sessions.removeFavorite' : 'sessions.addFavorite')}
-            aria-label={t(isFavorite ? 'sessions.removeFavorite' : 'sessions.addFavorite')}
-            aria-pressed={isFavorite}
-          >
-            <Star className="w-5 h-5" fill={isFavorite ? 'currentColor' : 'none'} />
-          </button>
-        )}
-
-        {/* Scheduled task button */}
-        {onCreateScheduledTask && (
-          <div className="relative">
-            <button
-              onClick={() => setShowScheduler(!showScheduler)}
-              className={`p-2 rounded-lg transition-all ${
-                showScheduler
-                  ? 'text-brand bg-brand/10'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-hover active:bg-muted active:scale-95'
-              }`}
-              title={t('chat.scheduledTasks')}
-            >
-              {/* AlarmClock, not a bare clock: a plain clock face reads as
-                  "time / recent" — which is what the sidebar's recent-sessions
-                  entry needs — and the two are on screen together. The bells
-                  say "scheduled", and give the two a different silhouette. */}
-              <AlarmClock className="w-5 h-5" />
-            </button>
-            {showScheduler && (
-              <ScheduleTaskPopover
-                onClose={() => setShowScheduler(false)}
-                onCreate={onCreateScheduledTask}
-              />
-            )}
-          </div>
         )}
 
         {/* Quick instructions button */}

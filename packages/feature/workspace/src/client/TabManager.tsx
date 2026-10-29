@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useCallback, useRef , useMemo} from 'react';
 import { useTranslation } from 'react-i18next';
-import { ProjectSessionsModal, ComposerSlotProvider } from '@cockpit/feature-agent';
+import { ProjectSessionsModal, ComposerSlotProvider, scheduleTarget } from '@cockpit/feature-agent';
 import { FileBrowserModal } from '@cockpit/feature-explorer';
 import { GitWorktreeModal } from '@cockpit/feature-explorer';
 import { ConsoleView, AliasManager } from '@cockpit/feature-console';
 import { ChatProvider, FileDiffViewer } from '@cockpit/feature-agent';
-import type { ToolCallInfo } from '@cockpit/feature-agent';
+import type { ToolCallInfo, ScheduleTaskParams } from '@cockpit/feature-agent';
 import { nextFileDiffRequest, type FileDiffRequest } from './fileDiffRequest';
 import { paneLayout, paneClass, maximizedTabId, isChatSurfaceActive, type PaneLayout } from './paneLayout';
 import {
@@ -264,6 +264,14 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
       pinSession(tab.sessionId, tab.cwd || initialCwd || '', tab.title);
     }
   }, [tabs, isPinned, pinSession, unpinSession, initialCwd]);
+
+  // A task created from a tab's row runs on that tab's session, engine and model.
+  const handleScheduleTask = useCallback((tabId: string, params: ScheduleTaskParams) => {
+    const tab = tabs.find(t => t.id === tabId);
+    const cwd = tab?.cwd || initialCwd;
+    if (!tab || !cwd) return;
+    void createScheduledTask({ ...params, ...scheduleTarget({ ...tab, cwd, tabId }) });
+  }, [tabs, initialCwd, createScheduledTask]);
 
   // UI state
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
@@ -783,13 +791,14 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
         {/* Content area - switches based on activeView (swipe effect) */}
         {initialCwd ? (
           <SwipeableContent>
-            {/* AGENT view: Tab bar + Chat */}
+            {/* AGENT view: open-session list (left) + Chat (right) */}
             <div className="w-1/3 h-full flex flex-col overflow-hidden">
               <PanelPortalProvider>
-                <div className="w-full h-full flex flex-col">
+                <div className="w-full h-full flex">
                   <TabBar
                     tabs={tabs}
                     selectedTabId={activeTabId}
+                    visibleTabIds={paneTabIds}
                     sideBySide={layout.split}
                     onToggleSideBySide={handleToggleLayout}
                     unreadTabs={unreadTabs}
@@ -797,6 +806,8 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                     dragTabIndex={dragTabIndex}
                     dragOverTabIndex={dragOverTabIndex}
                     isPinned={isTabPinned}
+                    onTogglePin={handleTogglePin}
+                    onScheduleTask={handleScheduleTask}
                     onSwitchTab={switchTab}
                     onCloseTab={closeTab}
                     onCloseAllTabs={closeAllTabs}
@@ -812,6 +823,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                     onDrop={handleTabDrop}
                     onDragEnd={handleTabDragEnd}
                   />
+                  <div className="flex-1 min-w-0 h-full flex flex-col">
                   <ComposerSlotProvider value={layout.split ? composerSlot : null}>
                   <div className={`flex-1 overflow-hidden relative ${layout.row ? 'flex' : ''}`}>
                     {tabs.map((tab) => (
@@ -869,9 +881,6 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                           onShowFileDiff={handleShowFileDiff}
                           onOpenFileLink={handleOpenFileLink}
                           onOpenNote={handleOpenNote}
-                          isFavorite={isTabPinned(tab.id)}
-                          onToggleFavorite={handleTogglePin}
-                          onCreateScheduledTask={createScheduledTask}
                           onOpenSession={handleOpenSession}
                         />
                       </PaneShell>
@@ -929,6 +938,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                       column height on it and their token bars stay on one line; the
                       focused Chat portals into it (see ComposerSlot). */}
                   {layout.split && <div ref={setComposerSlot} className="flex-shrink-0" />}
+                  </div>
                 </div>
               </PanelPortalProvider>
             </div>
@@ -956,11 +966,12 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
             </div>
           </SwipeableContent>
         ) : (
-          /* When no cwd is set, only show Tab bar + Chat */
-          <div className="flex-1 flex flex-col overflow-hidden">
+          /* When no cwd is set, only show the open-session list + Chat */
+          <div className="flex-1 flex overflow-hidden">
             <TabBar
               tabs={tabs}
               selectedTabId={activeTabId}
+              visibleTabIds={paneTabIds}
               sideBySide={layout.split}
               onToggleSideBySide={handleToggleLayout}
               unreadTabs={unreadTabs}
@@ -968,6 +979,8 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
               dragTabIndex={dragTabIndex}
               dragOverTabIndex={dragOverTabIndex}
               isPinned={isTabPinned}
+              onTogglePin={handleTogglePin}
+              onScheduleTask={handleScheduleTask}
               onSwitchTab={switchTab}
               onCloseTab={closeTab}
               onCloseAllTabs={closeAllTabs}
@@ -981,6 +994,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
               onDrop={handleTabDrop}
               onDragEnd={handleTabDragEnd}
             />
+            <div className="flex-1 min-w-0 h-full flex flex-col">
             <ComposerSlotProvider value={layout.split ? composerSlot : null}>
             <div className={`flex-1 overflow-hidden relative ${layout.row ? 'flex' : ''}`}>
               {tabs.map((tab) => (
@@ -1033,9 +1047,6 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                     refreshSignal={sessionRefresh}
                     onDraftChange={handleDraftChange}
                     onStateChange={updateTabState}
-                    isFavorite={isTabPinned(tab.id)}
-                    onToggleFavorite={handleTogglePin}
-                    onCreateScheduledTask={createScheduledTask}
                     onOpenSession={handleOpenSession}
                   />
                 </PaneShell>
@@ -1046,6 +1057,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                 column height on it and their token bars stay on one line; the
                 focused Chat portals into it (see ComposerSlot). */}
             {layout.split && <div ref={setComposerSlot} className="flex-shrink-0" />}
+            </div>
           </div>
         )}
       </div>

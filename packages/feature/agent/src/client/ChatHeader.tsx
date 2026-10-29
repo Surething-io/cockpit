@@ -65,8 +65,8 @@ export function ChatHeader({
           )}
           {/* If no cwd but sessionId exists, show sessionId */}
           {!cwd && sessionId && (
-            <span className="text-xs text-muted-foreground">
-              Session: {sessionId.slice(0, 8)}...
+            <span className="text-xs text-muted-foreground max-w-md truncate" data-tooltip={sessionId}>
+              Session: {sessionId}
             </span>
           )}
           {/* Current project Sessions button (only shown when cwd is present) */}

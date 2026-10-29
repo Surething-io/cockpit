@@ -153,7 +153,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
     onClose();
   }, [onSwitchProject, onClose]);
 
-  const titleOf = (session: RecentSessionInfo) => session.title || session.sessionId.slice(0, 8);
+  const titleOf = (session: RecentSessionInfo) => session.title || session.sessionId;
 
   const renderCard = (session: RecentSessionInfo) => {
     const key = keyOf(session.cwd, session.sessionId);

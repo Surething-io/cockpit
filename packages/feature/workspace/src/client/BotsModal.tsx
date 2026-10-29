@@ -8,7 +8,7 @@ import { publishTopic } from '@cockpit/effect-react'
 import { Topics } from '@cockpit/effect-services'
 import { addBot, failureMessage, loadBots, notifyBotsChanged, removeBot, type BotInfo } from '@cockpit/shared-api'
 import { MODAL_SHELL_CLASS, toast } from '@cockpit/shared-ui'
-import { DirectoryPane } from '@cockpit/feature-skills'
+import { DirectoryPane } from '@cockpit/feature-explorer'
 import {
   EngineBadge,
   SessionNumberBadge,

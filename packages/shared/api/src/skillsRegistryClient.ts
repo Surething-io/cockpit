@@ -78,11 +78,11 @@ export const loadSkillContent = <T = SkillPreviewLite>(
   httpJson<T>(`/api/skills/content?id=${encodeURIComponent(id)}`)
 
 /**
- * Directory browsing for the boards whose items are directories — skills and
- * Bots. Both routes take `?id=` (list) and `?id=&path=` (read one file) and
+ * Directory browsing for the boards whose items are directories — skills,
+ * Bots and HTML apps. Both routes take `?id=` (list) and `?id=&path=` (read one file) and
  * answer the same shapes, so one component renders either.
  */
-export type DirFilesEndpoint = "/api/skills/files" | "/api/bots/files"
+export type DirFilesEndpoint = "/api/skills/files" | "/api/bots/files" | "/api/html-apps/files"
 
 /** One file of the directory. */
 export interface DirFileLite {

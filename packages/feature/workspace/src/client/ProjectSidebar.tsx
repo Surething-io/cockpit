@@ -88,27 +88,16 @@ function AppsDockIcon({ className = '' }: { className?: string }) {
   );
 }
 
-function HtmlAppIcon({ item, active, onClick, className = '' }: {
-  item: HtmlAppPreview;
-  active: boolean;
-  onClick: () => void;
-  className?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`h-8 w-8 rounded-md border bg-transparent text-muted-foreground hover:text-brand hover:border-brand/70 active:scale-95 transition-all flex items-center justify-center ${
-        active ? 'border-brand/80 text-brand' : 'border-border/70'
-      } ${className}`}
-      title={`${item.title}\n${item.path}`}
-    >
-      {item.icon ? <span className="text-base leading-none">{item.icon}</span> : <AppWindow className="w-4 h-4" />}
-    </button>
-  );
-}
+/**
+ * The sidebar "Apps" row: the label opens the apps board, and the open
+ * (minimised) HTML apps sit inline to its right — up to three icons, the fourth
+ * slot becomes "more" listing the rest. A click on an icon brings the app back.
+ * Collapsed sidebar: just the mark, with a count badge; a click opens the board
+ * when nothing is open, else a list of the open apps plus "all apps".
+ */
+const APP_ICON_SLOTS = 3;
 
-function HtmlAppPreviewDock({ collapsed, previews, activePath, onOpenApps, onShowPreview }: {
+function AppsEntry({ collapsed, previews, activePath, onOpenApps, onShowPreview }: {
   collapsed: boolean;
   previews: HtmlAppPreview[];
   activePath: string | null;
@@ -116,130 +105,131 @@ function HtmlAppPreviewDock({ collapsed, previews, activePath, onOpenApps, onSho
   onShowPreview: (item: HtmlAppPreview) => void;
 }) {
   const { t } = useTranslation();
-  const [popoverOpen, setPopoverOpen] = useState<'collapsed' | 'more' | null>(null);
+  const [popoverOpen, setPopoverOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!popoverOpen) return;
     const onDocClick = (e: MouseEvent) => {
-      if (!popoverRef.current?.contains(e.target as Node)) {
-        setPopoverOpen(null);
-      }
+      if (!popoverRef.current?.contains(e.target as Node)) setPopoverOpen(false);
     };
     document.addEventListener('mousedown', onDocClick, true);
     return () => document.removeEventListener('mousedown', onDocClick, true);
   }, [popoverOpen]);
 
-  const maxExpandedItems = 5;
-  const maxPreviewIcons = maxExpandedItems - 1;
-  const hasOverflow = previews.length > maxPreviewIcons;
-  const visibleItems = hasOverflow ? previews.slice(0, maxPreviewIcons - 1) : previews.slice(0, maxPreviewIcons);
-  const overflowItems = hasOverflow ? previews.slice(maxPreviewIcons - 1) : [];
-  const openAppsItem = (
+  // Three icons at most; from the fourth open app on, the fourth slot is "more".
+  const overflow = previews.length > APP_ICON_SLOTS;
+  const inline = previews.slice(0, APP_ICON_SLOTS);
+  const rest = previews.slice(APP_ICON_SLOTS);
+
+  const show = (item: HtmlAppPreview) => {
+    onShowPreview(item);
+    setPopoverOpen(false);
+  };
+
+  const listRow = (item: HtmlAppPreview) => (
     <button
-      key="html-apps-list"
+      key={item.path}
       type="button"
-      onClick={() => { onOpenApps(); setPopoverOpen(null); }}
-      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
-      title={t('htmlApps.title')}
+      onClick={() => show(item)}
+      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-hover transition-colors ${
+        activePath === item.path ? 'text-brand' : 'text-muted-foreground hover:text-foreground'
+      }`}
+      title={item.path}
     >
-      <span className="h-7 w-7 flex-shrink-0 rounded-md border border-border/70 bg-transparent flex items-center justify-center">
-        <AppsDockIcon className="w-4 h-4" />
+      <span className="h-6 w-6 flex-shrink-0 rounded-md border border-border/70 flex items-center justify-center">
+        {item.icon ? <span className="text-sm leading-none">{item.icon}</span> : <AppWindow className="w-3.5 h-3.5" />}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-xs font-medium truncate">{t('htmlApps.title')}</span>
+        <span className="block text-xs font-medium truncate">{item.title}</span>
+        <span className="block text-[10px] font-mono text-muted-foreground truncate">{item.path}</span>
       </span>
     </button>
   );
-  const handleShowPreview = (item: HtmlAppPreview) => {
-    onShowPreview(item);
-    setPopoverOpen(null);
-  };
 
-  const renderList = (items: HtmlAppPreview[]) => (
-    <div className="max-h-[19.75rem] overflow-y-auto p-1.5 space-y-1">
-      {openAppsItem}
-      {items.map((item) => (
-        <button
-          key={item.path}
-          type="button"
-          onClick={() => handleShowPreview(item)}
-          className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-hover transition-colors ${
-            activePath === item.path ? 'text-brand' : 'text-muted-foreground hover:text-foreground'
-          }`}
-          title={item.path}
-        >
-          <span className="h-7 w-7 flex-shrink-0 rounded-md border border-border/70 bg-transparent flex items-center justify-center">
-            {item.icon ? <span className="text-base leading-none">{item.icon}</span> : <AppWindow className="w-4 h-4" />}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-xs font-medium truncate">{item.title}</span>
-            <span className="block text-[10px] font-mono text-muted-foreground truncate">{item.path}</span>
-          </span>
-        </button>
-      ))}
+  const popover = (items: HtmlAppPreview[], withAllApps: boolean) => (
+    <div className="absolute left-full bottom-0 ml-2 w-64 rounded-lg border border-border bg-card shadow-lv3 z-50">
+      <div className="max-h-[19.75rem] overflow-y-auto p-1.5 space-y-1">
+        {withAllApps && (
+          <button
+            type="button"
+            onClick={() => { onOpenApps(); setPopoverOpen(false); }}
+            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
+          >
+            <span className="h-6 w-6 flex-shrink-0 rounded-md border border-border/70 flex items-center justify-center">
+              <AppsDockIcon className="w-3.5 h-3.5" />
+            </span>
+            <span className="text-xs font-medium truncate">{t('workspace.apps')}</span>
+          </button>
+        )}
+        {items.map(listRow)}
+      </div>
     </div>
   );
 
   if (collapsed) {
     return (
-      <div ref={popoverRef} className="relative p-2 border-t border-border">
+      <div ref={popoverRef} className="relative">
         <button
           type="button"
-          onClick={() => setPopoverOpen((open) => (open === 'collapsed' ? null : 'collapsed'))}
-          className={`w-full h-8 rounded-md border bg-transparent text-muted-foreground hover:text-brand hover:border-brand/70 transition-colors flex items-center justify-center ${
-            activePath ? 'border-brand/80 text-brand' : 'border-border/70'
+          onClick={() => (previews.length ? setPopoverOpen((o) => !o) : onOpenApps())}
+          className={`relative w-full flex items-center justify-center px-2 py-2 rounded-lg hover:bg-hover transition-colors ${
+            activePath ? 'text-brand' : 'text-muted-foreground hover:text-foreground'
           }`}
-          title={t('htmlApps.title')}
+          title={t('workspace.apps')}
         >
-          <AppsDockIcon className="w-4 h-4" />
+          <AppsDockIcon className="w-5 h-5 flex-shrink-0" />
+          {previews.length > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 text-muted-foreground text-xs font-medium rounded-full flex items-center justify-center bg-popover border border-border">
+              {previews.length}
+            </span>
+          )}
         </button>
-        {popoverOpen === 'collapsed' && (
-          <div className="absolute left-full bottom-0 ml-2 w-64 rounded-lg border border-border bg-card shadow-lv3 z-50">
-            {renderList(previews)}
-          </div>
-        )}
+        {popoverOpen && popover(previews, true)}
       </div>
     );
   }
 
   return (
-    <div ref={popoverRef} className="p-2 border-t border-border">
-      <div className="grid grid-cols-5 gap-1.5">
-        <button
-          type="button"
-          onClick={onOpenApps}
-          className="h-8 w-8 rounded-md border border-border/70 bg-transparent text-muted-foreground hover:text-brand hover:border-brand/70 active:scale-95 transition-all flex items-center justify-center"
-          title={t('htmlApps.title')}
-        >
-          <AppsDockIcon className="w-4 h-4" />
-        </button>
-        {visibleItems.map((item) => (
-          <HtmlAppIcon
-            key={item.path}
-            item={item}
-            active={activePath === item.path}
-            onClick={() => handleShowPreview(item)}
-          />
-        ))}
-        {hasOverflow && (
-          <div className="relative">
+    <div ref={popoverRef} className="relative flex items-center gap-1 rounded-lg hover:bg-hover transition-colors">
+      <button
+        type="button"
+        onClick={onOpenApps}
+        className="flex-1 min-w-0 flex items-center gap-2 px-2 py-2 text-muted-foreground hover:text-foreground"
+      >
+        <AppsDockIcon className="w-5 h-5 flex-shrink-0" />
+        <span className="text-sm">{t('workspace.apps')}</span>
+      </button>
+      {previews.length > 0 && (
+        <div className="flex items-center gap-1 pr-1.5 flex-shrink-0">
+          {inline.map((item) => (
+            <button
+              key={item.path}
+              type="button"
+              onClick={() => show(item)}
+              className={`h-6 w-6 rounded-md border flex items-center justify-center transition-colors ${
+                activePath === item.path ? 'border-brand/80 text-brand' : 'border-border/70 text-muted-foreground hover:border-brand/70 hover:text-brand'
+              }`}
+              data-tooltip={item.title}
+              aria-label={item.title}
+            >
+              {item.icon ? <span className="text-sm leading-none">{item.icon}</span> : <AppWindow className="w-3.5 h-3.5" />}
+            </button>
+          ))}
+          {overflow && (
             <button
               type="button"
-              onClick={() => setPopoverOpen((open) => (open === 'more' ? null : 'more'))}
-              className="h-8 w-8 rounded-md border border-border/70 bg-transparent text-muted-foreground hover:text-brand hover:border-brand/70 transition-colors flex items-center justify-center"
-              title={t('common.loadMore')}
+              onClick={() => setPopoverOpen((o) => !o)}
+              className="h-6 w-6 rounded-md border border-border/70 text-muted-foreground hover:border-brand/70 hover:text-brand flex items-center justify-center transition-colors"
+              data-tooltip={t('common.loadMore')}
+              aria-label={t('common.loadMore')}
             >
-              <MoreHorizontal className="w-4 h-4" />
+              <MoreHorizontal className="w-3.5 h-3.5" />
             </button>
-            {popoverOpen === 'more' && (
-              <div className="absolute left-0 bottom-full mb-2 w-64 rounded-lg border border-border bg-card shadow-lv3 z-50">
-                {renderList(overflowItems)}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
+      {popoverOpen && popover(rest, false)}
     </div>
   );
 }
@@ -526,14 +516,6 @@ export function ProjectSidebar({
         ))}
       </div>
 
-      <HtmlAppPreviewDock
-        collapsed={collapsed}
-        previews={htmlAppPreviews}
-        activePath={activeHtmlAppPreviewPath}
-        onOpenApps={onOpenApps}
-        onShowPreview={onShowHtmlAppPreview}
-      />
-
       {/* Bottom button area */}
       <div className="p-2 border-t border-border space-y-1">
         {/* Recent sessions */}
@@ -630,6 +612,14 @@ export function ProjectSidebar({
           <Joystick className="w-5 h-5 flex-shrink-0" />
           {!collapsed && <span className="text-sm">{t('workspace.skills')}</span>}
         </button>
+        {/* Apps: opens the HTML apps board; the open apps sit inline. */}
+        <AppsEntry
+          collapsed={collapsed}
+          previews={htmlAppPreviews}
+          activePath={activeHtmlAppPreviewPath}
+          onOpenApps={onOpenApps}
+          onShowPreview={onShowHtmlAppPreview}
+        />
         {/* Bots */}
         <button
           className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-hover transition-colors ${collapsed ? 'justify-center' : ''}`}

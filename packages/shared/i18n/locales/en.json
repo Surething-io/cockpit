@@ -1,5 +1,6 @@
 {
   "common": {
+    "openAsProject": "Open as project",
     "save": "Save",
     "cancel": "Cancel",
     "delete": "Delete",
@@ -63,6 +64,11 @@
     "code": "Code"
   },
   "htmlApps": {
+    "tabFiles": "Files",
+    "tabRun": "Run",
+    "mine": "Mine",
+    "selectHint": "Select an app on the left to see its files and source; it only runs when you click Run (apps get full shell access).",
+    "openFull": "Open full screen (minimisable to the sidebar)",
     "title": "HTML Apps",
     "addTooltip": "Add to HTML panel",
     "added": "Added to HTML panel",

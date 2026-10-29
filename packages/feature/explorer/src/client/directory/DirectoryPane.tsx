@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { SimpleCodeBlock, InteractiveMarkdownPreview } from '@cockpit/feature-explorer';
+import { InteractiveMarkdownPreview } from '../InteractiveMarkdownPreview';
+import { SimpleCodeBlock } from '../CodeViewer';
 import { toast } from '@cockpit/shared-ui';
 import {
   loadDirFiles,
@@ -39,7 +40,7 @@ const TREE_WIDTH_MAX = TREE_WIDTH * 1.5;
 const isMarkdown = (path: string) => /\.(md|markdown)$/i.test(path);
 
 /**
- * One directory-shaped item — a skill, a Bot: header (title, current file's
+ * One directory-shaped item — a skill, a Bot, an HTML app: header (title, current file's
  * path, copy), a preview/source switch, a file tree column when the directory
  * holds more than its entry file, and the picked file's body. Markdown renders
  * (with the source switch); anything else shows as highlighted source;

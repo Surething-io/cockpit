@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { loadSkillContent } from '@cockpit/shared-api';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
-import { DirectoryPane } from './DirectoryPane';
+import { DirectoryPane } from '@cockpit/feature-explorer';
 
 interface SkillPreviewPaneProps {
   skillId: string;

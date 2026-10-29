@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { toast, MODAL_SHELL_CLASS, MODAL_CARD_GRID_CLASS } from '@cockpit/shared-ui';
-import { AppWindow, ExternalLink, Minimize2, RotateCw, SquareTerminal, Trash2, Plus, X, Search, Copy } from 'lucide-react';
+import { toast, MODAL_SHELL_CLASS } from '@cockpit/shared-ui';
+import { AppWindow, ExternalLink, FolderOpen, Maximize2, Minimize2, RotateCw, SquareTerminal, Trash2, Plus, X, Search, Copy } from 'lucide-react';
+import { publishTopic } from '@cockpit/effect-react';
+import { Topics } from '@cockpit/effect-services';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { toExternalBrowserAppUrl, toLocalAppUrl } from '@cockpit/shared-utils';
 import { HtmlAppFrame } from '../HtmlAppFrame';
+import { DirectoryPane } from '../directory/DirectoryPane';
 import { notifyHtmlAppsChanged } from './htmlAppsBus';
 import { loadHtmlApps, addHtmlApp, deleteHtmlApp, type HtmlAppInfo } from '@cockpit/shared-api';
 
@@ -23,6 +26,21 @@ interface HtmlAppsModalProps {
   onOpenApp?: (path: string) => void;
 }
 
+/**
+ * HtmlAppsModal — the apps board (sidebar "Apps" entry) plus the full-screen
+ * app previews it launches (minimisable to the sidebar dock).
+ *
+ * Board: registered apps on the left (the user's own, then built-ins), the
+ * selected app on the right in two tabs —
+ *   - Files (default): its folder as a file tree + source view (DirectoryPane
+ *     over /api/html-apps/files), opened on the app's own .html;
+ *   - Run: the app itself, live.
+ * The board opens on the first app's Files tab. Nothing runs until Run is
+ * clicked: previewing an HTML app runs it, with full shell access (see "HTML
+ * Apps Runtime" in CLAUDE.md), so neither opening the board nor picking a row
+ * executes anything. Leaving the Run tab, picking
+ * another app or closing the board unmounts the running one.
+ */
 export function HtmlAppsModal({
   isOpen,
   htmlAppPreviews,
@@ -41,6 +59,11 @@ export function HtmlAppsModal({
   const [addPath, setAddPath] = useState('');
   const [adding, setAdding] = useState(false);
   const [previewReloadKeys, setPreviewReloadKeys] = useState<Record<string, number>>({});
+  // The app running in the board's right pane (by id); null = none yet.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [boardReloadKey, setBoardReloadKey] = useState(0);
+  const [rightTab, setRightTab] = useState<'files' | 'run'>('files');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(async () => {
@@ -63,6 +86,8 @@ export function HtmlAppsModal({
 
   const handleClose = useCallback(() => {
     setShowAdd(false);
+    setSelectedId(null);
+    setConfirmDeleteId(null);
     onClose();
   }, [onClose]);
 
@@ -89,6 +114,22 @@ export function HtmlAppsModal({
         a.path.toLowerCase().includes(q),
     );
   }, [apps, query]);
+
+  const groups = useMemo(() => [
+    { key: 'mine', labelKey: 'htmlApps.mine', items: filtered.filter((a) => !a.builtin) },
+    { key: 'builtin', labelKey: 'htmlApps.builtin', items: filtered.filter((a) => a.builtin) },
+  ].filter((g) => g.items.length > 0), [filtered]);
+  const selected = selectedId ? apps.find((a) => a.id === selectedId) ?? null : null;
+
+  // Auto-select the first row so the board opens on an app's files. Safe: the
+  // Files tab only reads source — nothing runs until Run is clicked. Only fills
+  // a hole (nothing selected, or the selection was deleted).
+  const firstId = groups[0]?.items[0]?.id ?? null;
+  useEffect(() => {
+    if (!isOpen || selected || !firstId) return;
+    setSelectedId(firstId);
+    setRightTab('files');
+  }, [isOpen, selected, firstId]);
 
   // Built-in cards ship with Cockpit and are always present, so they must not
   // count towards "is this panel empty?" — otherwise the first-run guidance
@@ -129,6 +170,7 @@ export function HtmlAppsModal({
     const exit = await BrowserRuntime.runPromiseExit(deleteHtmlApp(id));
     if (exit._tag === 'Success') {
       setApps((prev) => prev.filter((a) => a.id !== id));
+      setSelectedId((cur) => (cur === id ? null : cur));
       notifyHtmlAppsChanged();
     } else {
       toast(t('common.deleteFailed'), 'error');
@@ -215,73 +257,183 @@ export function HtmlAppsModal({
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4">
-              {loading ? (
-                <div className="text-center text-muted-foreground py-8 text-sm">{t('common.loading')}</div>
-              ) : (
-                <>
-                  {filtered.length > 0 && (
-                    <div className={MODAL_CARD_GRID_CLASS}>
-                      {filtered.map((app) => (
-                        <HtmlAppCard
-                          key={app.id}
-                          app={app}
-                          onOpenConsole={() => openBubble(app.path)}
-                          onOpenExternal={() => openExternal(app.path)}
-                          onPreview={() => {
-                            onShowHtmlAppPreview({ path: app.path, title: app.title, icon: app.icon });
-                            handleClose();
-                          }}
-                          onDelete={() => handleDelete(app.id)}
-                          onCopyPath={() => handleCopyPath(app.path)}
-                        />
-                      ))}
-                    </div>
-                  )}
+            <div className="flex-1 flex min-h-0">
+              {/* Left: apps, grouped. Padding stays off the scroll node so the
+                  sticky group header does not leave a strip of rows above it. */}
+              <div className="w-full md:w-[300px] min-h-0 flex-shrink-0 md:border-r border-border overflow-y-auto">
+                {loading && apps.length === 0 ? (
+                  <div className="text-center text-muted-foreground py-8 text-sm">{t('common.loading')}</div>
+                ) : (
+                  <div className="p-3 space-y-3">
+                    {groups.map((group) => (
+                      <div key={group.key} className="rounded-lg border border-border">
+                        <div className="sticky top-0 z-10 px-3 py-1.5 bg-card rounded-t-lg border-b border-border/60 text-[11px] font-medium text-muted-foreground flex items-center">
+                          <span>{t(group.labelKey)}</span>
+                          <span className="ml-auto tabular-nums text-foreground-subtle">{group.items.length}</span>
+                        </div>
+                        <div className="p-1 space-y-0.5">
+                          {group.items.map((app) => (
+                            <HtmlAppRow
+                              key={app.id}
+                              app={app}
+                              selected={app.id === selectedId}
+                              onSelect={() => { setSelectedId(app.id); setConfirmDeleteId(null); setBoardReloadKey(0); setRightTab('files'); }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
 
-                  {filtered.length === 0 && searching && (
-                    <div className="text-center text-muted-foreground py-8 text-sm">
-                      {t('htmlApps.emptyNoMatch')}
-                    </div>
-                  )}
+                    {filtered.length === 0 && searching && (
+                      <div className="text-center text-muted-foreground py-6 text-xs">{t('htmlApps.emptyNoMatch')}</div>
+                    )}
 
-                  {/* Guidance is keyed to *user* apps, so it survives the
-                      built-in cards always being present. When cards sit above
-                      it, it becomes a footer rather than a full empty state. */}
-                  {showGuidance && (
-                    <div
-                      className={`text-center text-muted-foreground py-8 text-sm space-y-2${
-                        filtered.length > 0 ? ' mt-4 border-t border-border/60' : ''
+                    {/* Guidance is keyed to *user* apps, so it survives the
+                        built-in rows always being present. */}
+                    {showGuidance && (
+                      <div className="text-center text-muted-foreground py-4 text-xs space-y-2">
+                        <p>{t('htmlApps.emptyNoApps')}</p>
+                        <p>
+                          {t('htmlApps.emptyCreatePrefix')}{' '}
+                          <code className="px-1.5 py-0.5 rounded bg-muted text-foreground font-mono text-xs">/html</code>
+                          {' '}{t('htmlApps.emptyCreateSuffix')}
+                        </p>
+                        <p>
+                          <button type="button" onClick={() => setShowAdd(true)} className="text-brand hover:underline">
+                            {t('htmlApps.addExisting')}
+                          </button>
+                          {' · '}
+                          <a href={docsUrl} target="_blank" rel="noreferrer" className="text-brand hover:underline">
+                            {t('htmlApps.viewDocs')}
+                          </a>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Right: the selected app, running */}
+              <div className="hidden md:flex flex-1 min-w-0 flex-col">
+                {!selected ? (
+                  <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground px-6 text-center">
+                    {t('htmlApps.selectHint')}
+                  </div>
+                ) : (() => {
+                  const tabButton = (key: 'files' | 'run', label: string) => (
+                    <button
+                      onClick={() => setRightTab(key)}
+                      disabled={key === 'run' && !selected.valid}
+                      className={`px-3 py-1 transition-colors disabled:opacity-40 ${
+                        rightTab === key ? 'bg-brand text-white' : 'text-muted-foreground hover:text-foreground hover:bg-hover'
                       }`}
                     >
-                      <p>{t('htmlApps.emptyNoApps')}</p>
-                      <p>
-                        {t('htmlApps.emptyCreatePrefix')}{' '}
-                        <code className="px-1.5 py-0.5 rounded bg-muted text-foreground font-mono text-xs">/html</code>
-                        {' '}{t('htmlApps.emptyCreateSuffix')}
-                      </p>
-                      <p>
-                        <button
-                          type="button"
-                          onClick={() => setShowAdd(true)}
-                          className="text-brand hover:underline"
-                        >
-                          {t('htmlApps.addExisting')}
+                      {label}
+                    </button>
+                  );
+                  const controls = (
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <div className="flex items-center rounded-md border border-border overflow-hidden text-xs mr-1">
+                        {tabButton('files', t('htmlApps.tabFiles'))}
+                        {tabButton('run', t('htmlApps.tabRun'))}
+                      </div>
+                      {selected.valid && (
+                        <>
+                          {rightTab === 'run' && (
+                            <button onClick={() => setBoardReloadKey((k) => k + 1)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded" data-tooltip={t('common.refresh')} aria-label={t('common.refresh')}>
+                              <RotateCw className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              onShowHtmlAppPreview({ path: selected.path, title: selected.title, icon: selected.icon });
+                              handleClose();
+                            }}
+                            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded"
+                            data-tooltip={t('htmlApps.openFull')}
+                            aria-label={t('htmlApps.openFull')}
+                          >
+                            <Maximize2 className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => openBubble(selected.path)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded" data-tooltip={t('common.openInConsole')} aria-label={t('common.openInConsole')}>
+                            <SquareTerminal className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => openExternal(selected.path)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded" data-tooltip={t('browser.openInNewWindow')} aria-label={t('browser.openInNewWindow')}>
+                            <ExternalLink className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                      {/* Open the app's folder as a project (explorer, git) on its
+                          .html — same as the Bots and skills boards. */}
+                      <button
+                        onClick={() => {
+                          const parts = selected.path.split('/');
+                          publishTopic(Topics.OpenProject, { cwd: parts.slice(0, -1).join('/'), file: parts[parts.length - 1] });
+                          handleClose();
+                        }}
+                        className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded"
+                        data-tooltip={t('common.openAsProject')}
+                        aria-label={t('common.openAsProject')}
+                      >
+                        <FolderOpen className="w-4 h-4" />
+                      </button>
+                      {/* Built-ins are virtual — there is no html.json entry to remove. */}
+                      {selected.builtin ? null : confirmDeleteId === selected.id ? (
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => { setConfirmDeleteId(null); void handleDelete(selected.id); }} className="px-2 py-1 text-xs rounded bg-red-9 text-white hover:bg-red-10">{t('common.confirm')}</button>
+                          <button onClick={() => setConfirmDeleteId(null)} className="px-2 py-1 text-xs rounded border border-border text-muted-foreground hover:text-foreground">{t('common.cancel')}</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setConfirmDeleteId(selected.id)} className="p-1.5 text-muted-foreground hover:text-red-11 hover:bg-red-9/10 rounded" data-tooltip={t('common.delete')} aria-label={t('common.delete')}>
+                          <Trash2 className="w-4 h-4" />
                         </button>
-                        {' · '}
-                        <a
-                          href={docsUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-brand hover:underline"
-                        >
-                          {t('htmlApps.viewDocs')}
-                        </a>
-                      </p>
+                      )}
                     </div>
-                  )}
-                </>
-              )}
+                  );
+                  const title = (
+                    <span className="flex items-center gap-2 min-w-0">
+                      {selected.icon ? <span className="text-base leading-none flex-shrink-0">{selected.icon}</span> : <AppWindow className="w-4 h-4 flex-shrink-0 text-muted-foreground" />}
+                      <span className="truncate">{selected.title}</span>
+                    </span>
+                  );
+
+                  if (rightTab === 'files') {
+                    return (
+                      <DirectoryPane
+                        // Remount per app: listing, picked file and mode reset.
+                        key={selected.id}
+                        endpoint="/api/html-apps/files"
+                        id={selected.id}
+                        entryFile={selected.path.split('/').pop() || 'index.html'}
+                        title={title}
+                        actions={controls}
+                      />
+                    );
+                  }
+
+                  return (
+                    <>
+                      <div className="flex items-center gap-3 px-4 py-3 border-b border-border flex-shrink-0">
+                        <div className="flex-1 min-w-0">
+                          <h2 className="text-sm font-medium text-foreground truncate">{title}</h2>
+                          <div className="flex items-center gap-1 min-w-0 mt-0.5">
+                            <span className="font-mono text-xs text-muted-foreground truncate" data-tooltip={selected.path}>{selected.path}</span>
+                            <button onClick={() => handleCopyPath(selected.path)} className="p-0.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded flex-shrink-0" title={t('common.copyPath')} aria-label={t('common.copyPath')}>
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                        {controls}
+                      </div>
+                      <div className="flex-1 min-h-0 overflow-hidden">
+                        {/* Remount per app; unmounted on leaving this tab.
+                            User clicked Run → trusted (gets the bash SDK). */}
+                        <HtmlAppFrame key={selected.id} filePath={selected.path} reloadKey={boardReloadKey} />
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
             </div>
           </div>
         </div>
@@ -389,75 +541,31 @@ export function HtmlAppsModal({
   );
 }
 
-interface HtmlAppCardProps {
+interface HtmlAppRowProps {
   app: HtmlAppInfo;
-  onOpenConsole: () => void;
-  onOpenExternal: () => void;
-  onPreview: () => void;
-  onDelete: () => void;
-  onCopyPath: () => void;
+  selected: boolean;
+  onSelect: () => void;
 }
 
-function HtmlAppCard({ app, onOpenConsole, onOpenExternal, onPreview, onDelete, onCopyPath }: HtmlAppCardProps) {
+/** One list row: icon, title, `/name`, badges, the description's first line. */
+function HtmlAppRow({ app, selected, onSelect }: HtmlAppRowProps) {
   const { t } = useTranslation();
-  const [confirmDel, setConfirmDel] = useState(false);
-
   return (
     <div
-      className={`group flex flex-col h-full border border-border rounded-lg p-3 hover:border-brand hover:shadow-lv2 transition-all cursor-pointer ${app.valid ? '' : 'opacity-60'}`}
-      onClick={() => app.valid && onPreview()}
+      onClick={onSelect}
+      className={`rounded-md px-2 py-2 cursor-pointer transition-colors ${selected ? 'bg-brand/10' : 'hover:bg-hover'} ${app.valid ? '' : 'opacity-60'}`}
     >
-      <div className="flex items-center gap-2.5">
-        <div className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-md bg-brand/10 text-brand text-lg">
-          {app.icon ? <span>{app.icon}</span> : <ExternalLink className="w-5 h-5" />}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-foreground truncate" data-tooltip={app.title}>{app.title}</div>
-          <div className="font-mono text-[11px] text-muted-foreground truncate" data-tooltip={`/${app.name}`}>/{app.name}</div>
-        </div>
-        {!app.valid && <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-red-9/15 text-red-11">{t('htmlApps.invalid')}</span>}
-        {app.builtin && <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{t('htmlApps.builtin')}</span>}
-        <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={onOpenConsole}
-            disabled={!app.valid}
-            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title={t('common.openInConsole')}
-          >
-            <SquareTerminal className="w-4 h-4" />
-          </button>
-          <button
-            onClick={onOpenExternal}
-            disabled={!app.valid}
-            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title={t('browser.openInNewWindow')}
-          >
-            <ExternalLink className="w-4 h-4" />
-          </button>
-          {/* Built-ins are virtual — there is no html.json entry to remove. */}
-          {app.builtin ? null : confirmDel ? (
-            <>
-              <button onClick={() => { setConfirmDel(false); onDelete(); }} className="px-2 py-1 text-xs rounded bg-red-9 text-white hover:bg-red-10">{t('common.confirm')}</button>
-              <button onClick={() => setConfirmDel(false)} className="px-2 py-1 text-xs rounded border border-border text-muted-foreground hover:text-foreground">{t('common.cancel')}</button>
-            </>
-          ) : (
-            <button onClick={() => setConfirmDel(true)} className="p-1.5 text-muted-foreground hover:text-red-11 hover:bg-red-9/10 rounded transition-colors" title={t('common.delete')}>
-              <Trash2 className="w-4 h-4" />
-            </button>
-          )}
-        </div>
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="w-5 h-5 flex-shrink-0 flex items-center justify-center rounded bg-brand/10 text-brand text-xs">
+          {app.icon ? <span>{app.icon}</span> : <AppWindow className="w-3.5 h-3.5" />}
+        </span>
+        <span className="text-xs font-medium text-foreground truncate min-w-0" data-tooltip={app.title}>{app.title}</span>
+        <span className="font-mono text-[10px] text-muted-foreground truncate flex-1 min-w-0" data-tooltip={app.path}>/{app.name}</span>
+        {!app.valid && <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-red-9/15 text-red-11">{t('htmlApps.invalid')}</span>}
       </div>
-
-      <div className="font-mono text-xs text-muted-foreground mt-2 break-all">
-        {app.path}
-        <button onClick={(e) => { e.stopPropagation(); onCopyPath(); }} className="inline-flex align-middle ml-1 p-0.5 hover:text-foreground hover:bg-hover rounded transition-colors" title={t('common.copyPath')}>
-          <Copy className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      <p className="text-sm text-muted-foreground mt-2 pt-2 border-t border-border/60 break-words whitespace-pre-wrap">
+      <div className="text-xs text-muted-foreground truncate mt-0.5 pl-7" data-tooltip={app.description || undefined}>
         {app.description || <span className="italic opacity-60">{t('htmlApps.noDescription')}</span>}
-      </p>
+      </div>
     </div>
   );
 }

@@ -25,6 +25,9 @@ export * from './DiffDensityToggle';
 export * from './DiffViewModeToggle';
 export * from './CodeViewer';
 export * from './InteractiveMarkdownPreview';
+// Read-only directory view (file tree + preview) — the skills, Bots and HTML
+// apps boards' right pane.
+export { DirectoryPane } from './directory/DirectoryPane';
 export * from './CsvTableView';
 export { CsvPreviewModal } from './CsvPreviewModal';
 export * from './HtmlAppFrame';

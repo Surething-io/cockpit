@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Joystick } from 'lucide-react';
+import { FolderOpen, Joystick } from 'lucide-react';
+import { publishTopic } from '@cockpit/effect-react';
+import { Topics } from '@cockpit/effect-services';
 import { toast, MODAL_SHELL_CLASS } from '@cockpit/shared-ui';
 import {
   loadSkillsList,
@@ -308,8 +310,22 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
                     skillId={selected.id}
                     name={selected.name}
                     onClose={onClose}
-                    actions={
-                      selected.id.startsWith('builtin:') ? (
+                    actions={<>
+                      {/* Same as the Bots board: open the skill folder as a
+                          project (explorer, git, markdown preview) on SKILL.md. */}
+                      <button
+                        onClick={() => {
+                          const dir = selected.path.split('/').slice(0, -1).join('/');
+                          publishTopic(Topics.OpenProject, { cwd: dir, file: 'SKILL.md' });
+                          onClose();
+                        }}
+                        className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors flex-shrink-0"
+                        data-tooltip={t('common.openAsProject')}
+                        aria-label={t('common.openAsProject')}
+                      >
+                        <FolderOpen className="w-4 h-4" />
+                      </button>
+                      {selected.id.startsWith('builtin:') ? (
                         <span className="text-[11px] text-foreground-subtle flex-shrink-0">{t('skills.builtinReadOnly')}</span>
                       ) : confirmDeleteId === selected.id ? (
                         <div className="flex items-center gap-1 flex-shrink-0">
@@ -336,8 +352,8 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
                           </svg>
                         </button>
-                      )
-                    }
+                      )}
+                    </>}
                   />
                 ) : (
                   <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">

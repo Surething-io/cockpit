@@ -1,5 +1,6 @@
 {
   "common": {
+    "openAsProject": "作为项目打开",
     "save": "保存",
     "cancel": "取消",
     "delete": "删除",
@@ -63,6 +64,11 @@
     "code": "代码"
   },
   "htmlApps": {
+    "tabFiles": "文件",
+    "tabRun": "运行",
+    "mine": "我的",
+    "selectHint": "选择左侧应用，查看它的文件和源码；点「运行」才会运行它（应用拥有完整的命令行权限）。",
+    "openFull": "全屏打开（可最小化到侧边栏）",
     "title": "HTML 应用",
     "addTooltip": "添加到 HTML 面板",
     "added": "已添加到 HTML 面板",

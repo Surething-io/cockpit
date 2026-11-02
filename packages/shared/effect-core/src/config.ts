@@ -97,12 +97,8 @@ const snapshotMaxFileKbConfig = Config.integer(
   "COCKPIT_SNAPSHOT_MAX_FILE_KB"
 ).pipe(Config.withDefault(2048))
 
-// Built-in Agent session transcript retention. Mirrors Claude Code's
-// cleanupPeriodDays (default 30). Governs every Built-in Agent store
-// (BUILTIN_SESSION_DIR_NAMES: ollama / deepseek / kimi / glm -sessions under the
-// cockpit dir) — cockpit writes those itself and nothing else cleans them; pinned
-// sessions are never removed (see SessionCleanupLive). Claude and Codex sessions
-// are cleaned by their own CLI / SDK.
+// Native Pi session retention under COCKPIT_HOME/pi/sessions. Pinned sessions
+// are protected; Claude and Codex retain their CLI / SDK cleanup policies.
 const sessionKeepDaysConfig = Config.integer("COCKPIT_SESSION_KEEP_DAYS").pipe(
   Config.withDefault(30)
 )

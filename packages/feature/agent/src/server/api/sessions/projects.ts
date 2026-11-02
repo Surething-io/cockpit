@@ -1,7 +1,8 @@
+import { listPiSessions } from '../../../effect/piSessionLive';
 import { readdir } from 'fs/promises';
 import * as path from 'path';
 import { Effect } from 'effect';
-import { CLAUDE_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath, getBuiltinSessionRoots, normalizeCodexSessionId } from '@cockpit/shared-utils';
+import { CLAUDE_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath, normalizeCodexSessionId } from '@cockpit/shared-utils';
 import { handler } from '@cockpit/effect-runtime/server';
 import { isJsonObject, readJsonOr } from '@cockpit/effect-runtime/server/fs';
 import { TranscriptIndex } from '@cockpit/effect-services';
@@ -103,41 +104,6 @@ const resolveProjectPath = (
 const claudeDirIfPresent = (dirName: string, claudeDirs: Set<string>): string | undefined =>
   claudeDirs.has(dirName) ? path.join(CLAUDE_PROJECTS_DIR, dirName) : undefined;
 
-/**
- * Merge one session store into the project map. Every store except the primary Claude one
- * goes through here — they share the dir-per-project layout and the merge rule, and differ
- * only in where a project's real cwd can be recovered from.
- *
- * The Built-in Agent stores (ollama-, deepseek-, kimi- and glm-sessions) write no cwd field
- * in their transcripts, so a project's real path is recovered from the Claude projects dir
- * and then the global-state lookup rather than from the store itself.
- *
- * Path resolution runs only for projects not already in the map: an existing entry already
- * has a resolved path, so an unresolvable sibling store must still contribute its count.
- */
-const mergeStoreIntoProjects = (
-  root: string,
-  projectMap: ProjectMap,
-  cwdLookup: Map<string, string>,
-  claudeDirs: Set<string>,
-): Effect.Effect<void, never, TranscriptIndex> =>
-  Effect.gen(function* () {
-    for (const dirName of yield* listSubdirs(root)) {
-      const count = (yield* listSessionFiles(path.join(root, dirName))).length;
-      if (count === 0) continue;
-
-      const existing = projectMap.get(dirName);
-      if (existing) {
-        existing.sessionCount += count;
-        continue;
-      }
-
-      const fullPath = yield* resolveProjectPath(dirName, cwdLookup, claudeDirIfPresent(dirName, claudeDirs));
-      if (!fullPath) continue;
-      projectMap.set(dirName, { fullPath, sessionCount: count });
-    }
-  });
-
 // Read codex sessions from cockpit session.json. Codex is the only engine that needs
 // this: its transcripts live outside the cwd-encoded layout, so there is no project dir
 // to scan — the session.json engines map is the only record that ties one to a project.
@@ -188,11 +154,12 @@ const buildProjectsList: Effect.Effect<ProjectInfo[], never, TranscriptIndex> = 
     if (fullPath && count > 0) projectMap.set(dirName, { fullPath, sessionCount: count });
   }
 
-  // --- Source 2: Built-in Agent stores (ollama, deepseek, kimi, glm) ---
-  // ~/.cockpit/<engine>/projects is deliberately NOT scanned: those are transcripts from
-  // the removed Claude Agent SDK mode, and no loop remains that can resume them.
-  for (const root of getBuiltinSessionRoots()) {
-    yield* mergeStoreIntoProjects(root, projectMap, cwdLookup, claudeDirs);
+  // Pi headers carry their real project cwd; no external project registration is required.
+  for (const session of yield* listPiSessions().pipe(Effect.orElseSucceed(() => []))) {
+    const key = encodePath(session.cwd);
+    const existing = projectMap.get(key);
+    if (existing) existing.sessionCount++;
+    else projectMap.set(key, { fullPath: session.cwd, sessionCount: 1 });
   }
 
   // --- Source 3: Codex sessions via cockpit session.json + global Codex index ---

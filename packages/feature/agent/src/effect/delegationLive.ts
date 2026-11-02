@@ -1,3 +1,5 @@
+import { isPiSessionPath } from '@cockpit/shared-utils';
+import { readPiSession } from './piSessionLive';
 /**
  * DelegationServiceLive — start sessions in any cwd on any engine; derive any session's status.
  *
@@ -11,8 +13,8 @@
  * row and renders engine errors as ordinary assistant text):
  *   claude    last conversation entry is an assistant with stop_reason "end_turn";
  *             isApiErrorMessage marks a failure.
- *   built-in  the final assistant row carries `usage` only on normal completion; the
- *             error path writes a "⚠️ …" row without it (builtinAgent/index.ts).
+ *   Pi        unresolved input metadata takes precedence over assistant stopReason;
+ *             a later unrelated success cannot resolve an outstanding input.
  *   codex     last lifecycle event_msg: task_complete (error → failed), turn_aborted.
  */
 import { open, stat } from "node:fs/promises"
@@ -44,6 +46,7 @@ import {
   getRunInfo,
   getRunSessionId,
   isRunActive,
+  isSessionBusy,
   requestStop,
 } from "../server/sessionRunHub"
 import { resolveSessionPath } from "../server/api/session/sessionStore"
@@ -366,17 +369,30 @@ export const lastReplyOf = (
   return { lastReply: reply.slice(0, max), lastReplyTruncated: true }
 }
 
+/** Unfinished accepted work remains unresolved across unrelated later successes. */
+export const piUnfinishedInput = (
+  entries: import('@earendil-works/pi-coding-agent').SessionEntry[],
+): { status: Terminal; text: string } | undefined => {
+  const notices = entries.filter((entry) => entry.type === 'custom' && entry.customType === 'cockpit.undelivered-input');
+  if (!notices.length) return undefined;
+  const data = notices.map((entry) => entry.type === 'custom' ? entry.data as { reason?: unknown; text?: unknown } | undefined : undefined);
+  return {
+    status: data.some((item) => item?.reason === 'failed') ? 'failed' : 'incomplete',
+    text: data.map((item) => typeof item?.text === 'string' ? item.text : 'Accepted input did not complete.').join('\n'),
+  };
+}
+
 const statusImpl = (
   cwd: string,
   sessionId: string,
   full: boolean
 ): Effect.Effect<SessionStatusReport, NotFoundError | AppError> =>
   Effect.gen(function* () {
-    const running = yield* Effect.sync(() => isRunActive(sessionId))
+    const busyAtStart = yield* Effect.sync(() => isSessionBusy(sessionId))
     const store = yield* Effect.promise(() => resolveSessionPath(cwd, sessionId))
     const link = buildSessionLink(cwd, sessionId)
     if (!store) {
-      if (!running) return yield* Effect.fail(new NotFoundError({ resource: "session", id: sessionId }))
+      if (!busyAtStart && !isSessionBusy(sessionId)) return yield* Effect.fail(new NotFoundError({ resource: "session", id: sessionId }))
       return { cwd, sessionId, engine: null, title: "", status: "running", lastReply: null, lastReplyTruncated: false, link }
     }
     const parsed = yield* Effect.tryPromise({
@@ -385,18 +401,29 @@ const statusImpl = (
       catch: (cause) => new AppError({ message: `failed to parse transcript ${store.sessionPath}`, cause }),
     })
     const engine = store.engine
+    const piView = isPiSessionPath(store.sessionPath) ? yield* readPiSession(store.sessionPath) : undefined
+    const unfinished = piView ? piUnfinishedInput(piView.entries) : undefined
+    // Stop ends live streaming immediately, but the writer still owns cleanup
+    // and persistence. Never derive completion from an older disk image then.
+    const running = busyAtStart || (yield* Effect.sync(() => isSessionBusy(sessionId)))
     const status: SessionRunStatus = running
       ? "running"
-      : yield* readTerminal(store.sessionPath, (entries) =>
-          engine === "codex" ? codexTerminal(entries) : claudeShapedTerminal(entries, engine)
-        )
+      : piView
+        ? unfinished?.status ?? (() => {
+            const last = piView.entries.findLast((entry) => entry.type === 'message');
+            if (last?.type !== 'message' || last.message.role !== 'assistant') return 'incomplete';
+            return last.message.stopReason === 'error' ? 'failed' : last.message.stopReason === 'stop' ? 'done' : 'incomplete';
+          })()
+        : yield* readTerminal(store.sessionPath, (entries) =>
+            engine === "codex" ? codexTerminal(entries) : claudeShapedTerminal(entries, engine)
+          )
     return {
       cwd,
       sessionId,
       engine: store.engine,
       title: parsed.title,
       status,
-      ...lastReplyOf(parsed.messages, full ? Number.POSITIVE_INFINITY : LAST_REPLY_MAX),
+      ...lastReplyOf(unfinished && !running ? [{ role: 'assistant', content: unfinished.text }] : parsed.messages, full ? Number.POSITIVE_INFINITY : LAST_REPLY_MAX),
       link,
     }
   })

@@ -17,7 +17,7 @@ import type {
   AgentChunk,
   Message,
 } from "@cockpit/effect-services"
-import { createOllamaModel } from "../server/engines/builtinAgent/model"
+import { createOllamaModel } from "../server/engines/shared/ollamaModel"
 
 const toModelMessages = (messages: ReadonlyArray<Message>): ModelMessage[] =>
   messages.map((m) => ({

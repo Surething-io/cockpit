@@ -1,3 +1,5 @@
+import { isPiSessionPath } from '@cockpit/shared-utils';
+import { forkPiSession } from '../../../effect/piSessionEditLive';
 import { createReadStream } from 'fs';
 import { createInterface } from 'readline';
 import { randomUUID } from 'crypto';
@@ -125,6 +127,13 @@ export const POST = dynamicHandler<
           reason: `cannot create sessions in the ${store.engine} store`,
         })
       );
+    }
+    if (isPiSessionPath(store.sessionPath)) {
+      const result = yield* forkPiSession(store.sessionPath, fromMessageUuid, scope).pipe(
+        Effect.mapError((cause) => new FSError({ path: store.sessionPath, op: 'write', cause }))
+      );
+      if (!result) return yield* Effect.fail(new NotFoundError({ resource: 'message', id: fromMessageUuid ?? originalSessionId }));
+      return ok({ success: true, originalSessionId, ...result, artifactCount: 0 });
     }
     const originalPath = store.sessionPath;
 

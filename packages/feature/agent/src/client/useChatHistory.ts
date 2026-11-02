@@ -66,6 +66,7 @@ interface SessionPageData {
   /** Name of the Bot that dispatched this session; absent when a human opened it. */
   bot?: string;
   engine?: ChatEngine;
+  model?: string;
   usage?: { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
 }
 
@@ -122,6 +123,7 @@ interface UseChatHistoryReturn {
   // engine instead of the undefined-means-claude default. null until the first
   // successful load.
   loadedEngine: ChatEngine | null;
+  loadedModel: string | null;
   // Bot behind the loaded session, echoed by /api/session-by-path (derived there from
   // the session's first human message). null until a load lands, and for every session
   // a human started. Travels with loadedEngine because both answer "who is driving
@@ -148,6 +150,7 @@ export function useChatHistory(
   // Updated whenever a load successfully returns messages.
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(null);
   // Engine echoed by /api/session-by-path for the loaded session.
+  const [loadedModel, setLoadedModel] = useState<string | null>(null);
   const [loadedEngine, setLoadedEngine] = useState<ChatEngine | null>(null);
   // Bot echoed by the same payload (undefined there = a human's session).
   const [loadedBot, setLoadedBot] = useState<string | null>(null);
@@ -227,6 +230,7 @@ export function useChatHistory(
         }
         if (data.engine) {
           setLoadedEngine(data.engine);
+          setLoadedModel(data.model ?? null);
         }
         // Assigned unconditionally, unlike engine: "no bot" is a real answer the
         // payload gives, and a stale robot on a human session is worse than none.
@@ -447,6 +451,7 @@ export function useChatHistory(
     loadHistoryByCwdAndSessionId,
     loadedSessionId,
     loadedEngine,
+    loadedModel,
     loadedBot,
   };
 }

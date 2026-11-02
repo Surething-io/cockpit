@@ -15,3 +15,4 @@ export * from './spawnEnv';
 export * from './htmlBashSdk';
 export * from './outputProgress';
 export * from './changeClass';
+export * from './piPaths';

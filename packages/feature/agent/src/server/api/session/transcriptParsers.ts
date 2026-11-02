@@ -13,6 +13,9 @@
 // (skill bodies, task notifications, tool_result tails), and fork.ts once cut a
 // 21-turn conversation into 58 by guessing.
 import * as fs from 'fs';
+import { Effect } from 'effect';
+import { isPiSessionPath } from '@cockpit/shared-utils';
+import { readPiSession, piSelection } from '../../../effect/piSessionLive';
 import * as readline from 'readline';
 import { Readable } from 'stream';
 import { injectionKind, isHumanTurnStart, queuedPromptAsUserEntry } from '../../../shared/transcriptTurns';
@@ -167,6 +170,7 @@ export async function parseTranscriptFile(
 ): Promise<{
   messages: ChatMessage[];
   title: string;
+  model?: string;
   /** Name of the Bot this session was dispatched for, if any (shared/botSession.ts). */
   bot?: string;
   usage?: TokenUsage;
@@ -175,6 +179,18 @@ export async function parseTranscriptFile(
   /** Index of the first returned turn — the cursor a further scroll-up pages before. */
   startTurnIndex: number;
 }> {
+  if (typeof filePath === 'string' && isPiSessionPath(filePath)) {
+    const native = await Effect.runPromise(readPiSession(filePath));
+    const raw = native.messages as TranscriptMessage[];
+    const messages = convertToChatMessages(raw);
+    const prompts = messages.filter((m) => m.role === 'user').map((m) => m.content);
+    const last = native.entries.findLast((e) => e.type === 'message' && e.message.role === 'assistant');
+    const usage = last?.type === 'message' && last.message.role === 'assistant' ? {
+      input_tokens: last.message.usage.input, output_tokens: last.message.usage.output,
+      cache_read_input_tokens: last.message.usage.cacheRead, cache_creation_input_tokens: last.message.usage.cacheWrite,
+    } : undefined;
+    return { ...pageTurns(messages, page), title: generateTitle(native.name ?? '', '', prompts), bot: detectBotName(prompts[0]), usage, model: piSelection(native.entries).model };
+  }
   const rl = openTranscriptLines(filePath);
 
   const rawMessages: TranscriptMessage[] = [];

@@ -1,22 +1,9 @@
-/**
- * Engine shape for providers reached by one API key over an OpenAI-compatible endpoint
- * and driven by our own Built-in Agent loop (engines/builtinAgent). DeepSeek, Kimi and
- * GLM are all exactly this, so the lifecycle — key preflight, model resolution, run —
- * lives here once and each provider contributes only its endpoint and its defaults.
- *
- * These three used to ALSO offer a Claude Agent SDK mode against an Anthropic-compatible
- * endpoint. That mode is gone. It cost every session a second dimension: two transcript
- * stores that could not be switched between mid-session, a per-tab toggle, a second model
- * key in settings, and a `mode` field threaded from the tab through dispatch down to the
- * session store. Ollama's single-loop shape is the model now — one endpoint, one store,
- * nothing to choose. Do not reintroduce a mode flag here; add a separate engine instead.
- */
-import { SETTINGS_FILE, getBuiltinSessionsRoot, readJsonFile } from '@cockpit/shared-utils';
+// Provider settings and preflight for Cockpit providers executed by Pi.
+import { SETTINGS_FILE, readJsonFile, type PiEngine } from '@cockpit/shared-utils';
 import { getSessionTitle } from '../state/globalState';
-import { runBuiltinAgent, requireTextPrompt, type BuiltinAgentConfig } from './builtinAgent';
-import { createOpenAiCompatModel } from './builtinAgent/model';
+import { runPiAgentPromise, type PiAgentConfig } from '../../effect/piAgentLive';
+import { readPiModel } from '../../effect/piSessionLive';
 import type { ApiKeyStore } from './credentials';
-import { readSessionModel } from './sessionModel';
 import type { DispatchParams, EngineSpec } from './types';
 
 /** Per-engine slice of settings.json. The API key is NOT here — see credentials.ts. */
@@ -50,8 +37,8 @@ export interface EngineEndpoints {
 }
 
 export interface AnthropicCompatProvider {
-  /** Engine id. Doubles as the settings key and the Built-in Agent store key. */
-  name: string;
+  /** Cockpit provider id, used for settings and Pi provider registration. */
+  name: PiEngine;
   /** Human-readable name, used in the "no API key" preflight error. */
   label: string;
   /** Endpoint for single-region providers, and the fallback for multi-region ones. */
@@ -69,7 +56,7 @@ export interface AnthropicCompatProvider {
   /** Fallback when a request carries no model and settings hold none. */
   defaultModel: string;
   apiKey: ApiKeyStore;
-  /** Sampling temperature; `null` omits the field. See BuiltinAgentConfig. */
+  /** Sampling temperature; `null` omits the field. See PiAgentConfig. */
   builtinTemperature?: number | null;
 }
 
@@ -127,13 +114,11 @@ function buildConfig(
   p: AnthropicCompatProvider,
   apiKey: string,
   endpoints: EngineEndpoints,
-): BuiltinAgentConfig {
+): PiAgentConfig {
   return {
     engine: p.name,
-    sessionsRoot: getBuiltinSessionsRoot(p.name),
-    defaultModel: p.defaultModel,
-    createModel: async (modelName) =>
-      createOpenAiCompatModel({ baseURL: endpoints.openAiBaseUrl, apiKey, modelName }),
+    baseUrl: endpoints.openAiBaseUrl,
+    apiKey,
     ...(p.builtinTemperature !== undefined && { temperature: p.builtinTemperature }),
   };
 }
@@ -153,13 +138,9 @@ export function makeAnthropicCompatSpec(p: AnthropicCompatProvider): EngineSpec 
           error: `${p.label} API key is not configured. Open the ${p.label} picker in the chat header to set one.`,
         };
       }
-      // The built-in loop has no image support — reject images-only messages here rather
-      // than letting the runner receive an undefined prompt.
-      const textCheck = requireTextPrompt(params);
-      if (!textCheck.ok) return textCheck;
       params.model = resolveModel(
         typeof params.model === 'string' ? params.model : undefined,
-        await readSessionModel(p.name, params.cwd, params.sessionId),
+        await readPiModel(params.cwd, params.sessionId, p.name),
         saved.builtinModel,
         p.defaultModel,
       );
@@ -171,7 +152,7 @@ export function makeAnthropicCompatSpec(p: AnthropicCompatProvider): EngineSpec 
         const settings = await readSettings();
         const saved = settings.engines?.[p.name] ?? {};
         const endpoints = resolveEndpoints(p, saved, settings.language);
-        await runBuiltinAgent(ctx, buildConfig(p, apiKey, endpoints));
+        await runPiAgentPromise(ctx, buildConfig(p, apiKey, endpoints));
       },
       resolveTitle: (cwd, sessionId) => getSessionTitle(cwd, sessionId),
     },

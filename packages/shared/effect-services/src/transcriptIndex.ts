@@ -14,7 +14,7 @@
  */
 import { Context, Effect } from "effect"
 
-export type TranscriptFormat = "claude" | "codex"
+export type TranscriptFormat = "claude" | "codex" | "pi"
 
 /**
  * One human turn, kept raw enough that every view can apply its own filtering
@@ -63,6 +63,7 @@ export interface TranscriptStats {
 export interface TranscriptSnapshot {
   readonly path: string
   readonly format: TranscriptFormat
+  readonly engine?: string
   readonly size: number
   readonly mtimeMs: number
   /** Last `ai-title` line (claude). */

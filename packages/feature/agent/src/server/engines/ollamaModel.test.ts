@@ -91,7 +91,11 @@ describe('ollama preflight — requested model', () => {
 
 describe('ollama preflight — no model in the request', () => {
   it("uses the session's recorded model instead of any default", async () => {
-    await recordSessionModel('ollama', CWD, 'sess-1', 'gpt-oss:20b');
+    const { SessionManager } = await import('@earendil-works/pi-coding-agent');
+    const { getPiSessionsDir } = await import('@cockpit/shared-utils');
+    const manager = SessionManager.create(CWD, getPiSessionsDir(CWD), { id: 'sess-1' });
+    manager.appendModelChange('ollama', 'gpt-oss:20b');
+    manager.appendMessage({ role: 'user', content: 'previous task', timestamp: Date.now() });
     await rememberOllamaLastModel('deepseek-r1:7b'); // must NOT win over the session
     const { result, model } = await preflight(ask({ sessionId: 'sess-1' }));
     expect(result.ok).toBe(true);

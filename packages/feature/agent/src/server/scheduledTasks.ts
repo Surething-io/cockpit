@@ -1,10 +1,9 @@
+import { findPiSession } from "../effect/piSessionLive";
 import { existsSync } from 'fs';
 import {
   SCHEDULED_TASKS_FILE, readJsonFile, readJsonFileForUpdate, writeJsonFile, mutateJsonFile, withFileLock,
   getSessionFilePath,
-  getClaudeSessionPath, getOllamaSessionPath,
-  getDeepseekBuiltinSessionPath, getKimiBuiltinSessionPath,
-  getGlmBuiltinSessionPath,
+  getClaudeSessionPath, isPiEngine,
 } from '@cockpit/shared-utils';
 import { updateGlobalState } from './state/globalState';
 import { findCodexSession } from '../effect/transcriptIndexLive';
@@ -285,15 +284,6 @@ const dispatchEngineMessageEff = (
       }),
   });
 
-/** Transcript path per Built-in Agent engine, so adding one is a map entry rather than
- *  another `if (engine === ...)` branch. */
-const BUILTIN_LOOP_PATHS: Record<string, (cwd: string, sessionId: string) => string> = {
-  ollama: getOllamaSessionPath,
-  deepseek: getDeepseekBuiltinSessionPath,
-  kimi: getKimiBuiltinSessionPath,
-  glm: getGlmBuiltinSessionPath,
-};
-
 /** Per-session slice of the project state file the chat tabs persist (see /api/project-state). */
 interface ProjectSessionState {
   noHistories?: Record<string, boolean>;
@@ -318,7 +308,7 @@ export async function readSessionNoHistory(
   task: ScheduledTask,
   engine: string,
 ): Promise<boolean> {
-  if (!BUILTIN_LOOP_PATHS[engine] && engine !== 'claude' && engine !== 'codex') return false;
+  if (!isPiEngine(engine) && engine !== 'claude' && engine !== 'codex') return false;
   const state = await readJsonFile<ProjectSessionState>(getSessionFilePath(task.cwd), {});
   return state.noHistories?.[task.sessionId] === true;
 }
@@ -341,8 +331,7 @@ export async function readSessionOutputStyleId(task: ScheduledTask): Promise<str
  * sessionId and returns null when not found.
  */
 async function sessionPathFor(engine: string, task: ScheduledTask): Promise<string | null> {
-  const builtinPath = BUILTIN_LOOP_PATHS[engine];
-  if (builtinPath) return builtinPath(task.cwd, task.sessionId);
+  if (isPiEngine(engine)) return (await Effect.runPromise(findPiSession(task.cwd, task.sessionId)))?.path ?? null;
   if (engine === 'codex') return (await findCodexSession(task.sessionId))?.path ?? null;
   return getClaudeSessionPath(task.cwd, task.sessionId);
 }

@@ -58,9 +58,8 @@ interface RunState {
   updatedAt: number;
   evictTimer?: ReturnType<typeof setTimeout>;
   abort?: () => void; // stop endpoint aborts the detached run via this
-  /** The engine's sink for messages injected mid-run (setRunInjector); absent for engines
-   *  that cannot take input once started. */
-  injector?: (input: InjectedInput) => boolean;
+  /** Unsupported engines and engines winding down have different dispatch behavior. */
+  input: { state: 'unsupported' } | { state: 'accepting'; sink: (input: InjectedInput) => boolean } | { state: 'closed' };
   /**
    * Writer lease: true from startRun until the engine's run() has really returned
    * (releaseRun). Separate from `status` on purpose — Stop flips `status` to idle at once
@@ -178,6 +177,7 @@ export function startRun(
   let releaseWriter!: () => void;
   const writerReleased = new Promise<void>((resolve) => { releaseWriter = resolve; });
   registry.set(key, {
+    input: { state: 'unsupported' },
     writer: true,
     writerReleased,
     releaseWriter,
@@ -391,12 +391,11 @@ export function getRunInfo(
   return { cwd: r.cwd, sessionId: r.sessionId ?? null, engine: r.engine ?? null };
 }
 
-/** Register (or with null, withdraw) the live run's sink for injected user messages. */
+/** Register a sink, or seal input so dispatch can wait for the writer and start another run. */
 export function setRunInjector(key: string, injector: ((input: InjectedInput) => boolean) | null): void {
   const r = registry.get(key);
   if (!r) return;
-  if (injector) r.injector = injector;
-  else delete r.injector;
+  r.input = injector ? { state: 'accepting', sink: injector } : { state: 'closed' };
 }
 
 /**
@@ -415,8 +414,8 @@ export function injectRun(
 ): 'ok' | 'unsupported' | 'closed' | 'idle' {
   const r = registry.get(key);
   if (!r || r.status !== 'running') return 'idle';
-  if (!r.injector) return 'unsupported';
-  if (!r.injector(input)) return 'closed';
+  if (r.input.state === 'unsupported') return 'unsupported';
+  if (r.input.state === 'closed' || !r.input.sink(input)) return 'closed';
   appendRun(key, {
     type: 'user',
     _human: true,

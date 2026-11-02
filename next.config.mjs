@@ -82,6 +82,8 @@ const nextConfig = {
   //   `import.meta.url` 变成 chunk URL，base 错位 → 找不到平台子包。
   //   externalize 后由 Node 直接 ESM 加载，import.meta.url 是真实文件路径。
   serverExternalPackages: [
+    '@earendil-works/pi-coding-agent',
+    '@earendil-works/pi-ai',
     '@anthropic-ai/claude-agent-sdk',
     'node-pty',
     'web-tree-sitter',

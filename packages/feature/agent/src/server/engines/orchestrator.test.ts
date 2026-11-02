@@ -160,6 +160,27 @@ describe('orchestrator dispatch contract', () => {
     expect(prompts).toEqual(['y']);
   });
 
+  it('inject: withdrawing a registered sink closes input while the writer is still held', async () => {
+    const sessionId = freshRunId();
+    let finish!: () => void;
+    let close!: () => void;
+    const first = await dispatchChat(spec((ctx) => {
+      ctx.acceptInput(() => true);
+      close = () => ctx.acceptInput(null);
+      return new Promise<void>((resolve) => { finish = resolve; });
+    }), { prompt: 'first', sessionId });
+    expect(first.ok).toBe(true);
+    close();
+    const prompts: Array<string | undefined> = [];
+    const pending = dispatchChat(spec(async (ctx) => { prompts.push(ctx.prompt); }), { prompt: 'after close', sessionId, inject: true });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(prompts).toEqual([]);
+    finish();
+    expect((await pending).ok).toBe(true);
+    await waitUntil(() => prompts.length === 1);
+    expect(prompts).toEqual(['after close']);
+  });
+
   it('failure: runner throws → terminal status error + error event appended', async () => {
     const runId = freshRunId();
     const out = await dispatchChat(

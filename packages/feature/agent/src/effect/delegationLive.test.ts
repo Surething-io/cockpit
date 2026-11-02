@@ -252,6 +252,40 @@ describe('DelegationService.status', () => {
   const userLine = (text: string) => ({ type: 'user', uuid: `u-${text}`, cwd: projectDir, timestamp: '2026-09-01T00:00:00Z', message: { role: 'user', content: text } });
   const asstLine = (stop: string, blocks: unknown[]) => ({ type: 'assistant', uuid: `a-${Math.random()}`, timestamp: '2026-09-01T00:00:03Z', message: { role: 'assistant', stop_reason: stop, content: blocks } });
 
+  it('retains unresolved Pi input status across unrelated later successes', async () => {
+    const { SessionManager } = await import('@earendil-works/pi-coding-agent');
+    const { getPiSessionsDir } = await import('@cockpit/shared-utils');
+    const source = SessionManager.create(projectDir, getPiSessionsDir(projectDir));
+    source.appendModelChange('ollama', 'test-model');
+    source.appendMessage({ role: 'user', content: 'first task', timestamp: Date.now() });
+    const success = {
+      role: 'assistant' as const, content: [{ type: 'text' as const, text: 'Old success' }],
+      api: 'openai-completions' as const, provider: 'ollama', model: 'test-model',
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: 'stop' as const, timestamp: Date.now(),
+    };
+    source.appendMessage(success);
+    expect((await ok(source.getSessionId())).status).toBe('done');
+    const sid = source.getSessionId();
+    expect(hub.startRun(sid, projectDir, 'new accepted task', sid, 'ollama')).toBe(true);
+    expect(hub.requestStop(sid)).toBe(true);
+    // Model initialization is still blocked: no new native entry exists yet.
+    expect(hub.isRunActive(sid)).toBe(false);
+    expect((await ok(sid)).status).toBe('running');
+    const notice = source.appendCustomEntry('cockpit.undelivered-input', { reason: 'failed', text: 'Unfinished accepted input' });
+    expect((await ok(sid)).status).toBe('running');
+    hub.releaseRun(sid);
+    expect(await ok(source.getSessionId())).toMatchObject({ status: 'failed', lastReply: 'Unfinished accepted input' });
+    source.appendMessage({ role: 'user', content: 'unrelated new task', timestamp: Date.now() });
+    source.appendMessage(success);
+    expect((await ok(source.getSessionId())).status).toBe('failed');
+    source.branch(source.getEntry(notice)!.parentId!);
+    source.appendMessage({ role: 'user', content: 'clean branch', timestamp: Date.now() });
+    source.appendMessage(success);
+    expect((await ok(source.getSessionId())).status).toBe('done');
+  });
+
   it('done on end_turn, with the reply and a link', async () => {
     const sid = '33333333-3333-4333-8333-333333333333';
     writeClaude(sid, [userLine('Task: demo'), asstLine('end_turn', [{ type: 'text', text: 'DELEGATION-OK' }])]);
@@ -274,6 +308,7 @@ describe('DelegationService.status', () => {
     hub.startRun(sid, projectDir);
     expect((await ok(sid)).status).toBe('running');
     hub.markRunIdle(sid, 'idle');
+    hub.releaseRun(sid);
   });
 
   it('readTerminal grows a too-small window until it reaches the terminal record', async () => {

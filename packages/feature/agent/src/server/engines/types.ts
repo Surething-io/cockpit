@@ -29,8 +29,7 @@ export interface DispatchParams {
   // stays continuous; this only affects what the model is given.
   //
   // Honored by two different mechanisms:
-  //  - Built-in Agent (ollama, deepseek, kimi, glm) simply omits the prior messages
-  //    when assembling the request (builtinAgent/index.ts).
+  //  - Pi providers filter prior messages through a context extension.
   //  - claude stashes the transcript for the turn, because its history
   //    IS the provider session and the only lever is whether that file is there
   //    (shared/noHistoryTranscript.ts).
@@ -81,7 +80,7 @@ export interface RunCtx {
   /** Framed output-style section (formatOutputStyleSection) to APPEND to the engine's own
    *  system prompt, used verbatim; undefined = inject
    *  nothing. Each runner has exactly one place it goes (claude systemPrompt.append, codex
-   *  developerInstructions, built-in loop's buildSystemPrompt). */
+   *  developerInstructions, Pi's appended system prompt). */
   readonly outputStyle?: string;
   readonly signal: AbortSignal;               // wire this to the engine's own cancellation
   /** Feed one event to the run registry (orchestrator: appendRun(currentKey, event)). */
@@ -91,7 +90,7 @@ export interface RunCtx {
   rekey(realSessionId: string): void;
   /** Current registry key (changes after rekey). Diagnostics only. */
   currentKey(): string;
-  /** Register (or with null, withdraw) the sink for messages injected into this live run. The
+  /** Register (or with null, close) the sink for messages injected into this live run. The
    *  sink returns false once the engine can no longer take input (its input stream closed).
    *  Runners that never call this keep the one-active-run 409 for mid-run sends. */
   acceptInput(sink: ((input: InjectedInput) => boolean) | null): void;

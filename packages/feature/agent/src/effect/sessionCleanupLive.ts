@@ -1,41 +1,8 @@
-/**
- * SessionCleanupLive -- retention sweep for Built-in Agent chat transcripts.
- *
- * Scope: ONLY the Built-in Agent stores (`BUILTIN_SESSION_DIR_NAMES` under
- * `<cockpitDir>/`: ollama-sessions, deepseek-sessions, kimi-sessions,
- * glm-sessions). The roots are derived from that list, so a new built-in engine
- * is swept as soon as it registers its dir name in paths.ts — nothing to add
- * here. These are the stores cockpit writes itself (via appendFileSync) with no
- * cleanup. Every other engine's sessions are cleaned by their own external CLI /
- * Agent SDK:
- *   - claude -> ~/.claude/projects (Claude CLI cleanupPeriodDays)
- *   - codex  -> ~/.codex (external CLI)
- * so this sweep deliberately never touches them.
- *
- * On-disk layout (one dir per project cwd, one file per session):
- *   <store>/<encoded-cwd>/
- *     ├── <sessionId>.jsonl      <- parent transcript (retention basis)
- *     └── <sessionId>/           <- future attachments (subagents/, tool-results/)
- *
- * Retention: a session is aged out as a WHOLE unit, keyed off the parent
- * `<sessionId>.jsonl` mtime (= last real activity, since every turn appends
- * user + assistant messages to it). When expired, the `.jsonl` AND the sibling
- * `<sessionId>/` directory tree are removed together -- structure-agnostic, so
- * any future subdirectory type is covered without changing this code.
- *
- * Protection: sessions listed in `pinned-sessions.json` are never auto-deleted.
- * If that file is present but unreadable/corrupt, the ENTIRE pass is skipped
- * (fail-safe -- a torn whitelist must never license deleting protected data).
- *
- * Trigger: a daily background pass (first run immediately, then every 24h),
- * forked into the layer's Scope so runtime disposal interrupts it. There is no
- * manual/API entry point by design.
- */
+// Scoped retention for native Pi sessions. Claude and Codex retain their own stores.
 import { readdir, readFile, rm, rmdir, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { Context, Effect, Layer, Schedule } from "effect"
 import { AppError, CockpitConfig } from "@cockpit/effect-core"
-import { BUILTIN_SESSION_DIR_NAMES } from "@cockpit/shared-utils"
 
 const DAY_MS = 24 * 3600 * 1000
 
@@ -125,7 +92,11 @@ const cleanupSessions = (
       }
 
       for (const [stem, s] of sessions) {
-        if (pins.ids.has(stem)) continue // pinned -> never auto-delete
+        const sessionId = s.jsonl ? yield* Effect.tryPromise({
+          try: async () => (await import("@earendil-works/pi-coding-agent")).SessionManager.open(s.jsonl!).getSessionId(),
+          catch: (cause) => new AppError({ message: "Cannot read Pi session header", cause }),
+        }) : stem
+        if (pins.ids.has(sessionId)) continue // pinned -> never auto-delete
 
         // Basis = parent transcript mtime (last activity). Fall back to the
         // attachment dir only for an orphan `<id>/` with no `.jsonl`.
@@ -180,7 +151,7 @@ export const SessionCleanupLive = Layer.scoped(
   SessionCleanupService,
   Effect.gen(function* () {
     const cfg = yield* CockpitConfig
-    const roots = BUILTIN_SESSION_DIR_NAMES.map((dir) => join(cfg.cockpitDir, dir))
+    const roots = [join(cfg.cockpitDir, "pi", "sessions")]
     const pinnedFile = join(cfg.cockpitDir, "pinned-sessions.json")
     // Clamp to >= 1 day: 0 would set cutoff = now and delete every inactive
     // session (mirrors Claude Code rejecting cleanupPeriodDays: 0).

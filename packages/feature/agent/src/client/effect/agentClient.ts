@@ -11,6 +11,22 @@
 import { Effect } from "effect"
 import type { GlobalSessionInfo } from "../../shared/sessionDto"
 import { AppError } from "@cockpit/effect-core"
+import type { ChatEngine } from '../types'
+
+/** Deliver input through the selected engine, including when its previous run just ended. */
+export const injectChatMessage = (engine: ChatEngine | undefined, body: Record<string, unknown>): Effect.Effect<void, AppError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const response = await fetch(engine && engine !== 'claude' ? `/api/chat/${engine}` : '/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const failure = await response.json() as { error?: string };
+        throw new Error(failure.error ?? `HTTP ${response.status}`);
+      }
+    },
+    catch: (cause) => new AppError({ message: cause instanceof Error ? cause.message : 'Cannot deliver chat input', cause }),
+  });
 
 // ─────────────────────────────────────────────────────────
 // HTTP primitives

@@ -1,7 +1,8 @@
 import { readdir, stat } from 'fs/promises';
 import * as path from 'path';
 import { Effect } from 'effect';
-import { CLAUDE_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, encodePath, getBuiltinSessionsRoot, normalizeCodexSessionId } from '@cockpit/shared-utils';
+import { CLAUDE_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, encodePath, normalizeCodexSessionId } from '@cockpit/shared-utils';
+import { listPiSessions } from '../../../effect/piSessionLive';
 import { dynamicHandler } from '@cockpit/effect-runtime/server';
 import { isJsonObject, readJsonOr } from '@cockpit/effect-runtime/server/fs';
 import { ValidationError } from '@cockpit/effect-core';
@@ -138,17 +139,10 @@ interface ListSource {
  */
 const loadSessions = (encodedPath: string): Effect.Effect<SessionInfo[], never, TranscriptIndex> =>
   Effect.gen(function* () {
-    // Every store here holds Claude-format transcripts. One store per engine —
-    // ~/.cockpit/<engine>/projects is deliberately absent: those are transcripts from the
-    // removed Claude Agent SDK mode of deepseek/kimi/glm, and no loop remains that can
-    // resume them, so listing them would offer sessions that die on the first turn.
+    // Claude native files are indexed here; Pi and Codex use their own readers below.
     const stores = yield* Effect.forEach(
       [
         { dir: path.join(CLAUDE_PROJECTS_DIR, encodedPath), engine: 'claude' as const },
-        ...(['ollama', 'deepseek', 'kimi', 'glm'] as const).map((engine) => ({
-          dir: path.join(getBuiltinSessionsRoot(engine), encodedPath),
-          engine,
-        })),
       ],
       ({ dir, engine }) => collectSessionFiles(dir, engine),
       { concurrency: 'unbounded' }
@@ -161,6 +155,11 @@ const loadSessions = (encodedPath: string): Effect.Effect<SessionInfo[], never, 
       if (seen.has(f.name)) continue;
       seen.add(f.name);
       sources.push({ sessionId: f.name.replace(/\.jsonl$/, ''), path: f.path, engine: f.engine, format: 'claude' });
+    }
+
+    for (const pi of yield* listPiSessions().pipe(Effect.orElseSucceed(() => []))) {
+      if (encodePath(pi.cwd) !== encodedPath) continue;
+      sources.push({ sessionId: pi.id, path: pi.path, engine: pi.engine, format: 'pi' });
     }
 
     // Codex: current Cockpit state is the fast path, and the global index backfills

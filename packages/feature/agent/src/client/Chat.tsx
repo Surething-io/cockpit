@@ -36,6 +36,7 @@ import {
   resolveClaudeEffortForModel,
   resolveCodexReasoningEffortForModel,
 } from './AgentModelTraitsPicker';
+import { PiProviderPicker } from './PiProviderPicker';
 import { OutputStylePicker } from './OutputStylePicker';
 import { DeepseekBalanceButton } from './DeepseekBalanceButton';
 import { EngineQuotaButton } from './EngineQuotaButton';
@@ -257,6 +258,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     loadHistoryByCwdAndSessionId,
     loadedSessionId,
     loadedEngine,
+    loadedModel,
     loadedBot,
   } = useChatHistory(messages, setMessages, sessionId, {
     cwd: initialCwd,
@@ -267,19 +269,17 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     liveRunningRef,
   });
 
-  // Engine of THIS session, most-trusted first:
-  //   1. what the transcript's own store PROVES (echoed by /api/session-by-path) — a file
-  //      sitting in ~/.cockpit/deepseek-sessions ran as deepseek, full stop;
-  //   2. the host's per-tab value (session.json, or handed over by the session list) — the
-  //      only source before any transcript exists, i.e. a brand-new tab.
-  //
-  // The store outranks the persisted value deliberately: session.json is a UI-written cache
-  // that CAN be wrong (reopening a session used to stamp it with a default), while the store
-  // is where the bytes physically are.
-  //
-  // Resolution must happen BEFORE any use: `undefined` means "not known yet", NOT "claude",
-  // yet every downstream check (`!engine`, the apiUrl fallback) reads the two identically.
-  const engine = loadedEngine ?? engineProp ?? undefined;
+  // Claude and Codex keep their native engine. Pi's stored provider initializes
+  // the picker; an explicit provider selection applies to this session's next run.
+  const [piProviderOverride, setPiProviderOverride] = useState<{ sessionId: string | null; engine: ChatEngine } | null>(null);
+  const restoredEngine = loadedEngine ?? engineProp ?? undefined;
+  const isPiProvider = (value: string | undefined) => ['ollama', 'deepseek', 'kimi', 'glm'].includes(value ?? '');
+  const engine = isPiProvider(restoredEngine) && piProviderOverride?.sessionId === loadedSessionId
+    ? piProviderOverride.engine : restoredEngine;
+
+  useEffect(() => {
+    setPiProviderOverride((current) => current && (current.sessionId !== loadedSessionId || current.engine === loadedEngine) ? null : current);
+  }, [loadedSessionId, loadedEngine]);
 
   // Hand the Bot up to the host as soon as the transcript names one. Effect rather
   // than a call inside the hook: loadedBot settles once per load, and the host turns
@@ -294,7 +294,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   const effectiveCodexModel = codexModel ?? DEFAULT_CODEX_MODEL;
   const effectiveCodexReasoningEffort = resolveCodexReasoningEffortForModel(effectiveCodexModel, codexReasoningEffort);
   // Engines configured by API key rather than by a local CLI login. They share one UI: a
-  // key+model picker and a consumption readout, and one loop (the Built-in Agent).
+  // key+model picker and a consumption readout, and one Pi runtime.
   const apiKeyEngine: ApiKeyEngine | null =
     engine === 'deepseek' || engine === 'kimi' || engine === 'glm' ? engine : null;
   const engineModel =
@@ -305,9 +305,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       : apiKeyEngine === 'glm'
         ? onGlmModelChange
         : onDeepseekModelChange;
-  // Independent task. The Built-in Agent engines get it by construction (they assemble the
-  // message array). Claude/Codex get it by stashing their vendor transcript/rollout for
-  // the turn — see server/engines/shared/noHistoryTranscript.ts and noHistoryRollout.ts.
+  // Pi filters prior model context through its context extension. Claude and Codex
+  // retain their native transcript/rollout stashing for independent tasks.
   const supportsNoHistory =
     engine === 'ollama' || apiKeyEngine !== null || isClaudeEngine || isCodexEngine;
 
@@ -317,8 +316,17 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   // here, so the resolution above is needed only once per session. The host's updaters
   // no-op on an unchanged value, so this settles after one pass instead of looping.
   useEffect(() => {
-    if (loadedEngine && engineProp !== loadedEngine) onEngineChange?.(loadedEngine);
-  }, [engineProp, loadedEngine, onEngineChange]);
+    if (!piProviderOverride && loadedEngine && engineProp !== loadedEngine) onEngineChange?.(loadedEngine);
+  }, [engineProp, loadedEngine, onEngineChange, piProviderOverride]);
+  const restorePiModelRef = useRef({ ollama: onOllamaModelChange, deepseek: onDeepseekModelChange, kimi: onKimiModelChange, glm: onGlmModelChange });
+  restorePiModelRef.current = { ollama: onOllamaModelChange, deepseek: onDeepseekModelChange, kimi: onKimiModelChange, glm: onGlmModelChange };
+  // Reopening and reconciliation restore Pi's native selection into the picker.
+  // A user's pending picker change remains local until the next run is saved.
+  useEffect(() => {
+    if (!loadedModel || !loadedEngine) return;
+    const restore = restorePiModelRef.current;
+    if (loadedEngine in restore) restore[loadedEngine as keyof typeof restore]?.(loadedModel);
+  }, [loadedSessionId, loadedModel, loadedEngine]);
   // Stream hook
   const {
     isLoading,
@@ -353,9 +361,9 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     taskStore,
   });
 
-  // A live run of this session takes further messages: claude only, and only once the
+  // Claude and Pi accept further messages once the
   // session id is known (injection addresses the run by it). Every send gate reads this.
-  const acceptsMidRunInput = isClaudeEngine && !!(loadedSessionId || sessionId);
+  const acceptsMidRunInput = (isClaudeEngine || isPiProvider(engine)) && !!(loadedSessionId || sessionId);
 
   // ! prefix: first line is command, subsequent lines are user notes, supports images
   /**
@@ -827,6 +835,17 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
      all engines inject it, so unlike that toggle there is no support gate. */
   const outputStyleControl = <OutputStylePicker value={outputStyle} onChange={setOutputStyle} />;
 
+  const piProviderControl = isPiProvider(engine) ? (
+    <PiProviderPicker
+      value={engine as 'ollama' | 'deepseek' | 'kimi' | 'glm'}
+      disabled={isLoadingHistory || isLoading || liveRunning}
+      onChange={(next) => {
+        setPiProviderOverride({ sessionId: loadedSessionId, engine: next });
+        onEngineChange?.(next);
+      }}
+    />
+  ) : null;
+
   return (
     // Provider, not props: every tool row needs the store, including the ones inside a
     // SubagentTranscriptModal nested arbitrarily deep. Portals inherit context, so the modal
@@ -906,6 +925,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
         {/* Ollama model picker + independent-task toggle */}
         {engine === 'ollama' && (
           <div className={ENGINE_OPTIONS_ROW}>
+            {piProviderControl}
             {onOllamaModelChange && (
               <OllamaModelPicker currentModel={ollamaModel} onModelChange={onOllamaModelChange} />
             )}
@@ -916,11 +936,12 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
 
         {/* API-key engines (deepseek / kimi / glm): key + model picker, independent task, and
             what the key has left — one row, mirroring ollama's. There is no execution-mode
-            toggle any more (these run the Built-in Agent loop and nothing else), so the
+            toggle any more (these run through Pi), so the
             consumption readout moved in here rather than keeping a row to itself.
             DeepSeek reports a prepaid balance, Kimi and GLM a subscription quota. */}
         {apiKeyEngine && (
           <div className={ENGINE_OPTIONS_ROW}>
+            {piProviderControl}
             {onEngineModelChange && (
               <EngineConfigPicker
                 engine={apiKeyEngine}
@@ -988,8 +1009,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           const composer = (
             <ChatInput
               onSend={wrappedHandleSend}
-              // #10: one active run per session. A claude run takes further messages (handleSend
-              // injects them); any other engine's would 409, so the composer locks until it ends.
+              // Claude and Pi accept mid-run input; other engines keep the composer locked.
               disabled={(isLoading || liveRunning) && !acceptsMidRunInput}
               running={isLoading || liveRunning}
               cwd={initialCwd}

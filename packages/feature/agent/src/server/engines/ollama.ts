@@ -1,27 +1,9 @@
-/**
- * Ollama engine — a thin provider binding over the Built-in Agent loop.
- *
- * All the machinery (loop, tools, transcript, system prompt) lives in
- * engines/builtinAgent; this file only says WHICH model provider to talk to and
- * WHERE the transcripts go. The store directory keeps its historical name
- * (~/.cockpit/ollama-sessions) — renaming it would orphan every existing session.
- *
- * The one thing it does NOT share with the other Built-in Agent engines is a compiled-in
- * default model: ollama's catalog is whatever this machine pulled, so resolution is a
- * preflight that consults the machine (ollamaCatalog.ts) instead of a constant.
- */
-import { getBuiltinSessionsRoot, readOllamaLastModel, rememberOllamaLastModel } from '@cockpit/shared-utils';
-import { runBuiltinAgent, requireTextPrompt, type BuiltinAgentConfig } from './builtinAgent';
-import { createOllamaModel } from './builtinAgent/model';
+// Ollama model selection and provider binding for the Pi runtime.
+import { resolveOllamaConnection, readOllamaLastModel, rememberOllamaLastModel } from '@cockpit/shared-utils';
+import { runPiAgentPromise } from '../../effect/piAgentLive';
+import { readPiModel } from '../../effect/piSessionLive';
 import { listOllamaModels, type OllamaCatalogEntry } from './ollamaCatalog';
-import { readSessionModel } from './sessionModel';
 import type { DispatchParams, EngineSpec } from './types';
-
-const OLLAMA_CONFIG: BuiltinAgentConfig = {
-  engine: 'ollama',
-  sessionsRoot: getBuiltinSessionsRoot('ollama'),
-  createModel: (model) => createOllamaModel(model),
-};
 
 type Preflight = { ok: true } | { ok: false; status: number; error: string };
 
@@ -87,7 +69,7 @@ async function resolveOllamaModel(params: DispatchParams): Promise<Preflight> {
   const requested = typeof params.model === 'string' ? params.model.trim() : '';
 
   if (!requested) {
-    const recorded = await readSessionModel('ollama', params.cwd, params.sessionId);
+    const recorded = await readPiModel(params.cwd, params.sessionId, 'ollama');
     const choice = recorded ? { ok: true as const, model: recorded } : await resolveDefaultOllamaModel();
     if (!choice.ok) return fail(choice.reason);
     params.model = choice.model;
@@ -118,12 +100,13 @@ async function resolveOllamaModel(params: DispatchParams): Promise<Preflight> {
 export const ollamaSpec: EngineSpec = {
   name: 'ollama',
   async preflight(params) {
-    const textCheck = requireTextPrompt(params);
-    if (!textCheck.ok) return textCheck;
     return resolveOllamaModel(params);
   },
   runner: {
-    run: (ctx) => runBuiltinAgent(ctx, OLLAMA_CONFIG),
+    async run(ctx) {
+      const connection = await resolveOllamaConnection();
+      await runPiAgentPromise(ctx, { engine: 'ollama', baseUrl: `${connection.baseUrl}/v1`, apiKey: connection.apiKey || 'ollama' });
+    },
     // No resolveTitle → teardown uses 'unread' with undefined title.
   },
 };

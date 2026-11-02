@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { injectChatMessage } from './effect/agentClient';
 import { estimateOutputUnits } from '@cockpit/shared-utils/outputProgress';
 import { applyStreamEvent, isSubagentFrame, isTaskEvent, settleRunningTasks, type StreamEvent } from './applyStreamEvent';
 import type {
@@ -696,10 +698,9 @@ export function useChatStream(
       splitPendingRef.current = false;
 
       const isClaudeEngine = !engine || engine === 'claude';
-      // The engines configured by API key. Each runs the Built-in Agent loop against its
-      // OpenAI-compatible endpoint (server engines/builtinAgent).
+      // API-key providers share the embedded Pi runtime.
       const isApiKeyEngine = engine === 'deepseek' || engine === 'kimi' || engine === 'glm';
-      // Independent task: the Built-in Agent loop honours it directly (ollama, deepseek,
+      // Independent task: Pi filters prior context (ollama, deepseek,
       // kimi, glm). Claude and Codex stash their vendor transcript/rollout for the turn.
       // Every engine is on one of those two paths, so this is currently always true — it
       // stays explicit as the contract for the next engine added.
@@ -794,27 +795,19 @@ export function useChatStream(
   const injectMessage = useCallback(
     async (content: string, images: ImageInfo[] | undefined, targetSessionId: string) => {
       setSuggestion(null);
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: content,
-          sessionId: targetSessionId,
-          runId: genRunId(),
-          images: images?.map((img) => ({ type: 'base64' as const, media_type: img.media_type, data: img.data })),
-          cwd,
-          language: i18n.language,
-          inject: true,
-        }),
-      });
-      // `injected: false` is fine too: the run had just closed its input, so the server opened
-      // a fresh run with this message, which the live stream picks up like any other.
-      if (!response.ok) {
-        const errBody = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(errBody?.error || i18n.t('chat.requestFailed', { defaultValue: 'Request failed' }));
-      }
+      const isPiProvider = engine === 'ollama' || engine === 'deepseek' || engine === 'kimi' || engine === 'glm';
+      await BrowserRuntime.runPromise(injectChatMessage(engine, {
+        prompt: content,
+        sessionId: targetSessionId,
+        runId: genRunId(),
+        images: images?.map((image) => ({ type: 'base64' as const, media_type: image.media_type, data: image.data })),
+        cwd,
+        language: i18n.language,
+        inject: true,
+        ...(isPiProvider ? { model: engine === 'ollama' ? ollamaModel : engineModel, noHistory, outputStyleId } : {}),
+      }));
     },
-    [cwd]
+    [cwd, engine, ollamaModel, engineModel, noHistory, outputStyleId]
   );
 
   return {

@@ -7,6 +7,9 @@
 // here also matches MODULES.md: the route file is a mount point, not a home for
 // business code.
 import * as fs from 'fs';
+import { Effect } from 'effect';
+import { isPiSessionPath } from '@cockpit/shared-utils';
+import { readPiSession } from '../../../effect/piSessionLive';
 import * as readline from 'readline';
 import { appendTextPart, appendToolPart, joinAssistantText } from '../../../shared/assistantText';
 import type { MessagePart } from '../../../shared/assistantText';
@@ -23,6 +26,8 @@ export interface TranscriptMessage {
   sourceToolUseID?: string;
   message?: {
     role?: string;
+    model?: string;
+    usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
     content?: string | Array<{
       type: string;
       text?: string;
@@ -112,6 +117,7 @@ function buildSystemEvent(msg: TranscriptMessage, kind: 'task-notification' | 'm
   };
 }
 export async function parseTranscriptFile(filePath: string): Promise<ChatMessage[]> {
+  if (isPiSessionPath(filePath)) return convertToChatMessages((await Effect.runPromise(readPiSession(filePath))).messages);
   const fileStream = fs.createReadStream(filePath);
   const rl = readline.createInterface({
     input: fileStream,

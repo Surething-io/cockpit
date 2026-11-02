@@ -171,7 +171,7 @@ export function EngineCheck({ selected }: { selected: boolean }) {
   );
 }
 
-interface EnginePickerTriggerProps {
+interface EnginePickerTriggerProps extends Pick<React.ButtonHTMLAttributes<HTMLButtonElement>, 'disabled' | 'aria-label' | 'aria-haspopup' | 'aria-expanded' | 'aria-controls' | 'onKeyDown'> {
   label: string;
   title: string;
   onClick: () => void;
@@ -203,13 +203,15 @@ export function EnginePickerTrigger({
   labelClassName,
   labelMaxWidth = 'max-w-[160px]',
   testId,
+  ...buttonProps
 }: EnginePickerTriggerProps) {
   return (
     <button
+      {...buttonProps}
       ref={buttonRef}
       type="button"
       onClick={onClick}
-      className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
       title={title}
       data-testid={testId}
     >

@@ -1,27 +1,18 @@
+import { Effect } from 'effect';
+import { findPiSession } from '../../effect/piSessionLive';
 import {
   GLOBAL_STATE_FILE,
   readJsonFile,
   writeJsonFile,
   withFileLock,
   getClaudeSessionPath,
-  getOllamaSessionPath,
-  getDeepseekBuiltinSessionPath,
-  getKimiBuiltinSessionPath,
-  getGlmBuiltinSessionPath,
   getSessionFilePath,
 } from '@cockpit/shared-utils';
 import { detectBotName } from '../../shared/botSession';
 import type { GlobalSessionInfo, GlobalSessionRecord, SessionStatus } from '../../shared/sessionDto';
 
-/** Claude-format transcript stores, probed in order by cwd+sessionId. Every API-key engine
- *  runs the Built-in Agent loop and writes exactly one store (~/.cockpit/<engine>-sessions). */
-const CLAUDE_STYLE_PATHS = [
-  getClaudeSessionPath,
-  getOllamaSessionPath,
-  getDeepseekBuiltinSessionPath,
-  getKimiBuiltinSessionPath,
-  getGlmBuiltinSessionPath,
-];
+/** Claude native storage; Pi and Codex are resolved separately. */
+const CLAUDE_STYLE_PATHS = [getClaudeSessionPath];
 
 /** First existing Claude-format transcript for this session, or null. */
 async function findClaudeStylePath(cwd: string, sessionId: string): Promise<string | null> {
@@ -248,6 +239,8 @@ async function resolveSessionFile(
 ): Promise<{ path: string; format: TranscriptFormat } | null> {
   const claudeStylePath = await findClaudeStylePath(cwd, sessionId);
   if (claudeStylePath) return { path: claudeStylePath, format: 'claude' };
+  const pi = await Effect.runPromise(findPiSession(cwd, sessionId));
+  if (pi) return { path: pi.path, format: 'pi' };
   const codex = await findCodexSession(sessionId);
   return codex ? { path: codex.path, format: 'codex' } : null;
 }

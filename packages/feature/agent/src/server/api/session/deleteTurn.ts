@@ -1,3 +1,5 @@
+import { isPiSessionPath } from '@cockpit/shared-utils';
+import { deletePiTurn } from '../../../effect/piSessionEditLive';
 import { readFile } from 'fs/promises';
 import { Effect } from 'effect';
 import { withFileLock } from '@cockpit/shared-utils';
@@ -43,7 +45,9 @@ export const DELETE = dynamicHandler<
       return yield* Effect.fail(new ValidationError({ field: 'sessionId', reason: 'session is running' }));
     }
 
-    const result = yield* Effect.tryPromise({
+    const result = yield* (isPiSessionPath(store.sessionPath)
+      ? deletePiTurn(store.sessionPath, body.messageUuid).pipe(Effect.mapError((cause) => new FSError({ path: store.sessionPath, op: 'write', cause })))
+      : Effect.tryPromise({
       try: () => withFileLock(store.sessionPath, async () => {
         const text = await readFile(store.sessionPath, 'utf-8');
         const originalLines = text.split('\n').filter((line) => line.length > 0);
@@ -59,7 +63,7 @@ export const DELETE = dynamicHandler<
         return deleted;
       }),
       catch: (cause) => new FSError({ path: store.sessionPath, op: 'write', cause }),
-    }).pipe(Effect.ensuring(Effect.sync(endEdit)));
+    })).pipe(Effect.ensuring(Effect.sync(endEdit)));
 
     if (result.targetMissed) {
       return yield* Effect.fail(new NotFoundError({ resource: 'message', id: body.messageUuid }));

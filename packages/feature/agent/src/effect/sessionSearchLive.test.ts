@@ -5,6 +5,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { Effect } from 'effect';
+import { SessionManager } from '@earendil-works/pi-coding-agent';
+let piDir: (cwd: string) => string;
 import { writeAtomically } from '@cockpit/effect-runtime/server/fs';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cockpit-ss-'));
@@ -38,6 +40,25 @@ const user = (text: string, extra: Record<string, unknown> = {}) =>
 const assistant = (text: string) =>
   line({ type: 'assistant', uuid: `a-${Math.random()}`, timestamp: '2026-09-01T00:00:05.000Z', message: { role: 'assistant', content: [{ type: 'text', text }] } });
 
+// Write native Pi fixtures through its public persistence API.
+function appendPi(file: string, text: string) {
+  const manager = SessionManager.open(file);
+  for (const line of text.trim().split('\n')) {
+    const record = JSON.parse(line);
+    if (record.type === 'user') manager.appendMessage({ role: 'user', content: record.message.content, timestamp: Date.now() });
+    if (record.type === 'assistant') manager.appendMessage({ role: 'assistant', content: record.message.content, api: 'openai-completions', provider: manager.buildSessionContext().model?.provider ?? 'ollama', model: 'test', stopReason: 'stop', timestamp: Date.now(), usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } });
+  }
+}
+function writePi(cwd: string, id: string, provider: string, text: string) {
+  const manager = SessionManager.create(cwd, piDir(cwd), { id });
+  manager.appendModelChange(provider, 'test');
+  const file = manager.getSessionFile()!;
+  // A native session is flushed once its first conversation message is appended.
+  manager.appendMessage({ role: 'user', content: 'fixture', timestamp: Date.now() });
+  appendPi(file, text);
+  return file;
+}
+
 const run = <A, E>(eff: (svc: import('@cockpit/effect-services').SessionSearchService) => Effect.Effect<A, E>) =>
   Effect.runPromise(
     Effect.flatMap(services.SessionSearchService, eff).pipe(Effect.provide(live.SessionSearchServiceLive)),
@@ -48,6 +69,7 @@ const search = (terms: string[], extra: { cwd?: string; since?: number } = {}) =
 
 beforeAll(async () => {
   ({ encodePath } = await import('@cockpit/shared-utils/encodePath'));
+  ({ getPiSessionsDir: piDir } = await import('@cockpit/shared-utils'));
   services = await import('@cockpit/effect-services');
   live = await import('./sessionSearchLive');
   query = await import('../shared/sessionSearchQuery');
@@ -62,15 +84,8 @@ beforeAll(async () => {
   );
   fs.writeFileSync(path.join(claudeDir, 'agent-x.jsonl'), user('快照 sidechain noise', { cwd: projA }));
 
-  const kimiDir = path.join(cockpitHome, 'kimi-sessions', encodePath(projB));
-  fs.mkdirSync(kimiDir, { recursive: true });
-  kimiFile = path.join(kimiDir, `${KIMI_SID}.jsonl`);
-  fs.writeFileSync(kimiFile, user('小程序怎么部署到轻量服务器') + assistant('用 docker 启动即可'));
-
-  // A built-in session whose project is not registered yet (cwd unresolvable at first).
-  const glmDir = path.join(cockpitHome, 'glm-sessions', encodePath(projC));
-  fs.mkdirSync(glmDir, { recursive: true });
-  fs.writeFileSync(path.join(glmDir, `${GLM_SID}.jsonl`), user('迁移数据库的回滚方案') + assistant('先备份'));
+  kimiFile = writePi(projB, KIMI_SID, 'kimi', user('小程序怎么部署到轻量服务器') + assistant('用 Docker 跑 nginx，注意白名单'));
+  writePi(projC, GLM_SID, 'glm', user('迁移数据库的回滚方案') + assistant('先备份'));
 
   fs.writeFileSync(path.join(cockpitHome, 'projects.json'), JSON.stringify({ projects: [{ cwd: projB }] }));
 });
@@ -80,7 +95,7 @@ afterAll(() => {
 });
 
 describe('SessionSearchServiceLive', () => {
-  it('indexes top-level sessions from claude and built-in stores, skipping sidechains', async () => {
+  it('indexes top-level sessions from claude and native Pi stores, skipping sidechains', async () => {
     const stats = await sync();
     expect(stats.indexed).toBe(3);
     expect(stats.rebuilt).toBe(3);
@@ -97,7 +112,7 @@ describe('SessionSearchServiceLive', () => {
     expect((await search(['csrf'])).map((h) => h.sessionId)).toEqual([CLAUDE_SID]);
   });
 
-  it('resolves a built-in engine session cwd via projects.json', async () => {
+  it('resolves a Pi session cwd from its native header', async () => {
     expect((await search(['小程序']))[0]).toMatchObject({ engine: 'kimi', sessionId: KIMI_SID, cwd: projB });
   });
 
@@ -107,7 +122,7 @@ describe('SessionSearchServiceLive', () => {
   });
 
   it('matches a keyword that only appears in a markdown heading inside a reply', async () => {
-    fs.appendFileSync(kimiFile, user('给个结论') + assistant('结论如下：\n\n## 独特标题关键词\n具体说明'));
+    appendPi(kimiFile, user('给个结论') + assistant('结论如下：\n\n## 独特标题关键词\n具体说明'));
     await sync();
     expect((await search(['独特标题关键词'])).map((h) => h.sessionId)).toEqual([KIMI_SID]);
   });
@@ -116,49 +131,20 @@ describe('SessionSearchServiceLive', () => {
     expect(await search(['projB'])).toHaveLength(0);
   });
 
-  it('re-indexes a session once its previously unknown project becomes resolvable', async () => {
-    const before = await search(['回滚方案']);
-    expect(before[0]).toMatchObject({ sessionId: GLM_SID, cwd: null, link: null });
-    expect(await search(['回滚方案'], { cwd: projC })).toHaveLength(0);
-
-    fs.writeFileSync(path.join(cockpitHome, 'projects.json'), JSON.stringify({ projects: [{ cwd: projB }, { cwd: projC }] }));
-    const stats = await sync();
-    expect(stats.rebuilt).toBe(1);
-    const after = await search(['回滚方案'], { cwd: projC });
-    expect(after[0]).toMatchObject({ sessionId: GLM_SID, cwd: projC });
-    expect(after[0].link).toContain(encodeURIComponent(GLM_SID));
-  });
-
-  it('recovers an unknown cwd from a claude transcript that appears later in the same encoded dir', async () => {
-    const projD = '/tmp/projD';
-    const sid = '77777777-7777-4777-8777-777777777777';
-    const ollamaDir = path.join(cockpitHome, 'ollama-sessions', encodePath(projD));
-    fs.mkdirSync(ollamaDir, { recursive: true });
-    fs.writeFileSync(path.join(ollamaDir, `${sid}.jsonl`), user('灰度发布的开关设计') + assistant('用配置中心'));
-    await sync();
-    expect((await search(['灰度发布']))[0]).toMatchObject({ sessionId: sid, cwd: null });
-
-    // Only evidence of the directory: a claude session created later for the same project.
-    const claudeDir = path.join(home, '.claude', 'projects', encodePath(projD));
-    fs.mkdirSync(claudeDir, { recursive: true });
-    fs.writeFileSync(path.join(claudeDir, '88888888-8888-4888-8888-888888888888.jsonl'), user('hello', { cwd: projD }) + assistant('hi'));
-    await sync();
-    const hits = await search(['灰度发布'], { cwd: projD });
-    expect(hits[0]).toMatchObject({ sessionId: sid, cwd: projD });
-    expect(hits[0].link).toContain(encodeURIComponent(sid));
+  it('links an unregistered Pi project directly from its native cwd', async () => {
+    const hits = await search(['回滚方案'], { cwd: projC });
+    expect(hits[0]).toMatchObject({ sessionId: GLM_SID, cwd: projC, engine: 'glm' });
+    expect(hits[0].link).toContain(encodeURIComponent(GLM_SID));
   });
 
   // chmod 0o000 cannot make a file unreadable as root, nor on Windows.
   it.skipIf(process.getuid?.() === 0 || process.platform === 'win32')('keeps the indexed copy on a read failure and retries once readable again', async () => {
     const sid = '99999999-9999-4999-8999-999999999999';
-    const dsDir = path.join(cockpitHome, 'deepseek-sessions', encodePath(projB));
-    fs.mkdirSync(dsDir, { recursive: true });
-    const file = path.join(dsDir, `${sid}.jsonl`);
-    fs.writeFileSync(file, user('熔断阈值怎么定') + assistant('按错误率'));
+    const file = writePi(projB, sid, 'deepseek', user('熔断阈值怎么定') + assistant('按错误率'));
     await sync();
     expect((await search(['熔断阈值'])).map((h) => h.sessionId)).toContain(sid);
 
-    fs.appendFileSync(file, user('再补充一个限流词'));
+    appendPi(file, user('再补充一个限流词'));
     fs.chmodSync(file, 0o000);
     try {
       await sync();
@@ -189,7 +175,7 @@ describe('SessionSearchServiceLive', () => {
 
   it('is incremental: unchanged sources are not rebuilt, changed ones are', async () => {
     expect((await sync()).rebuilt).toBe(0);
-    fs.appendFileSync(kimiFile, user('再加一个关键字 websocket'));
+    appendPi(kimiFile, user('再加一个关键字 websocket'));
     expect((await sync()).rebuilt).toBe(1);
     expect((await search(['websocket']))[0]?.sessionId).toBe(KIMI_SID);
   });

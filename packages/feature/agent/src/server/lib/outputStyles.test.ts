@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { formatOutputStyleSection, normalizeOutputStyles } from './outputStyles';
-import { buildSystemPrompt } from '../engines/builtinAgent/prompt';
 
 describe('normalizeOutputStyles', () => {
   it('drops unusable entries, dedupes names, keeps and reissues ids', () => {
@@ -22,16 +21,6 @@ describe('normalizeOutputStyles', () => {
   it('returns [] for non-arrays', () => {
     expect(normalizeOutputStyles(undefined)).toEqual([]);
     expect(normalizeOutputStyles({ styles: [] })).toEqual([]);
-  });
-});
-
-describe('buildSystemPrompt output style', () => {
-  it('appends the style last and leaves the prompt unchanged without one', () => {
-    const base = buildSystemPrompt('/tmp');
-    expect(buildSystemPrompt('/tmp', undefined)).toBe(base);
-    const section = formatOutputStyleSection('Talk like a pirate.');
-    const styled = buildSystemPrompt('/tmp', section);
-    expect(styled).toBe(`${base}\n\n${section}`);
   });
 });
 

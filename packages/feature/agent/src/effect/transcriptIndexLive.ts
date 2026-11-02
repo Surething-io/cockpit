@@ -31,6 +31,7 @@
  * route realm both read transcripts, and a second realm must not grow a second
  * index (same rationale as snapshotLive's semaphores and sessionRunHub).
  */
+import { readPiSession, piSelection } from "./piSessionLive"
 import { createHash } from "node:crypto"
 import { open, readFile, readdir, realpath, rm, stat } from "node:fs/promises"
 import { basename, dirname, join, resolve } from "node:path"
@@ -382,6 +383,7 @@ export const applyRecord = (state: FoldState, format: TranscriptFormat, r: Trans
 const DECODERS: Record<TranscriptFormat, (line: string) => TranscriptRecord | null> = {
   claude: decodeClaudeLine,
   codex: decodeCodexLine,
+  pi: () => null, // Native Pi branches are projected by piSnapshot, never folded incrementally.
 }
 
 /** Fold one line into `state`; returns false when the line was skipped. */
@@ -628,13 +630,25 @@ const refreshFile = async (
   }
 }
 
+/** Pi projections are rebuilt from its active branch; append-only folds cannot follow branch changes. */
+const piSnapshot = (path: string): Effect.Effect<TranscriptSnapshot | null, never> =>
+  Effect.gen(function* () {
+    const native = yield* readPiSession(path)
+    const info = yield* Effect.tryPromise({ try: () => stat(path), catch: (cause) => new FSError({ path, op: "stat", cause }) })
+    const state = emptyFoldState()
+    state.cwd = native.manager.getCwd()
+    state.aiTitle = native.name ?? ""
+    for (const message of native.messages) foldClaudeLine(state, JSON.stringify({ ...message, sessionId: native.manager.getSessionId() }))
+    return { ...state, engine: piSelection(native.entries).engine, path, format: "pi" as const, size: info.size, mtimeMs: info.mtimeMs }
+  }).pipe(Effect.catchAll((error) => Effect.logWarning("Pi transcript read failed", error).pipe(Effect.as(null))))
+
 const snapshotImpl = (
   shardDir: string,
   s: IndexState,
   path: string,
   format: TranscriptFormat
 ): Effect.Effect<TranscriptSnapshot | null, never> =>
-  withPathLock(
+  format === "pi" ? piSnapshot(path) : withPathLock(
     s,
     path,
     s.readSem.withPermits(1)(

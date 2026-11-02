@@ -1,7 +1,7 @@
 import { deepseekApiKey } from './credentials';
 import { makeAnthropicCompatSpec, type AnthropicCompatProvider } from './anthropicCompat';
 
-// DeepSeek's OpenAI-compatible endpoint, driven by the Built-in Agent loop.
+// DeepSeek's OpenAI-compatible endpoint, executed by the Pi SDK.
 // Its /v1/models is the authoritative, live list, so nothing is whitelisted here: the
 // picker offers whatever that endpoint reports and a model DeepSeek ships tomorrow works
 // without a cockpit release.

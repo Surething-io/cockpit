@@ -1,12 +1,10 @@
+import { Effect } from 'effect';
+import { findPiSession } from '../../../effect/piSessionLive';
 import { access } from 'fs/promises';
 import { join } from 'path';
 import {
   CODEX_SESSIONS_DIR,
   getClaudeSessionPath,
-  getDeepseekBuiltinSessionPath,
-  getKimiBuiltinSessionPath,
-  getGlmBuiltinSessionPath,
-  getOllamaSessionPath,
 } from '@cockpit/shared-utils';
 import { findCodexSession } from '../../../effect/transcriptIndexLive';
 
@@ -23,18 +21,7 @@ export interface SessionStore {
   engine: SessionEngine;
 }
 
-/**
- * Where a session lives IS what it ran as — the transcript files carry no engine field, so
- * the store that holds one is the only authority. One store per engine, so the answer is a
- * single dimension.
- *
- * There used to be a second one: deepseek/kimi/glm each wrote a separate store per
- * execution mode (Claude Agent SDK vs Built-in Agent) and a `mode` had to be reported
- * alongside the engine. Those engines now only ever run the built-in loop, and the old SDK
- * stores under ~/.cockpit/<engine>/projects are deliberately NOT probed — their transcripts
- * are in the SDK's own shape and no loop remains that can resume them, so surfacing them
- * would offer sessions that die on the first turn.
- */
+/** Resolve native Claude, Codex or Pi storage; Pi provider selection comes from its branch. */
 export async function resolveSessionPath(
   cwd: string,
   sessionId: string
@@ -43,17 +30,14 @@ export async function resolveSessionPath(
   // Probe order is the precedence order when a session id exists in more than one store.
   const probes: Array<[SessionEngine, () => Promise<string | null>]> = [
     ['claude', async () => getClaudeSessionPath(cwd, sessionId)],
-    ['deepseek', async () => getDeepseekBuiltinSessionPath(cwd, sessionId)],
-    ['kimi', async () => getKimiBuiltinSessionPath(cwd, sessionId)],
-    ['glm', async () => getGlmBuiltinSessionPath(cwd, sessionId)],
     ['codex', async () => (await findCodexSession(sessionId))?.path ?? null],
-    ['ollama', async () => getOllamaSessionPath(cwd, sessionId)],
   ];
   for (const [engine, locate] of probes) {
     const sessionPath = await locate();
     if (sessionPath && (engine === 'codex' || (await exists(sessionPath)))) return { sessionPath, engine };
   }
-  return null;
+  const pi = await Effect.runPromise(findPiSession(cwd, sessionId));
+  return pi ? { sessionPath: pi.path, engine: pi.engine } : null;
 }
 
 /**
@@ -78,14 +62,6 @@ export function newSessionPathInStore(
   switch (store.engine) {
     case 'claude':
       return getClaudeSessionPath(cwd, newSessionId);
-    case 'deepseek':
-      return getDeepseekBuiltinSessionPath(cwd, newSessionId);
-    case 'kimi':
-      return getKimiBuiltinSessionPath(cwd, newSessionId);
-    case 'glm':
-      return getGlmBuiltinSessionPath(cwd, newSessionId);
-    case 'ollama':
-      return getOllamaSessionPath(cwd, newSessionId);
     case 'codex': {
       const now = new Date();
       const pad = (n: number) => String(n).padStart(2, '0');

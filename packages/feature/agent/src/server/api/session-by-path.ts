@@ -404,10 +404,7 @@ export const POST = handler((req) =>
           const codex = await parseCodexTranscriptFile(source);
           return { ...codex, ...pageTurns(codex.messages, { limit, beforeTurnIndex, fromTurnIndex }) };
         }
-        // Everything else (claude/ollama/deepseek/kimi/glm) writes Claude-style
-        // transcripts, so one parser covers them.
-        // ollama has done so since v1.0.186; the AI SDK ModelMessage legacy fallback
-        // (v1.0.184–185 only) was removed.
+        // The parser reads native Pi branches or Claude transcripts by storage path.
         return parseTranscriptFile(source, { limit, beforeTurnIndex, fromTurnIndex });
       },
       catch: (cause) =>
@@ -428,6 +425,7 @@ export const POST = handler((req) =>
       // driving this" is answered by the same payload that answers "which engine".
       bot,
       usage,
+      model: 'model' in parseResult ? parseResult.model : undefined,
       totalTurns,
       hasMore,
       startTurnIndex,

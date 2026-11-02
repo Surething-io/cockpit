@@ -68,7 +68,7 @@ An honest snapshot as of July 2026 — each tool wins somewhere. Spotted an erro
 | Agent-drivable browser & DB (Chrome / Postgres / MySQL / Redis) | ✅ Smart Bubbles | ❌ preview pane only | ❌ |
 | Fully offline / air-gapped | ✅ via Ollama | ❌ | ❌ |
 | Phone / tablet access | ✅ any LAN browser — code runs on **your** machine | ✅ via Claude Code on the web (cloud sandbox) | ❌ desktop only |
-| Native desktop app | ❌ local web app (needs Node ≥ 20) | ✅ | ✅ Tauri |
+| Native desktop app | ❌ local web app (needs Node ≥ 22.19) | ✅ | ✅ Tauri |
 | Newest Claude Code features on day one | ⏳ tracks Agent SDK releases with a lag | ✅ first party | ❌ |
 | Automation triggers | one-time / interval / cron | ✅ Routines: cron + API + GitHub events | background agents |
 | Session checkpoints / rewind | pinning & forking only | ✅ | ✅ checkpoint timeline |
@@ -181,7 +181,7 @@ No install, no AI chat (read-only sandbox, 5 min):
 ## Prerequisites
 
 - **macOS, Linux, or Windows** — Windows support is experimental ([details](#windows))
-- **Node.js ≥ 20** — [nodejs.org](https://nodejs.org/)
+- **Node.js ≥ 22.19** — [nodejs.org](https://nodejs.org/)
 - **Claude Code** — [docs.anthropic.com/en/docs/claude-code](https://docs.anthropic.com/en/docs/claude-code) (default engine)
 - **Git** — for git features (blame, diff, worktree, etc.)
 - **Chrome** *(optional)* — for Browser Bubble; install the bundled extension from `~/.cockpit/chrome-extension`
@@ -267,7 +267,7 @@ wsl --install          # once, from an admin PowerShell, then reboot
 
 ```bash
 wsl                                  # enter your Linux shell
-npm install -g @surething/cockpit    # install Node ≥ 20 inside WSL first
+npm install -g @surething/cockpit    # install Node ≥ 22.19 inside WSL first
 cockpit
 ```
 

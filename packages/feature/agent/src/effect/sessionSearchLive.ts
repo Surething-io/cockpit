@@ -35,7 +35,7 @@ import {
 import {
   CLAUDE_PROJECTS_DIR,
   GLOBAL_STATE_FILE,
-  getBuiltinSessionsRoot,
+  isPiSessionPath, PI_SESSIONS_DIR,
 } from "@cockpit/shared-utils"
 import { encodePath } from "@cockpit/shared-utils/encodePath"
 import { buildSessionLink } from "@cockpit/shared-utils/sessionLink"
@@ -53,7 +53,6 @@ export const HEADER_END = "#---"
 export const CORPUS_HEADER_LINES = 7
 export const CORPUS_TITLE_LINE = 5
 
-const BUILTIN_ENGINES = ["ollama", "deepseek", "kimi", "glm"] as const
 const MANIFEST_FILE = "manifest.v2.json"
 const LEGACY_MANIFEST_FILE = "manifest.json"
 const PARSE_CONCURRENCY = 4
@@ -239,7 +238,7 @@ export const listCorpusSources: Effect.Effect<CorpusSource[], never> = Effect.ge
         for (const file of yield* listTopLevelTranscripts(join(root, encodedDir))) {
           out.push({
             engine,
-            sessionId: file.slice(0, -".jsonl".length),
+            sessionId: engine === "pi" ? file.slice(file.indexOf("_") + 1, -".jsonl".length) : file.slice(0, -".jsonl".length),
             sourcePath: join(root, encodedDir, file),
             cwd: null,
             encodedDir,
@@ -249,9 +248,7 @@ export const listCorpusSources: Effect.Effect<CorpusSource[], never> = Effect.ge
     })
 
   yield* fromShardedStore("claude", CLAUDE_PROJECTS_DIR)
-  for (const engine of BUILTIN_ENGINES) {
-    yield* fromShardedStore(engine, getBuiltinSessionsRoot(engine))
-  }
+  yield* fromShardedStore("pi", PI_SESSIONS_DIR)
   // Sub-agent rollouts are out of scope (see header), as in every session list.
   const codex = (yield* codexSessionEntries).filter((entry) => !isCodexSubagent(entry))
   for (const entry of codex) {
@@ -262,7 +259,7 @@ export const listCorpusSources: Effect.Effect<CorpusSource[], never> = Effect.ge
 
 /** The first `cwd` field of a claude transcript, from the transcript index. */
 const firstCwdInTranscript = (file: string): Effect.Effect<string | null, never> =>
-  transcriptSnapshot(file, "claude").pipe(Effect.map((snap) => snap?.cwd ?? null))
+  transcriptSnapshot(file, isPiSessionPath(file) ? "pi" : "claude").pipe(Effect.map((snap) => snap?.cwd ?? null))
 
 /**
  * encodedDir → cwd, for stores whose transcripts carry no cwd. Encoding is not
@@ -296,7 +293,7 @@ const resolveCwd = (
 ): Effect.Effect<string | null, never> =>
   Effect.gen(function* () {
     if (source.cwd) return source.cwd
-    if (source.engine === "claude") {
+    if (source.engine === "claude" || source.engine === "pi") {
       const fromFile = yield* firstCwdInTranscript(source.sourcePath)
       if (fromFile) {
         if (source.encodedDir) lookup.set(source.encodedDir, fromFile)
@@ -330,7 +327,7 @@ const extractText = (
   updatedAt: number
 ): Effect.Effect<string | null, AppError> =>
   Effect.gen(function* () {
-    const format = source.engine === "codex" ? "codex" : "claude"
+    const format = isPiSessionPath(source.sourcePath) ? "pi" : source.engine === "codex" ? "codex" : "claude"
     const snap = yield* transcriptSnapshot(source.sourcePath, format)
     if (!snap) {
       return yield* Effect.fail(new AppError({ message: `failed to read transcript ${source.sourcePath}` }))
@@ -341,7 +338,7 @@ const extractText = (
         ? listMessages(snap)[0]?.slice(0, 80) || "Untitled Session"
         : generateTitle(snap.aiTitle, snap.summary, titleMessages(snap))
     return renderCorpusText(
-      { engine: source.engine, sessionId: source.sessionId, cwd, title, updatedAt },
+      { engine: snap.engine ?? source.engine, sessionId: source.sessionId, cwd, title, updatedAt },
       snap.corpus.map((line) => ({ role: line.role, content: line.text }))
     )
   })

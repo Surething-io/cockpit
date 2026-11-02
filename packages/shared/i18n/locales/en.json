@@ -626,6 +626,7 @@
     "showMore": "Show more",
     "showLess": "Show less",
     "subagent": "Subagent",
+    "piChildStatus": {"interrupted": "Interrupted snapshot", "truncated": "Truncated", "running": "Running", "done": "Done", "failed": "Failed", "cancelled": "Cancelled"},
     "subagentEmpty": "No subagent transcript found",
     "subagentViewTitle": "View subagent transcript",
     "workflowRun": "Run details",

@@ -1,8 +1,8 @@
 // Exercise the real Pi SDK against a local faux OpenAI server, without paid models.
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { Effect } from 'effect';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AgentSession, ModelRuntime, SessionManager } from '@earendil-works/pi-coding-agent';
@@ -15,12 +15,20 @@ let runPiAgent: typeof import('./piAgentLive').runPiAgent;
 let sessions: typeof import('./piSessionLive');
 let edits: typeof import('./piSessionEditLive');
 let parser: typeof import('../server/api/session/transcriptParsers');
+const observedHeaders: Array<{ tenant: string | undefined; route: string | undefined; request: (typeof requests)[number] }> = [];
 const previousHome = process.env.COCKPIT_HOME;
-const requests: Array<{ model: string; messages: Array<{ role: string; content: unknown }> }> = [];
+const previousRoot = process.env.COCKPIT_ROOT;
+const requests: Array<{ max_tokens?: number; model: string; messages: Array<{ role: string; content: unknown }> }> = [];
 
 beforeAll(async () => {
   home = await mkdtemp(join(tmpdir(), 'cockpit-pi-'));
   process.env.COCKPIT_HOME = home;
+  process.env.COCKPIT_ROOT = process.cwd();
+  await mkdir(join(home, 'pi'), { recursive: true });
+  const ids = ['test-model', 'other-model', 'parent-model', 'first-model', 'second-model', 'k3'];
+  const models = ids.map((id) => ({ id, contextWindow: 1000000, maxTokens: 32768, input: ['text'], reasoning: id === 'k3' }));
+  await writeFile(join(home, 'pi', 'models.json'), JSON.stringify({ providers: Object.fromEntries(['ollama', 'deepseek', 'kimi', 'glm'].map((p) => [p, { api: 'openai-completions', baseUrl: 'http://127.0.0.1:1/v1', models }])) }));
+
   ({ runPiAgent } = await import('./piAgentLive'));
   sessions = await import('./piSessionLive');
   edits = await import('./piSessionEditLive');
@@ -30,6 +38,7 @@ beforeAll(async () => {
     for await (const chunk of req) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString());
     requests.push(body);
+    observedHeaders.push({ tenant: req.headers['x-tenant'] as string | undefined, route: req.headers['x-route'] as string | undefined, request: body });
     if (body.messages.some((message: { content: unknown }) => message.content === null)) {
       res.writeHead(400); res.end(JSON.stringify({ error: { message: 'Ollama requires non-null content' } })); return;
     }
@@ -38,8 +47,18 @@ beforeAll(async () => {
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     const send = (delta: unknown, finish_reason: string | null = null) => res.write(`data: ${JSON.stringify({ id: 'test', object: 'chat.completion.chunk', model: body.model, choices: [{ index: 0, delta, finish_reason }] })}\n\n`);
     send({ role: 'assistant' });
+    if (text.includes('truncate-parent')) { send({ content: 'Partial parent answer' }); send({}, 'length'); res.write('data: [DONE]\n\n'); res.end(); return; }
     if (text.includes('hang-stream')) { send({ content: 'waiting' }); return; }
-    if (text.includes('use-bash') && !body.messages.some((m: { role: string }) => m.role === 'tool')) {
+    if (text.includes('try-unmanaged-pi') && !body.messages.some((m: { role: string }) => m.role === 'tool')) {
+      send({ tool_calls: [{ index: 0, id: 'blocked-pi-call', type: 'function', function: { name: 'bash', arguments: JSON.stringify({ command: `printf started > '${join(home, 'shell-started')}'; PI='${join(home, 'fake', 'pi')}'; nohup "$PI" -p review` }) } }] });
+      send({}, 'tool_calls');
+    } else if (text.includes('use-hanging-subagent') && !body.messages.some((m: { role: string }) => m.role === 'tool')) {
+      send({ tool_calls: [{ index: 0, id: 'hanging-child-call', type: 'function', function: { name: 'subagent', arguments: JSON.stringify({ task: 'hang-stream', tools: [] }) } }] });
+      send({}, 'tool_calls');
+    } else if (text.includes('use-dynamic-subagent') && !body.messages.some((m: { role: string }) => m.role === 'tool')) {
+      send({ tool_calls: [{ index: 0, id: 'subagent-call', type: 'function', function: { name: 'subagent', arguments: JSON.stringify({ task: 'independent child task', instructions: 'Return the result.', tools: [] }) } }] });
+      send({}, 'tool_calls');
+    } else if (text.includes('use-bash') && !body.messages.some((m: { role: string }) => m.role === 'tool')) {
       send({ tool_calls: [{ index: 0, id: 'test-call', type: 'function', function: { name: 'bash', arguments: JSON.stringify({ command: 'printf "run=%s cwd=%s port=%s" "$COCKPIT_RUN_ID" "$COCKPIT_CWD" "$PORT"' }) } }] });
       send({}, 'tool_calls');
     } else {
@@ -57,6 +76,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (previousRoot === undefined) delete process.env.COCKPIT_ROOT; else process.env.COCKPIT_ROOT = previousRoot;
   server?.closeAllConnections();
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   if (home) await rm(home, { recursive: true, force: true });
@@ -106,6 +126,170 @@ describe('embedded Pi runtime', () => {
     expect(lines.some((line) => line.type === 'model_change' && line.provider === 'deepseek')).toBe(true);
     expect((await readdir(home)).some((dir) => dir.endsWith('-sessions'))).toBe(false);
   });
+
+  it('exposes the dynamic subagent tool to the real parent SDK and persists its result', async () => {
+    const run = context('parent-child-session', 'use-dynamic-subagent');
+    await Effect.runPromise(runPiAgent(run.ctx, { engine: 'ollama', baseUrl, apiKey: 'test' }));
+    const call = run.events.find((event) => event.type === 'assistant' && JSON.stringify(event).includes('subagent-call'));
+    expect(call).toBeDefined();
+    expect(run.events.some((event) => event.type === 'tool_progress')).toBe(true);
+    const file = await Effect.runPromise(sessions.findPiSession(home, 'parent-child-session'));
+    const parsed = await parser.parseTranscriptFile(file!.path);
+    const result = parsed.messages.flatMap((message) => message.toolCalls ?? []).find((tool) => tool.id === 'subagent-call');
+    expect(result?.result).toContain('[done]');
+    expect(result?.result).toContain('Finished.');
+    const { listPiChildren } = await import('./piSubagentSessionLive');
+    const children = await Effect.runPromise(listPiChildren(file!.path, 'parent-child-session', 'subagent-call'));
+    expect(children).toHaveLength(1);
+    expect(children[0].status).toBe('done');
+    const child = await parser.parseTranscriptFile(join(dirname(file!.path), 'parent-child-session', children[0].sessionPath));
+    expect(JSON.stringify(child.messages)).toContain('independent child task');
+    expect(JSON.stringify(child.messages)).toContain('Finished.');
+  }, 30000);
+
+  it('sends a valid small-window output budget through real parent SDK and child CLI requests', async () => {
+    const start = requests.length;
+    const run = context('small-window-parent-child', 'use-dynamic-subagent');
+    await Effect.runPromise(runPiAgent(run.ctx, {
+      engine: 'ollama', baseUrl, apiKey: 'test', outputBudget: 512,
+      modelDefinitions: { 'test-model': { id: 'test-model', contextWindow: 4096, maxTokens: 1024, reasoning: false, input: ['text'], samplingParams: { top_p: 0.8 } } },
+    }));
+    const observed = requests.slice(start);
+    expect(observed).toHaveLength(3);
+    // Pi may lower the requested ceiling further for the actual prompt size.
+    const budgets = observed.map((r) => r.max_tokens ?? (r as unknown as { max_completion_tokens?: number }).max_completion_tokens);
+    expect(budgets.every((budget) => budget !== undefined && budget > 0 && budget <= 512)).toBe(true);
+    expect(new Set(budgets).size).toBe(1);
+    for (const request of observed) {
+      expect(request).toHaveProperty('top_p', 0.8);
+      expect(Number('max_tokens' in request) + Number('max_completion_tokens' in request)).toBe(1);
+    }
+    expect(observed.some((r) => JSON.stringify(r.messages).includes('independent child task'))).toBe(true);
+  }, 30000);
+
+  it.each(['max_tokens', 'max_completion_tokens', 'model'])('rejects sampling payload ownership overrides before any HTTP request: %s', async (field) => {
+    const start = requests.length;
+    const run = context(`bad-sampling-${field}`, 'must not reach provider');
+    await expect(Effect.runPromise(runPiAgent(run.ctx, {
+      engine: 'ollama', baseUrl, apiKey: 'test', outputBudget: 512,
+      modelDefinitions: { 'test-model': { id: 'test-model', contextWindow: 4096, maxTokens: 1024, reasoning: false, input: ['text'], samplingParams: { [field]: 99999 } } },
+    }))).rejects.toThrow();
+    expect(requests.length).toBe(start);
+  });
+
+  it('sends identical provider/model headers through the real parent SDK and child CLI', async () => {
+    const path = join(home, 'pi', 'models.json');
+    const original = await readFile(path, 'utf8');
+    const models = JSON.parse(original);
+    models.providers.ollama.headers = { 'X-Tenant': 'provider-tenant', 'X-Route': 'test-route' };
+    models.providers.ollama.models.find((m: { id: string }) => m.id === 'test-model').headers = { 'X-Tenant': 'model-tenant' };
+    const start = observedHeaders.length;
+    try {
+      await writeFile(path, JSON.stringify(models));
+      const run = context('header-parent-child', 'use-dynamic-subagent');
+      await Effect.runPromise(runPiAgent(run.ctx, { engine: 'ollama', baseUrl, apiKey: 'test' }));
+      const requests = observedHeaders.slice(start);
+      expect(requests).toHaveLength(3);
+      expect(requests.every((r) => r.tenant === 'model-tenant' && r.route === 'test-route')).toBe(true);
+      expect(requests.some((r) => r.request.messages.some((m) => m.role === 'user' && JSON.stringify(m.content).includes('independent child task')))).toBe(true);
+    } finally { await writeFile(path, original); }
+  }, 30000);
+
+  it('sends the audited DeepSeek alias contract on a context larger than the removed 32K fallback', async () => {
+    const run = context('deepseek-alias-context', 'long-context-check ' + 'token '.repeat(30000));
+    run.ctx.params.model = 'deepseek-v4-flash';
+    await Effect.runPromise(runPiAgent(run.ctx, { engine: 'deepseek', baseUrl, apiKey: 'test' }));
+    const request = requests.findLast((r) => r.model === 'deepseek-v4-flash');
+    expect(request?.max_tokens).toBe(32768);
+    expect(run.events.some((e) => e.type === 'result')).toBe(true);
+  });
+
+  it('does not report a truncated native reply as success and preserves its partial output through clone/cut', async () => {
+    const run = context('truncated-parent', 'truncate-parent');
+    await expect(Effect.runPromise(runPiAgent(run.ctx, { engine: 'ollama', baseUrl, apiKey: 'test' }).pipe(Effect.mapError((e) => e.cause)))).rejects.toThrow('stopReason=length');
+    expect(run.events.some((e) => e.type === 'result')).toBe(false);
+    const file = (await Effect.runPromise(sessions.findPiSession(home, 'truncated-parent')))!;
+    const original = SessionManager.open(file.path);
+    const user = original.getBranch().find((e) => e.type === 'message' && e.message.role === 'user')!;
+    for (const scope of ['prefix', 'single'] as const) {
+      const fork = await Effect.runPromise(edits.forkPiSession(file.path, user.id, scope));
+      const copy = (await Effect.runPromise(sessions.findPiSession(home, fork!.newSessionId)))!;
+      const parsed = await parser.parseTranscriptFile(copy.path);
+      expect(JSON.stringify(parsed.messages)).toContain('Partial parent answer');
+      expect(JSON.stringify(parsed.messages)).toContain('stopReason=length');
+      const branch = SessionManager.open(copy.path).getBranch();
+      if (branch.some((e) => e.type === 'context_edit' && e.replacement === null)) {
+        expect(JSON.stringify(parsed.messages)).toContain('excluded this response');
+      }
+    }
+  }, 30000);
+
+  it('allows a direct Pi-named executable through the native Bash tool', async () => {
+    await mkdir(join(home, 'fake'), { recursive: true });
+    await writeFile(join(home, 'fake', 'pi'), '#!/bin/sh\nprintf direct-pi-ran\n', { mode: 0o700 });
+    const run = context('direct-pi-session', 'try-unmanaged-pi');
+    await Effect.runPromise(runPiAgent(run.ctx, { engine: 'ollama', baseUrl, apiKey: 'test' }));
+    expect(await readFile(join(home, 'shell-started'), 'utf8')).toBe('started');
+    const file = await Effect.runPromise(sessions.findPiSession(home, 'direct-pi-session'));
+    const tool = SessionManager.open(file!.path).getBranch().find((entry) => entry.type === 'message' && entry.message.role === 'toolResult' && entry.message.toolCallId === 'blocked-pi-call');
+    expect(tool).toMatchObject({ type: 'message', message: { role: 'toolResult', isError: false } });
+    expect(JSON.stringify(tool)).toContain('direct-pi-ran');
+    expect(run.events.some((event) => event.type === 'result')).toBe(true);
+  });
+
+  it('freezes running native child histories during prefix and single forks without inheriting execution state', async () => {
+    const run = context('fork-running-child', 'use-hanging-subagent');
+    let ready!: () => void;
+    const streamed = new Promise<void>((resolve) => { ready = resolve; });
+    const emit = run.ctx.emit;
+    run.ctx.emit = (event) => {
+      emit(event);
+      if (event.type === 'tool_progress' && String(event.progress_text).includes('waiting')) ready();
+    };
+    const pending = Effect.runPromise(runPiAgent(run.ctx, { engine: 'ollama', baseUrl, apiKey: 'test' }));
+    const snapshots: Array<{ path: string; id: string; transcript: string; childPath: string }> = [];
+    const { listPiChildren } = await import('./piSubagentSessionLive');
+    try {
+      await Effect.runPromise(Effect.promise(() => streamed).pipe(Effect.timeout('10 seconds')));
+      const source = (await Effect.runPromise(sessions.findPiSession(home, 'fork-running-child')))!;
+      const user = SessionManager.open(source.path).getBranch().find((e) => e.type === 'message' && e.message.role === 'user')!;
+      for (const scope of ['prefix', 'single'] as const) {
+        const fork = await Effect.runPromise(edits.forkPiSession(source.path, user.id, scope));
+        const copy = (await Effect.runPromise(sessions.findPiSession(home, fork!.newSessionId)))!;
+        const children = await Effect.runPromise(listPiChildren(copy.path, copy.id));
+        expect(children).toHaveLength(1);
+        expect(children[0].status).toBe('interrupted');
+        const childPath = join(dirname(copy.path), copy.id, children[0].sessionPath);
+        const transcript = await readFile(childPath, 'utf8');
+        for (const line of transcript.trim().split('\n')) expect(() => JSON.parse(line)).not.toThrow();
+        expect(transcript).toContain('Frozen child history');
+        snapshots.push({ path: copy.path, id: copy.id, transcript, childPath });
+      }
+    } finally { run.abort.abort(); await pending; }
+    for (const snapshot of snapshots) {
+      expect((await Effect.runPromise(listPiChildren(snapshot.path, snapshot.id)))[0].status).toBe('interrupted');
+      expect(await readFile(snapshot.childPath, 'utf8')).toBe(snapshot.transcript);
+    }
+  }, 30000);
+
+  it('waits for child cancellation and cleanup when the parent run is stopped', async () => {
+    const run = context('parent-abort-child', 'use-hanging-subagent');
+    const emit = run.ctx.emit;
+    run.ctx.emit = (event) => {
+      emit(event);
+      if (event.type === 'tool_progress' && String(event.progress_text).includes('waiting')) run.abort.abort();
+    };
+    await Effect.runPromise(runPiAgent(run.ctx, { engine: 'ollama', baseUrl, apiKey: 'test' }));
+    expect(run.abort.signal.aborted).toBe(true);
+    expect(await readdir(join(home, 'pi', 'tmp'))).toEqual([]);
+    expect(run.events.some((event) => event.type === 'result')).toBe(false);
+    const file = await Effect.runPromise(sessions.findPiSession(home, 'parent-abort-child'));
+    const { listPiChildren } = await import('./piSubagentSessionLive');
+    const children = await Effect.runPromise(listPiChildren(file!.path, 'parent-abort-child', 'hanging-child-call'));
+    expect(children).toHaveLength(1);
+    expect(children[0].status).toBe('cancelled');
+    expect(await readFile(join(dirname(file!.path), 'parent-abort-child', children[0].sessionPath), 'utf8')).toContain('hang-stream');
+  }, 30000);
 
   it('executes native tools with Cockpit environment and projects matching tool ids after reload', async () => {
     const run = context('tool-session', 'use-bash');
@@ -406,6 +590,35 @@ describe('embedded Pi runtime', () => {
       expect([first.id, assistant.id]).not.toContain(edit.targetId);
     }
     expect(entries.filter((entry) => entry.type === 'context_edit')).toHaveLength(2);
+  });
+
+  it('preserves later referenced edits in prefix clones without duplicating earlier edits or copying later turns', async () => {
+    const run = context('prefix-late-edits', 'first source task');
+    await Effect.runPromise(runPiAgent(run.ctx, { engine: 'ollama', baseUrl, apiKey: 'test' }));
+    const file = (await Effect.runPromise(sessions.findPiSession(home, 'prefix-late-edits')))!;
+    const source = SessionManager.open(file.path);
+    const first = source.getBranch().find((e) => e.type === 'message' && e.message.role === 'user')!;
+    const assistant = source.getBranch().find((e) => e.type === 'message' && e.message.role === 'assistant')!;
+    source.appendContextEdit(assistant.id, { content: [{ type: 'text', text: 'earlier edit' }] });
+    const later = source.appendMessage({ role: 'user', content: 'later turn', timestamp: Date.now() });
+    source.appendContextEdit(first.id, { content: 'edited first source task' });
+    source.appendContextEdit(assistant.id, null);
+    source.appendContextEdit(assistant.id, { content: [{ type: 'text', text: 'restored' }] });
+    source.appendContextEdit(assistant.id, null);
+    source.appendContextEdit(later, { content: 'must not appear' });
+    const result = await Effect.runPromise(edits.forkPiSession(file.path, first.id, 'prefix'));
+    const copyFile = (await Effect.runPromise(sessions.findPiSession(home, result!.newSessionId)))!;
+    const copy = SessionManager.open(copyFile.path);
+    const branch = copy.getBranch();
+    const contextEdits = branch.filter((e) => e.type === 'context_edit');
+    expect(contextEdits).toHaveLength(5);
+    expect(contextEdits.every((e) => branch.some((target) => target.type === 'message' && target.id === e.targetId))).toBe(true);
+    expect(copy.buildSessionContext().messages.filter((m) => m.role !== 'system')).toEqual([
+      expect.objectContaining({ role: 'user', content: 'edited first source task' }),
+    ]);
+    expect(JSON.stringify(branch)).not.toContain('later turn');
+    expect(JSON.stringify(branch)).not.toContain('must not appear');
+    expect(contextEdits.at(-1)?.replacement).toBeNull();
   });
 
   it('surfaces provider failures and retains their reason after reload', async () => {

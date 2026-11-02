@@ -84,16 +84,23 @@ export function piMessage(message: Message, id: string, timestamp: string, cwd?:
 
 /** Render the active branch, including pre-compaction history for browsing. */
 export function piBranchMessages(entries: SessionEntry[], cwd?: string): TranscriptMessage[] {
+  const latestEdits = new Map(entries.flatMap((e) => e.type === 'context_edit' ? [[e.targetId, e.replacement] as const] : []));
   return entries.flatMap<TranscriptMessage>((entry) => {
-    if (entry.type === 'custom' && entry.customType === 'cockpit.undelivered-input') {
+    if (entry.type === 'custom' && ['cockpit.undelivered-input', 'cockpit.subagent-instructions', 'cockpit.subagent-interrupted-output', 'cockpit.subagent-snapshot'].includes(entry.customType)) {
       const data = entry.data as { text?: unknown } | undefined;
       if (typeof data?.text !== 'string') return [];
       return [{ type: 'user', uuid: entry.id, timestamp: entry.timestamp, isMeta: true, message: { role: 'user', content: data.text } }];
     }
     if (entry.type !== 'message') return [];
     const message = entry.message;
-    return message.role === 'user' || message.role === 'assistant' || message.role === 'toolResult'
+    const rows = message.role === 'user' || message.role === 'assistant' || message.role === 'toolResult'
       ? piMessage(message, entry.id, entry.timestamp, cwd) : [];
+    if (message.role === 'assistant' && ['length', 'error', 'aborted'].includes(message.stopReason)) {
+      const excluded = latestEdits.has(entry.id) && latestEdits.get(entry.id) === null;
+      const text = `Response incomplete (stopReason=${message.stopReason}).${message.stopReason === 'length' ? ' Output was truncated.' : ''}${excluded ? ' Pi excluded this response from subsequent model context.' : ''} Partial output is retained above.`;
+      rows.push({ type: 'user', uuid: `${entry.id}-outcome`, timestamp: entry.timestamp, isMeta: true, message: { role: 'user', content: text } });
+    }
+    return rows;
   });
 }
 
@@ -110,6 +117,10 @@ export function piRunEvents(event: AgentSessionEvent, cwd?: string): RunEvent[] 
   if (event.type === 'tool_execution_start') {
     const tool = piTool(event.toolName, event.args, cwd);
     return [{ type: 'assistant', message: { content: [{ type: 'tool_use', id: event.toolCallId, ...tool }] } }];
+  }
+  if (event.type === 'tool_execution_update' && event.toolName === 'subagent') {
+    return [{ type: 'tool_progress', tool_call_id: event.toolCallId,
+      progress_text: event.partialResult.content.filter((block: { type: string }) => block.type === 'text').map((block: { text?: string }) => block.text ?? '').join('\n') }];
   }
   if (event.type === 'tool_execution_end') return [{ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: event.toolCallId, content: event.result.content.filter((b: { type: string }) => b.type === 'text').map((b: { text?: string }) => b.text ?? '').join('\n'), is_error: event.isError }] } }];
   if (event.type === 'auto_retry_start') return [{ type: 'system', subtype: 'api_retry', attempt: event.attempt, max_retries: event.maxAttempts, retry_delay_ms: event.delayMs, error: event.errorMessage }];

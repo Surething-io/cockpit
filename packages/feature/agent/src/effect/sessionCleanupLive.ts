@@ -47,7 +47,7 @@ const loadPinnedIds = (pinnedFile: string): Effect.Effect<PinLoad, never> =>
     catch: () => null,
   }).pipe(Effect.orElseSucceed(() => ({ ok: false }) as PinLoad))
 
-const cleanupSessions = (
+export const cleanupSessions = (
   root: string,
   keepDays: number,
   pinnedFile: string
@@ -74,28 +74,24 @@ const cleanupSessions = (
         Effect.orElseSucceed(() => [] as string[])
       )
 
-      // Group entries into sessions by stem: `<id>.jsonl` (parent transcript)
-      // and `<id>/` (future attachment dir) belong to the same session id.
+      // Native Pi filenames include a timestamp; attachments are keyed by the
+      // header's session ID. Group both before considering orphan directories.
       const sessions = new Map<string, { jsonl?: string; subdir?: string }>()
       for (const name of entries) {
         const full = join(cwdDir, name)
-        if (name.endsWith(".jsonl")) {
-          const stem = name.slice(0, -".jsonl".length)
-          const s = sessions.get(stem) ?? {}
-          s.jsonl = full
-          sessions.set(stem, s)
-        } else if (yield* isDirectory(full)) {
-          const s = sessions.get(name) ?? {}
-          s.subdir = full
-          sessions.set(name, s)
-        }
+        if (!name.endsWith(".jsonl")) continue
+        const sessionId = yield* Effect.tryPromise({
+          try: async () => (await import("@earendil-works/pi-coding-agent")).SessionManager.open(full).getSessionId(),
+          catch: (cause) => new AppError({ message: "Cannot read Pi session header", cause }),
+        })
+        sessions.set(sessionId, { ...sessions.get(sessionId), jsonl: full })
+      }
+      for (const name of entries) {
+        const full = join(cwdDir, name)
+        if (yield* isDirectory(full)) sessions.set(name, { ...sessions.get(name), subdir: full })
       }
 
-      for (const [stem, s] of sessions) {
-        const sessionId = s.jsonl ? yield* Effect.tryPromise({
-          try: async () => (await import("@earendil-works/pi-coding-agent")).SessionManager.open(s.jsonl!).getSessionId(),
-          catch: (cause) => new AppError({ message: "Cannot read Pi session header", cause }),
-        }) : stem
+      for (const [sessionId, s] of sessions) {
         if (pins.ids.has(sessionId)) continue // pinned -> never auto-delete
 
         // Basis = parent transcript mtime (last activity). Fall back to the
@@ -118,7 +114,7 @@ const cleanupSessions = (
           ).pipe(Effect.orElseSucceed(() => undefined))
         }
         yield* Effect.logInfo(
-          `session cleanup: removed session ${stem} from ${root} under ${cwdName} (older than ${keepDays}d)`
+          `session cleanup: removed session ${sessionId} from ${root} under ${cwdName} (older than ${keepDays}d)`
         )
       }
 

@@ -623,6 +623,7 @@
     "showMore": "显示更多",
     "showLess": "收起",
     "subagent": "子代理",
+    "piChildStatus": {"interrupted": "中断快照", "truncated": "已截断", "running": "运行中", "done": "已完成", "failed": "失败", "cancelled": "已取消"},
     "subagentEmpty": "未找到子代理消息记录",
     "subagentViewTitle": "查看子代理执行过程",
     "workflowRun": "运行详情",

@@ -1,8 +1,9 @@
 // Native Pi session editing for Cockpit's fork and delete-turn actions.
 import { Effect } from 'effect';
-import type { SessionEntry } from '@earendil-works/pi-coding-agent';
+import type { SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent';
 import { AppError } from '@cockpit/effect-core';
 import { rewriteTranscript } from '../server/transcriptWrite';
+import { copyPiChildren, prunePiChildren } from './piSubagentSessionLive';
 import { piSelection } from './piSessionLive';
 
 /** Locate a complete human turn even when the selected bubble is an assistant. */
@@ -18,16 +19,31 @@ export function piTurn(entries: SessionEntry[], target: string): { start: number
   return { start, end };
 }
 
+/** Keep edits by their target, regardless of which later turn appended them. */
+function appendReferencedEdits(entries: SessionEntry[], copy: SessionManager, ids: Map<string, string>, copiedEdits = new Set<string>()): void {
+  for (const entry of entries) {
+    if (entry.type !== 'context_edit' || copiedEdits.has(entry.id)) continue;
+    const targetId = ids.get(entry.targetId);
+    if (targetId) copy.appendContextEdit(targetId, entry.replacement);
+  }
+}
+
 /** Fork using Pi's branch writer, or create a native session containing one turn. */
 export const forkPiSession = (path: string, target?: string, scope: 'prefix' | 'single' = 'prefix'): Effect.Effect<{ newSessionId: string; messageCount: number } | undefined, AppError> => Effect.tryPromise({
   try: async () => {
     const { SessionManager } = await import('@earendil-works/pi-coding-agent');
     const manager = SessionManager.open(path);
+    const sourceId = manager.getSessionId();
     const entries = manager.getBranch();
     const turn = target ? piTurn(entries, target) : { start: 0, end: entries.length };
     if (!turn || !entries.length) return undefined;
     if (scope === 'prefix') {
       manager.createBranchedSession(entries[turn.end - 1].id);
+      const retained = manager.getBranch();
+      appendReferencedEdits(entries, manager,
+        new Map(retained.filter((e) => e.type === 'message').map((e) => [e.id, e.id])),
+        new Set(retained.filter((e) => e.type === 'context_edit').map((e) => e.id)));
+      await Effect.runPromise(copyPiChildren(path, sourceId, manager.getSessionFile()!, manager.getSessionId(), entries.slice(0, turn.end)));
       return { newSessionId: manager.getSessionId(), messageCount: turn.end };
     }
     const copy = SessionManager.create(manager.getCwd(), manager.getSessionDir(), { parentSession: path });
@@ -37,13 +53,8 @@ export const forkPiSession = (path: string, target?: string, scope: 'prefix' | '
     for (const entry of entries.slice(turn.start, turn.end)) {
       if (entry.type === 'message' && (entry.message.role === 'user' || entry.message.role === 'assistant' || entry.message.role === 'toolResult' || entry.message.role === 'system')) ids.set(entry.id, copy.appendMessage(entry.message));
     }
-    // Edits can be appended in later turns. Preserve every active-branch edit
-    // targeting a copied message, in order, using only the new session's IDs.
-    for (const entry of entries) {
-      if (entry.type !== 'context_edit') continue;
-      const targetId = ids.get(entry.targetId);
-      if (targetId) copy.appendContextEdit(targetId, entry.replacement);
-    }
+    appendReferencedEdits(entries, copy, ids);
+    await Effect.runPromise(copyPiChildren(path, sourceId, copy.getSessionFile()!, copy.getSessionId(), entries.slice(turn.start, turn.end)));
     return { newSessionId: copy.getSessionId(), messageCount: turn.end - turn.start };
   },
   catch: (cause) => new AppError({ message: 'Cannot fork Pi session', cause }),
@@ -58,7 +69,10 @@ export const deletePiTurn = (path: string, target: string): Effect.Effect<{ targ
     const turn = piTurn(entries, target);
     if (!turn) return { targetMissed: true, deletedLineCount: 0 };
     const removed = new Set(entries.slice(turn.start, turn.end).map((e) => e.id));
-    const kept = entries.filter((e) => !removed.has(e.id) && e.type !== 'compaction' && e.type !== 'branch_summary' && !(e.type === 'context_edit' && removed.has(e.targetId)));
+    const retainedMessages = new Set(entries.filter((e) => e.type === 'message' && !removed.has(e.id)).map((e) => e.id));
+    const kept = entries.filter((e) => e.type === 'context_edit'
+      ? retainedMessages.has(e.targetId)
+      : !removed.has(e.id) && e.type !== 'compaction' && e.type !== 'branch_summary');
     let parentId: string | null = null;
     const lines = [JSON.stringify(manager.getHeader())];
     for (const entry of kept) {
@@ -66,6 +80,7 @@ export const deletePiTurn = (path: string, target: string): Effect.Effect<{ targ
       parentId = entry.id;
     }
     await rewriteTranscript(path, lines.join('\n') + '\n');
+    await Effect.runPromise(prunePiChildren(path, manager.getSessionId(), kept));
     return { targetMissed: false, deletedLineCount: entries.length - kept.length };
   },
   catch: (cause) => new AppError({ message: 'Cannot delete Pi turn', cause }),

@@ -1,7 +1,9 @@
 import * as fs from 'fs';
 import * as readline from 'readline';
-import { join } from 'path';
+import { dirname, join, resolve } from 'path';
 import { Effect } from 'effect';
+import { isPiSessionPath } from '@cockpit/shared-utils';
+import { listPiChildren } from '../../effect/piSubagentSessionLive';
 import { resolveSessionPath } from './session/sessionStore';
 import { findCodexSession } from '../../effect/transcriptIndexLive';
 import { handler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
@@ -38,6 +40,7 @@ interface SessionByPathBody {
   // When set, return the transcript of the subagent spawned by this Agent/Task
   // tool call instead of the main session (new-format `<sessionId>/subagents/` dir).
   toolUseId?: string;
+  childSessionId?: string;
   // Workflow drill-in. When `workflowId` is set, return the workflow run journal
   // (`<sessionId>/workflows/<workflowId>.json`); when `workflowAgentId` is also
   // set, return that workflow subagent's transcript
@@ -274,7 +277,7 @@ function trimWorkflowJournal(journal: WorkflowJournal) {
 export const POST = handler((req) =>
   Effect.gen(function* () {
     const body = (yield* parseJsonRaw(req)) as SessionByPathBody;
-    const { cwd, sessionId, toolUseId, workflowId, workflowAgentId, limit, beforeTurnIndex, fromTurnIndex, ifFingerprint } = body;
+    const { cwd, sessionId, toolUseId, childSessionId, workflowId, workflowAgentId, limit, beforeTurnIndex, fromTurnIndex, ifFingerprint } = body;
     if (!cwd || !sessionId) {
       return yield* Effect.fail(
         new ValidationError({
@@ -299,6 +302,23 @@ export const POST = handler((req) =>
         return yield* Effect.fail(
           new ValidationError({ field: 'toolUseId', reason: 'invalid' })
         );
+      }
+      if (isPiSessionPath(sessionPath)) {
+        if (childSessionId && !/^[A-Za-z0-9_-]+$/.test(childSessionId)) {
+          return yield* Effect.fail(new ValidationError({ field: 'childSessionId', reason: 'invalid' }));
+        }
+        const children = yield* listPiChildren(sessionPath, sessionId, toolUseId);
+        const child = childSessionId ? children.find((c) => c.id === childSessionId) : children[0];
+        if (!child) return yield* Effect.fail(new NotFoundError({ resource: 'subagent', id: childSessionId ?? toolUseId }));
+        const path = resolve(dirname(sessionPath), sessionId, child.sessionPath);
+        const fingerprint = yield* Effect.try({ try: () => getFileFingerprint(path), catch: (cause) => new AppError({ message: 'Cannot fingerprint Pi child', cause }) });
+        // Include metadata in the conditional response: peers may start/finish without
+        // changing the currently selected transcript.
+        const listing = children.map(({ id, name, model, status }) => ({ id, name, model, status }));
+        if (ifFingerprint === fingerprint) return ok({ notModified: true, fingerprint, children: listing, childSessionId: child.id });
+        const parsed = yield* Effect.tryPromise({ try: () => parseTranscriptFile(path), catch: (cause) => new AppError({ message: 'Cannot read Pi child transcript', cause }) });
+        return ok({ messages: parsed.messages, fingerprint, children: listing, childSessionId: child.id,
+          subagent: { agentType: child.name, description: child.model } });
       }
       const sub = yield* engine === 'codex'
         ? Effect.tryPromise({

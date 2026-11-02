@@ -36,7 +36,6 @@ import {
   resolveClaudeEffortForModel,
   resolveCodexReasoningEffortForModel,
 } from './AgentModelTraitsPicker';
-import { PiProviderPicker } from './PiProviderPicker';
 import { OutputStylePicker } from './OutputStylePicker';
 import { DeepseekBalanceButton } from './DeepseekBalanceButton';
 import { EngineQuotaButton } from './EngineQuotaButton';
@@ -269,17 +268,9 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     liveRunningRef,
   });
 
-  // Claude and Codex keep their native engine. Pi's stored provider initializes
-  // the picker; an explicit provider selection applies to this session's next run.
-  const [piProviderOverride, setPiProviderOverride] = useState<{ sessionId: string | null; engine: ChatEngine } | null>(null);
-  const restoredEngine = loadedEngine ?? engineProp ?? undefined;
+  // Restore the session's engine; provider selection is only available at creation.
+  const engine = loadedEngine ?? engineProp ?? undefined;
   const isPiProvider = (value: string | undefined) => ['ollama', 'deepseek', 'kimi', 'glm'].includes(value ?? '');
-  const engine = isPiProvider(restoredEngine) && piProviderOverride?.sessionId === loadedSessionId
-    ? piProviderOverride.engine : restoredEngine;
-
-  useEffect(() => {
-    setPiProviderOverride((current) => current && (current.sessionId !== loadedSessionId || current.engine === loadedEngine) ? null : current);
-  }, [loadedSessionId, loadedEngine]);
 
   // Hand the Bot up to the host as soon as the transcript names one. Effect rather
   // than a call inside the hook: loadedBot settles once per load, and the host turns
@@ -316,8 +307,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   // here, so the resolution above is needed only once per session. The host's updaters
   // no-op on an unchanged value, so this settles after one pass instead of looping.
   useEffect(() => {
-    if (!piProviderOverride && loadedEngine && engineProp !== loadedEngine) onEngineChange?.(loadedEngine);
-  }, [engineProp, loadedEngine, onEngineChange, piProviderOverride]);
+    if (loadedEngine && engineProp !== loadedEngine) onEngineChange?.(loadedEngine);
+  }, [engineProp, loadedEngine, onEngineChange]);
   const restorePiModelRef = useRef({ ollama: onOllamaModelChange, deepseek: onDeepseekModelChange, kimi: onKimiModelChange, glm: onGlmModelChange });
   restorePiModelRef.current = { ollama: onOllamaModelChange, deepseek: onDeepseekModelChange, kimi: onKimiModelChange, glm: onGlmModelChange };
   // Reopening and reconciliation restore Pi's native selection into the picker.
@@ -835,17 +826,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
      all engines inject it, so unlike that toggle there is no support gate. */
   const outputStyleControl = <OutputStylePicker value={outputStyle} onChange={setOutputStyle} />;
 
-  const piProviderControl = isPiProvider(engine) ? (
-    <PiProviderPicker
-      value={engine as 'ollama' | 'deepseek' | 'kimi' | 'glm'}
-      disabled={isLoadingHistory || isLoading || liveRunning}
-      onChange={(next) => {
-        setPiProviderOverride({ sessionId: loadedSessionId, engine: next });
-        onEngineChange?.(next);
-      }}
-    />
-  ) : null;
-
   return (
     // Provider, not props: every tool row needs the store, including the ones inside a
     // SubagentTranscriptModal nested arbitrarily deep. Portals inherit context, so the modal
@@ -925,7 +905,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
         {/* Ollama model picker + independent-task toggle */}
         {engine === 'ollama' && (
           <div className={ENGINE_OPTIONS_ROW}>
-            {piProviderControl}
             {onOllamaModelChange && (
               <OllamaModelPicker currentModel={ollamaModel} onModelChange={onOllamaModelChange} />
             )}
@@ -941,7 +920,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             DeepSeek reports a prepaid balance, Kimi and GLM a subscription quota. */}
         {apiKeyEngine && (
           <div className={ENGINE_OPTIONS_ROW}>
-            {piProviderControl}
             {onEngineModelChange && (
               <EngineConfigPicker
                 engine={apiKeyEngine}

@@ -24,6 +24,8 @@ interface ToolResultBlock {
   content?: unknown;
 }
 export interface StreamEvent {
+  tool_call_id?: string;
+  progress_text?: string;
   type?: string;
   subtype?: string;
   _human?: boolean; // synthetic human-prompt user event (rendered by useLiveStream)
@@ -258,6 +260,14 @@ export function applyStreamEvent(
       }
     }
     return out;
+  }
+
+  // Subagent progress updates the existing tool card without settling the call.
+  if (ev.type === 'tool_progress' && ev.tool_call_id) {
+    const text = ev.progress_text ?? '';
+    return messages.map((message) => message.toolCalls?.some((tool) => tool.id === ev.tool_call_id && tool.isLoading)
+      ? { ...message, toolCalls: message.toolCalls.map((tool) => tool.id === ev.tool_call_id ? { ...tool, result: text } : tool) }
+      : message);
   }
 
   // tool_result (user turn): merge into the matching toolCall. Matched by tool id, not scoped to

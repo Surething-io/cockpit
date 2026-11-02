@@ -492,6 +492,11 @@ export function useChatStream(
       setMessages((prev) => applyStreamEvent(prev, event as unknown as StreamEvent, { engine, assistantId: messageId }));
     }
 
+    if (eventType === 'tool_progress') {
+      setMessages((prev) => applyStreamEvent(prev, event as unknown as StreamEvent, { engine, assistantId: messageId }));
+      return;
+    }
+
     // Tool result (user turn) → merge into the matching toolCall
     if (eventType === 'user') {
       const content = (event.message as { content?: unknown } | undefined)?.content;

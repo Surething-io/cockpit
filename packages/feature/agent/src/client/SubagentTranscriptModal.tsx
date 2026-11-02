@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Portal } from '@cockpit/shared-ui';
+import { Effect, Fiber, Schedule } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { MessageBubble } from './MessageBubble';
 import { postSessionByPath } from './useChatHistory';
@@ -56,6 +57,9 @@ export function SubagentTranscriptModal({ cwd, sessionId, toolCall, workflowRef,
   const [messages, setMessages] = useState<ChatMessage[] | null>(null);
   const [meta, setMeta] = useState<SubagentMeta | null>(null);
   const [loadAttempted, setLoadAttempted] = useState(false);
+  const [children, setChildren] = useState<Array<{ id: string; name: string; model: string; status: string }>>([]);
+  const [childSessionId, setChildSessionId] = useState<string>();
+  const requestRef = useRef(0);
   const fingerprintRef = useRef<string | undefined>(undefined);
 
   // Still running → keep polling. Both cases now carry an EXPLICIT flag: the workflow agent on
@@ -65,6 +69,7 @@ export function SubagentTranscriptModal({ cwd, sessionId, toolCall, workflowRef,
   const isRunning = workflowRef ? !!workflowRef.running : (running ?? !toolCall?.result);
 
   const fetchTranscript = useCallback(async () => {
+    const request = ++requestRef.current;
     const exit = await BrowserRuntime.runPromiseExit(
       postSessionByPath({
         cwd,
@@ -72,9 +77,11 @@ export function SubagentTranscriptModal({ cwd, sessionId, toolCall, workflowRef,
         ...(workflowRef
           ? { workflowId: workflowRef.runId, workflowAgentId: workflowRef.agentId }
           : { toolUseId: toolCall?.id }),
+        childSessionId,
         ifFingerprint: fingerprintRef.current,
       })
     );
+    if (request !== requestRef.current) return;
     setLoadAttempted(true);
     if (exit._tag !== 'Success' || !exit.value) return;
     const data = exit.value as {
@@ -82,21 +89,27 @@ export function SubagentTranscriptModal({ cwd, sessionId, toolCall, workflowRef,
       fingerprint?: string;
       messages?: ChatMessage[];
       subagent?: SubagentMeta;
+      childSessionId?: string;
+      children?: Array<{ id: string; name: string; model: string; status: string }>;
     };
+    if (!childSessionId && data.childSessionId) setChildSessionId(data.childSessionId);
+    if (data.children) setChildren(data.children);
     if (data.fingerprint) fingerprintRef.current = data.fingerprint;
     if (data.notModified) return;
     if (data.messages) setMessages(data.messages);
     if (data.subagent) setMeta(data.subagent);
-  }, [cwd, sessionId, toolCall?.id, workflowRef?.runId, workflowRef?.agentId]);
+  }, [cwd, sessionId, toolCall?.id, workflowRef?.runId, workflowRef?.agentId, childSessionId]);
 
   // Fetch on mount; keep polling while the subagent is running. When
   // isRunning flips to false the effect re-runs → one final fetch picks up
   // the transcript tail, then no interval.
   useEffect(() => {
-    fetchTranscript();
-    if (!isRunning) return;
-    const timer = setInterval(fetchTranscript, POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
+    const load = Effect.promise(fetchTranscript);
+    const fiber = BrowserRuntime.runFork(isRunning ? load.pipe(Effect.repeat(Schedule.spaced(POLL_INTERVAL_MS))) : load);
+    return () => {
+      requestRef.current++;
+      BrowserRuntime.runFork(Fiber.interrupt(fiber));
+    };
   }, [isRunning, fetchTranscript]);
 
   // Auto-scroll to bottom on new content, paused while the user scrolls up
@@ -118,7 +131,7 @@ export function SubagentTranscriptModal({ cwd, sessionId, toolCall, workflowRef,
     typeof toolCall?.input?.description === 'string' ? toolCall.input.description : '';
   const subtitle = workflowRef
     ? workflowRef.label || ''
-    : [meta?.agentType, description].filter(Boolean).join(' · ');
+    : [meta?.agentType, meta?.description, description].filter(Boolean).join(' · ');
 
   return (
     <Portal>
@@ -164,6 +177,25 @@ export function SubagentTranscriptModal({ cwd, sessionId, toolCall, workflowRef,
             </span>
           </div>
 
+          {children.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto px-4 py-2 border-b border-border flex-shrink-0">
+              {children.map((child) => (
+                <button key={child.id} type="button"
+                  aria-pressed={(childSessionId ?? children[0]?.id) === child.id}
+                  className="text-xs rounded px-2 py-1 whitespace-nowrap aria-pressed:bg-hover text-foreground"
+                  title={`${child.model} · ${child.status}`}
+                  onClick={() => {
+                    if ((childSessionId ?? children[0]?.id) === child.id) return;
+                    requestRef.current++;
+                    fingerprintRef.current = undefined;
+                    setMessages(null); setMeta(null); setLoadAttempted(false);
+                    setChildSessionId(child.id);
+                  }}>
+                  {child.name} · {child.model} · {t(`chat.piChildStatus.${child.status}`, { defaultValue: child.status })}
+                </button>
+              ))}
+            </div>
+          )}
           {/* Transcript */}
           <div ref={bodyRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3">
             {messages === null ? (

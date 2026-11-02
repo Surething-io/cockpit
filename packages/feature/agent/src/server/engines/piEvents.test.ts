@@ -1,7 +1,7 @@
 // Usage is cumulative for one Cockpit run, with each finalized response counted once.
 import { describe, expect, it } from 'vitest';
 import type { AssistantMessage } from '@earendil-works/pi-ai';
-import { createPiRunUsage, piTool } from './piEvents';
+import { createPiRunUsage, piTool, piBranchMessages } from './piEvents';
 
 function response(output: number, stopReason: AssistantMessage['stopReason'] = 'stop'): AssistantMessage {
   return {
@@ -49,4 +49,16 @@ it('projects the same paths that native Pi tools actually use', async () => {
     await tool.execute('probe', { path, content: 'test' });
     expect(piTool('write', { path }, cwd).input.file_path).toBe(executedPath);
   }
+});
+
+it('renders truncation notices using the latest context edit rather than an older exclusion', async () => {
+  const { SessionManager } = await import('@earendil-works/pi-coding-agent');
+  const manager = SessionManager.inMemory(process.cwd());
+  const id = manager.appendMessage(response(1, 'length'));
+  manager.appendContextEdit(id, null);
+  expect(JSON.stringify(piBranchMessages(manager.getBranch()))).toContain('excluded this response');
+  manager.appendContextEdit(id, { content: [{ type: 'text', text: 'restored partial answer' }] });
+  const rows = JSON.stringify(piBranchMessages(manager.getBranch()));
+  expect(rows).toContain('stopReason=length');
+  expect(rows).not.toContain('excluded this response');
 });

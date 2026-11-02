@@ -74,7 +74,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
 
   const toolIcon = TOOL_ICONS[toolCall.name] || '🔧';
   const isAgentTool = toolCall.name === 'Agent' || toolCall.name === 'Task';
-  const isSubagentCall = isAgentTool && !!cwd && !!sessionId;
+  const isSubagentCall = (isAgentTool || toolCall.name === 'subagent') && !!cwd && !!sessionId;
   const isWorkflow = toolCall.name === 'Workflow';
   const workflowRunId = isWorkflow ? parseWorkflowRunId(toolCall.result) : null;
   // Workflow drill-in needs the run id plus the session coordinates to locate
@@ -111,7 +111,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
    * `|| isLoading` arm covers a FOREGROUND claude subagent, whose spawning call genuinely does
    * block until it finishes.
    */
-  const subagentRunning = task ? taskRunning || !!toolCall.isLoading : !toolCall.result;
+  const subagentRunning = toolCall.name === 'subagent' ? !!toolCall.isLoading : task ? taskRunning || !!toolCall.isLoading : !toolCall.result;
   // One-line liveness for a running task. Rendered instead of a bare spinner because
   // "WebFetch · 37" answers "is it stuck?" and a spinner does not.
   const taskProgress = taskRunning

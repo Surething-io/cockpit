@@ -1,7 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import type { InjectedInput } from './types';
 import { codexSpec, codexToolUseId, resolveCodexSpawnCall, createRolloutCallReader } from './codex';
 
 const mocks = vi.hoisted(() => ({ rolloutPath: null as string | null }));
@@ -152,7 +153,7 @@ describe('codex mode routing', () => {
   const ctx = (over: Record<string, unknown> = {}) => ({
     prompt: 'hello', images: undefined, cwd: '/repo', sessionId: undefined,
     params: {} as never, signal: new AbortController().signal,
-    emit: vi.fn(), rekey: vi.fn(), currentKey: () => 'k',
+    emit: vi.fn(), rekey: vi.fn(), currentKey: () => 'k', acceptInput: vi.fn(),
     ...over,
   });
 
@@ -160,6 +161,36 @@ describe('codex mode routing', () => {
     mocks.rolloutPath = null;
     appServer.reset();
     appServer.script = [...defaultScript];
+  });
+
+  it('steers the current turn with text and images and retains files until teardown', async () => {
+    appServer.script = [];
+    let sink: ((input: InjectedInput) => boolean) | null = null;
+    const emit = vi.fn();
+    const run = codexSpec.runner.run(ctx({
+      emit,
+      acceptInput: (next: typeof sink) => { sink = next; },
+    }) as never);
+    await vi.waitFor(() => expect(sink).not.toBeNull());
+    const image = { type: 'base64', media_type: 'image/png', data: 'aGVsbG8=' } as const;
+    const inject = sink as unknown as (input: InjectedInput) => boolean;
+    expect(inject({ text: 'focus on tests', images: [image] })).toBe(true);
+    expect(inject({ images: [image] })).toBe(true);
+    await vi.waitFor(() => expect(appServer.requests.filter((r) => r.method === 'turn/steer')).toHaveLength(2));
+    const requests = appServer.requests.filter((r) => r.method === 'turn/steer');
+    expect(requests[0].params).toMatchObject({
+      threadId: 'sdk-thread', expectedTurnId: 'turn-1',
+      input: expect.arrayContaining([{ type: 'text', text: 'focus on tests' }]),
+    });
+    const files = requests.map((request) => (request.params.input as Array<{ type: string; path?: string }>).find((input) => input.type === 'localImage')!.path!);
+    expect(new Set(files).size).toBe(2);
+    expect(files.every((file) => existsSync(file))).toBe(true);
+    await vi.waitFor(() => expect(emit.mock.calls.filter(([event]) => event.notice === 'codex_input_accepted')).toHaveLength(2));
+    appServer.notify?.({ method: 'turn/completed', params: {} });
+    expect(sink).toBeNull();
+    expect(inject({ text: 'too late' })).toBe(false);
+    await run;
+    expect(files.every((file) => !existsSync(file))).toBe(true);
   });
 
   it('drives one turn over app-server: handshake, thread, turn, teardown', async () => {
@@ -405,7 +436,7 @@ describe('codex sub-agents (collab_tool_call)', () => {
     codexSpec.runner.run({
       prompt: 'review the PR', images: undefined, cwd: '/repo', sessionId: undefined,
       params: {} as never, signal: new AbortController().signal,
-      emit, rekey: vi.fn(), currentKey: () => 'k',
+      emit, rekey: vi.fn(), currentKey: () => 'k', acceptInput: vi.fn(),
     } as never);
 
   const feed = async (event: unknown) => {
@@ -610,7 +641,7 @@ describe('codex sub-agents (collab_tool_call)', () => {
     const p = codexSpec.runner.run({
       prompt: 'carry on', images: undefined, cwd: '/repo', sessionId: 'thread-1',
       params: {} as never, signal: new AbortController().signal,
-      emit, rekey: vi.fn(), currentKey: () => 'k',
+      emit, rekey: vi.fn(), currentKey: () => 'k', acceptInput: vi.fn(),
     } as never);
     await feed({ type: 'thread.started', thread_id: 'thread-1' });
     await feed(wait0147('item.started'));
@@ -640,7 +671,7 @@ describe('codex mcp / web_search / todo_list items', () => {
     codexSpec.runner.run({
       prompt: 'do it', images: undefined, cwd: '/repo', sessionId: undefined,
       params: {} as never, signal: new AbortController().signal,
-      emit, rekey: vi.fn(), currentKey: () => 'k',
+      emit, rekey: vi.fn(), currentKey: () => 'k', acceptInput: vi.fn(),
     } as never);
 
   const feed = async (event: unknown) => {

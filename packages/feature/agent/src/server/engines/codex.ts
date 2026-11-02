@@ -1,3 +1,5 @@
+import { Effect } from 'effect';
+import { withCodexRunInput, type CodexRunInput } from '../../effect/codexRunInputLive';
 import { estimateOutputUnits } from '@cockpit/shared-utils/outputProgress';
 import { CodexAppServerClient, type CodexNotification } from './codexAppServer/client';
 import { CodexEventShim } from './codexAppServer/events';
@@ -50,7 +52,7 @@ function writeImagesToTemp(images: ImageData[]): string[] {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   return images.map((img, i) => {
     const ext = MEDIA_EXT[img.media_type] || '.png';
-    const filePath = join(dir, `img-${Date.now()}-${i}${ext}`);
+    const filePath = join(dir, `img-${randomUUID()}-${i}${ext}`);
     writeFileSync(filePath, Buffer.from(img.data, 'base64'));
     return filePath;
   });
@@ -720,6 +722,11 @@ async function interruptTurns(client: CodexAppServerClient, shim: CodexEventShim
  * sub-agents, todos and diffs keep their existing behaviour.
  */
 async function runCodexAppServer(ctx: RunCtx): Promise<void> {
+  const result = await Effect.runPromise(Effect.either(withCodexRunInput(ctx, (input) => runCodexAppServerWithInput(ctx, input))));
+  if (result._tag === 'Left') throw result.left.cause ?? result.left;
+}
+
+async function runCodexAppServerWithInput(ctx: RunCtx, input: CodexRunInput): Promise<void> {
   const imageFiles = ctx.images && ctx.images.length > 0 ? writeImagesToTemp(ctx.images) : [];
   const resumed = ctx.sessionId ? await findCodexSession(ctx.sessionId) : null;
   const adapter = createCodexEventAdapter(ctx, resumed?.path ?? null);
@@ -741,6 +748,7 @@ async function runCodexAppServer(ctx: RunCtx): Promise<void> {
         });
         continue;
       }
+      if (out.event.type === 'turn.completed' || out.event.type === 'turn.failed') input.close();
       adapter.handle(out.event as CodexEvent);
       if (out.event.type === 'turn.completed') terminal = 'completed';
       if (out.event.type === 'turn.failed') terminal = 'failed';
@@ -767,6 +775,7 @@ async function runCodexAppServer(ctx: RunCtx): Promise<void> {
       // Permitted `console.error` under EFFECT.md §0 (subprocess IPC adapter gateway).
       onStderr: (line) => console.error(`[codex app-server] ${line}`),
       onClosed: (err) => {
+        input.close();
         closedReason = err;
         settle?.();
       },
@@ -881,6 +890,16 @@ async function runCodexAppServer(ctx: RunCtx): Promise<void> {
     // Needed to stop this turn by name later; see `interruptTurns`.
     const turnId = (startedTurn.turn as { id?: string } | undefined)?.id;
     if (turnId) shim.noteOwnTurn(threadId, turnId);
+    if (turnId && !terminal && !ctx.signal.aborted) input.open(async (message) => {
+      const files = message.images?.length ? writeImagesToTemp(message.images) : [];
+      // Codex may read images after acknowledging steer; retain them until the turn exits.
+      imageFiles.push(...files);
+      await client.request('turn/steer', {
+        threadId, expectedTurnId: turnId,
+        input: codexTurnInput(message.text ?? '', files),
+      });
+    });
+    else input.close();
 
     // `turn/start` returns as soon as the turn is accepted; the turn itself ends
     // on a notification, on the transport dying (`onClosed` settles the same
@@ -902,6 +921,7 @@ async function runCodexAppServer(ctx: RunCtx): Promise<void> {
     // race to explain what happened.
     if (closedReason && !ctx.signal.aborted && !terminal) throw closedReason;
   } finally {
+    input.close();
     ctx.signal.removeEventListener('abort', abortStartup);
     client.dispose();
     // dispose() only starts the teardown. Returning before the child is gone would let the

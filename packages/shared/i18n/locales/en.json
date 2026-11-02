@@ -584,6 +584,12 @@
     "closeEsc": "Close (Esc)"
   },
   "chat": {
+    "codexInput": {
+      "queued": "Additional message waiting to send",
+      "accepted": "Codex accepted the additional message",
+      "failed": "Additional message delivery failed or is unconfirmed — open for details",
+      "images": "Images: {{count}}"
+    },
     "startConversation": "Start a conversation",
     "loadMoreHistory": "Load more...",
     "scrollUpForMore": "↑ Scroll up to load more history",

@@ -38,6 +38,8 @@ export interface StreamEvent {
   // muted system row — see systemNotice.ts. `notice` names the case, `error` carries the raw
   // engine message for the detail modal.
   notice?: string;
+  input_text?: string;
+  input_images?: number;
   session_id?: string;
   previous_session_id?: string;
   // system/task_notification fields (SDKTaskNotificationMessage) — a background task reporting back.

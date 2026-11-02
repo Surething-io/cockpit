@@ -6,7 +6,7 @@ import { injectChatMessage } from './agentClient';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('chat input delivery', () => {
-  it.each(['ollama', 'deepseek', 'kimi', 'glm'] as const)('routes %s follow-ups through their provider endpoint', async (engine) => {
+  it.each(['ollama', 'deepseek', 'kimi', 'glm', 'codex'] as const)('routes %s follow-ups through their provider endpoint', async (engine) => {
     const fetch = vi.fn().mockResolvedValue(Response.json({ injected: false, runKey: 'new-run' }));
     vi.stubGlobal('fetch', fetch);
     const body = { prompt: 'continue', sessionId: 'same-session', inject: true, model: 'chosen-model' };

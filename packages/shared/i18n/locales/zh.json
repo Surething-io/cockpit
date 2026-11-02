@@ -581,6 +581,12 @@
     "closeEsc": "关闭 (Esc)"
   },
   "chat": {
+    "codexInput": {
+      "queued": "追加消息等待发送",
+      "accepted": "Codex 已接受追加消息",
+      "failed": "追加消息发送失败或未确认，请打开详情查看",
+      "images": "图片：{{count}} 张"
+    },
     "startConversation": "开始对话吧",
     "loadMoreHistory": "加载更多...",
     "scrollUpForMore": "↑ 向上滚动加载更多历史",

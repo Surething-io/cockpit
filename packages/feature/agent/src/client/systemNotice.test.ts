@@ -34,6 +34,14 @@ describe('buildNoticeMessage', () => {
     expect(row?.systemEvent?.detail).toBe(row?.content);
   });
 
+  it.each(['queued', 'accepted', 'failed'])('renders Codex input %s feedback with the message and failure detail', (state) => {
+    const row = buildNoticeMessage({ notice: `codex_input_${state}`, input_text: 'focus on tests', input_images: 2, error: 'delivery detail' }, 'input-notice');
+    expect(row).toMatchObject({ role: 'system', systemEvent: { kind: 'meta' } });
+    expect(row?.systemEvent?.detail).toContain('focus on tests');
+    expect(row?.systemEvent?.detail).toContain('delivery detail');
+    expect(row?.systemEvent?.detail).toContain('2');
+  });
+
   /** A newer server talking to an older client must say nothing, not say blank. */
   it('ignores notice kinds it does not know', () => {
     expect(buildNoticeMessage({ notice: 'from_the_future' }, 'n1')).toBeNull();

@@ -21,6 +21,12 @@ import type { StreamEvent } from './applyStreamEvent';
  * talking to an older client should say nothing, not say blank.
  */
 export function buildNoticeMessage(ev: StreamEvent, id: string): ChatMessage | null {
+  if (ev.notice === 'codex_input_queued' || ev.notice === 'codex_input_accepted' || ev.notice === 'codex_input_failed') {
+    const state = ev.notice.slice('codex_input_'.length);
+    const content = i18n.t(`chat.codexInput.${state}`);
+    const detail = [content, ev.input_text, ev.input_images ? i18n.t('chat.codexInput.images', { count: ev.input_images }) : '', ev.error].filter(Boolean).join('\n\n');
+    return { id, role: 'system', content, systemEvent: { kind: 'meta', detail } } as ChatMessage;
+  }
   if (ev.notice !== 'codex_resume_failed') return null;
 
   const previous = ev.previous_session_id || '';

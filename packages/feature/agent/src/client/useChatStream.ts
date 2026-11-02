@@ -805,9 +805,10 @@ export function useChatStream(
         language: i18n.language,
         inject: true,
         ...(isPiProvider ? { model: engine === 'ollama' ? ollamaModel : engineModel, noHistory, outputStyleId } : {}),
+        ...(engine === 'codex' ? { model: codexModel, codexReasoningEffort, noHistory, outputStyleId } : {}),
       }));
     },
-    [cwd, engine, ollamaModel, engineModel, noHistory, outputStyleId]
+    [cwd, engine, ollamaModel, engineModel, codexModel, codexReasoningEffort, noHistory, outputStyleId]
   );
 
   return {

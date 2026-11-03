@@ -13,7 +13,7 @@ import { piBranchMessages } from '../server/engines/piEvents';
 let dir: string;
 beforeAll(async () => { dir = await mkdtemp(join(tmpdir(), 'pi-fatal-shutdown-')); });
 afterAll(async () => { await rm(dir, { recursive: true, force: true }); });
-it.each(['malformed', 'oversized', 'rpc-error', 'cancel-race', 'structured', 'structured-cancel'])(
+it.each(['malformed', 'oversized', 'rpc-error', 'cancel-race', 'structured', 'structured-cancel', 'no-progress'])(
   'closes a TERM-resistant process after %s and only then persists partial output', async (failure) => {
     const entry = join(dir, `${failure}.mjs`);
     const log = join(dir, `${failure}.log`);
@@ -22,7 +22,8 @@ it.each(['malformed', 'oversized', 'rpc-error', 'cancel-race', 'structured', 'st
     const session = SessionManager.create(dir, join(dir, failure));
     session.appendMessage({ role: 'user', content: 'delegated work', timestamp: Date.now() });
     const history = session.getSessionFile()!;
-    const fault = failure === 'oversized' ? 'console.log("x".repeat(2100000))'
+    const fault = failure === 'no-progress' ? 'emit({type:"entry_appended",entry:{type:"custom_message",customType:"cockpit.execution-stop",details:{reason:"no_progress",summary:"Repeated query"}}})'
+      : failure === 'oversized' ? 'console.log("x".repeat(2100000))'
       : failure === 'rpc-error' ? 'emit({type:"response",id:"cockpit-prompt",command:"prompt",success:false,error:"RPC rejected"})'
       : failure.startsWith('structured') ? 'emit({type:"message_end",message:{role:"assistant",content:null,stopReason:"stop"}})'
       : 'console.log("not-json")';
@@ -61,7 +62,7 @@ it.each(['malformed', 'oversized', 'rpc-error', 'cancel-race', 'structured', 'st
       yield* Effect.promise(() => rm(instructions));
     }));
     try {
-      const pending = Effect.runPromise(program, { signal: controller.signal });
+      const pending = Effect.runPromise(failure === 'no-progress' ? program.pipe(Effect.timeout('7 seconds')) : program, { signal: controller.signal });
       if (failure.includes('cancel')) await expect(pending).rejects.toThrow();
       else await pending;
       expect(child.isClosed()).toBe(true);
@@ -71,7 +72,7 @@ it.each(['malformed', 'oversized', 'rpc-error', 'cancel-race', 'structured', 'st
       expect(await readFile(log, 'utf8')).toBe('ABORT\nTERM:true\n');
       expect(cleanupCount).toBe(1);
       expect(finished?.output).toBe(`Retained partial ${failure}`);
-      expect(finished?.error).toContain(failure === 'oversized' ? 'exceeded 2 MiB' : failure === 'rpc-error' ? 'RPC rejected' : 'Invalid Pi JSON event');
+      expect(finished?.error).toContain(failure === 'oversized' ? 'exceeded 2 MiB' : failure === 'rpc-error' ? 'RPC rejected' : failure === 'no-progress' ? 'no_progress' : 'Invalid Pi JSON event');
       expect(finished?.error).toContain('signal=SIGKILL');
       expect(finished?.truncated).toBe(failure === 'oversized');
       expect(JSON.stringify(piBranchMessages(SessionManager.open(history).getBranch()))).toContain(`Retained partial ${failure}`);

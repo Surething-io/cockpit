@@ -38,17 +38,22 @@ beforeAll(async () => {
     const send = (delta: unknown, finish_reason: string | null = null) => res.write(`data: ${JSON.stringify({ id: 'test', object: 'chat.completion.chunk', model: body.model, choices: [{ index: 0, delta, finish_reason }] })}\n\n`);
     send({ role: 'assistant' });
     const text = JSON.stringify(body.messages);
+    if (text.includes('repeat-child-stop-compact') && JSON.stringify(body.messages[0]?.content).includes('You are a context summarization assistant')) { send({ content: 'Compaction pending' }); return; }
     if (text.includes('long-child')) { send({ content: 'x'.repeat(60000) + 'FULL-RESULT-END' }); send({}, 'stop'); res.write('data: [DONE]\n\n'); res.end(); return; }
     if (text.includes('truncate-child')) { send({ content: 'Partial child answer' }); send({}, 'length'); res.write('data: [DONE]\n\n'); res.end(); return; }
     if (text.includes('hang-child')) { send({ content: 'Waiting' }); return; }
-    if (text.includes('try-nested-pi') && !body.messages.some((m: { role: string }) => m.role === 'tool')) {
+    if (text.includes('repeat-child-') && !(text.includes('repeat-child-recover') && text.includes('Execution notice:'))) {
+      const count = body.messages.filter((m: { role: string }) => m.role === 'tool').length;
+      send({ tool_calls: [{ index: 0, id: `loop-${count}`, type: 'function', function: { name: 'bash', arguments: JSON.stringify({ command: text.includes('repeat-child-cycle') ? `printf cycle-${count % 2}` : 'printf same-result' }) } }] });
+      send({}, 'tool_calls');
+    } else if (text.includes('try-nested-pi') && !body.messages.some((m: { role: string }) => m.role === 'tool')) {
       send({ tool_calls: [{ index: 0, id: 'nested-child-call', type: 'function', function: { name: 'bash', arguments: JSON.stringify({ command: `printf started > '${join(home, 'nested-shell-started')}'; node '${join(home, 'fake', 'pi', 'dist', 'cli.js')}' -p review` }) } }] });
       send({}, 'tool_calls');
     } else if (text.includes('call-child-bash') && !body.messages.some((m: { role: string }) => m.role === 'tool')) {
       send({ tool_calls: [{ index: 0, id: 'child-call', type: 'function', function: { name: 'bash', arguments: JSON.stringify({ command: 'printf "dir=%s key=%s" "$PI_CODING_AGENT_DIR" "$COCKPIT_PI_SUBAGENT_API_KEY"' }) } }] });
       send({}, 'tool_calls');
     } else { send({ content: `Child finished: ${JSON.stringify(body.messages.findLast((m: { role: string }) => m.role === 'user')?.content)}` }); send({}, 'stop'); }
-    res.write(`data: ${JSON.stringify({ id: 'test', object: 'chat.completion.chunk', model: body.model, choices: [], usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } })}\n\ndata: [DONE]\n\n`);
+    res.write(`data: ${JSON.stringify({ id: 'test', object: 'chat.completion.chunk', model: body.model, choices: [], usage: { prompt_tokens: text.includes('repeat-child-stop-compact') && body.messages.filter((m: { role: string }) => m.role === 'tool').length === 3 ? 1000000 : 10, completion_tokens: 2 } })}\n\ndata: [DONE]\n\n`);
     res.end();
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -194,3 +199,92 @@ it('marks host truncation in parallel and chain results while retaining the full
     expect(requests.slice(before)).toHaveLength(mode === 'chain' ? 1 : 2);
   }
 }, 30000);
+
+
+it('warns a real CLI child in context, then stops its repeated tool cycle and retains the reason', async () => {
+  const start = requests.length;
+  const result = await execute({ task: 'repeat-child-stuck' });
+  const observed = requests.slice(start);
+  expect(result.isError, JSON.stringify(result)).toBe(true);
+  expect(JSON.stringify(result)).toContain('no_progress');
+  expect(observed).toHaveLength(4);
+  expect(JSON.stringify(observed[2].messages)).not.toContain('Execution notice:');
+  expect(JSON.stringify(observed[3].messages)).toContain('Execution notice:');
+  const { subagents } = result.details as { subagents: Array<{ sessionPath: string; status: string; usage: { input: number; output: number; turns: number } }> };
+  expect(subagents[0].status).toBe('failed');
+  expect(subagents[0].usage).toMatchObject({ input: 40, output: 8 });
+  const path = join(home, 'pi', 'sessions', '--parent--', 'parent-run', subagents[0].sessionPath);
+  const transcript = await readFile(path, 'utf8');
+  expect(transcript).toContain('cockpit.execution-notice');
+  expect(transcript).toContain('cockpit.execution-stop');
+  expect(transcript).not.toContain('cockpit.usage-receipt');
+  const { parseTranscriptFile } = await import('../server/api/session/transcriptParsers');
+  const parsed = await parseTranscriptFile(path);
+  expect(JSON.stringify(parsed.messages)).toContain('Execution notice:');
+  expect(JSON.stringify(parsed.messages)).toContain('Execution stopped: no_progress');
+  expect(parsed.messages.filter((message) => message.role === 'user')).toHaveLength(1);
+}, 30000);
+
+it('allows a real CLI child to use the warning and finish normally', async () => {
+  const start = requests.length;
+  const result = await execute({ task: 'repeat-child-recover' });
+  expect(result.isError, JSON.stringify(result)).toBe(false);
+  expect(requests.slice(start)).toHaveLength(4);
+  expect(JSON.stringify(requests.at(-1)?.messages)).toContain('Execution notice:');
+}, 30000);
+
+it('detects an alternating tool cycle in the real CLI', async () => {
+  const start = requests.length;
+  const result = await execute({ task: 'repeat-child-cycle' });
+  expect(result.isError, JSON.stringify(result)).toBe(true);
+  expect(JSON.stringify(result)).toContain('no_progress');
+  const observed = requests.slice(start);
+  expect(observed).toHaveLength(7);
+  expect(JSON.stringify(observed[6].messages)).toContain('Execution notice:');
+}, 30000);
+
+
+it('stops only the repeating child while its parallel sibling finishes', async () => {
+  const result = await execute({ tasks: [{ task: 'repeat-child-isolated' }, { task: 'normal-parallel-sibling', tools: [] }] });
+  const { subagents } = result.details as { subagents: Array<{ status: string; output: string; error?: string; usage: { turns: number } }> };
+  expect(subagents[0]).toMatchObject({ status: 'failed', error: expect.stringContaining('no_progress') });
+  expect(subagents[1]).toMatchObject({ status: 'done', output: expect.stringContaining('normal-parallel-sibling') });
+  expect(subagents[1].usage.turns).toBe(1);
+}, 30000);
+
+it('keeps independent child warnings and permits repeated delegation without a retry quota', async () => {
+  for (let i = 0; i < 3; i++) {
+    const start = requests.length;
+    const result = await execute({ task: 'repeat-child-recover', name: `Independent child ${i}` });
+    expect(result.isError, JSON.stringify(result)).toBe(false);
+    expect(requests.slice(start)).toHaveLength(4);
+    expect(JSON.stringify(requests.at(-1)?.messages)).toContain('Execution notice:');
+  }
+}, 30000);
+
+
+it('finishes no_progress shutdown when native automatic compaction starts on the stopping turn', async () => {
+  const settingsPath = join(home, 'pi', 'settings.json');
+  const savedSettings = await readFile(settingsPath, 'utf8').catch(() => undefined);
+  await writeFile(settingsPath, JSON.stringify({ compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 50 } }));
+  const start = requests.length;
+  const abort = new AbortController();
+  const pending = execute({ task: 'repeat-child-stop-compact' }, abort.signal);
+  try {
+    const result = await Effect.runPromise(Effect.promise(() => pending).pipe(Effect.timeout('8 seconds')));
+    expect(result.isError).toBe(true);
+    const { subagents } = result.details as { subagents: Array<{ status: string; error: string; sessionPath: string; usage: { input: number } }> };
+    expect(subagents[0]).toMatchObject({ status: 'failed', error: expect.stringContaining('no_progress') });
+    expect(subagents[0].usage.input).toBeGreaterThanOrEqual(1000000);
+    const ordinary = requests.slice(start).filter((r) => !JSON.stringify(r.messages[0]?.content).includes('You are a context summarization assistant'));
+    expect(ordinary).toHaveLength(4);
+    const path = join(home, 'pi', 'sessions', '--parent--', 'parent-run', subagents[0].sessionPath);
+    expect(await readFile(path, 'utf8')).toContain('cockpit.execution-stop');
+    expect(await readdir(join(home, 'pi', 'tmp'))).toEqual([]);
+  } finally {
+    abort.abort();
+    await pending.catch(() => undefined);
+    if (savedSettings === undefined) await rm(settingsPath, { force: true });
+    else await writeFile(settingsPath, savedSettings);
+  }
+}, 20000);

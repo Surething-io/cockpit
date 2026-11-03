@@ -9,7 +9,7 @@ import { AgentError } from '@cockpit/effect-core';
 import { BUILTIN_SKILLS_SRC_DIR, PI_AGENT_DIR, sanitizedSpawnEnv } from '@cockpit/shared-utils';
 import type { PiAgentConfig } from './piAgentLive';
 import { piChildSelection, resolvePiModel, type PiResolvedModel } from './piModelLive';
-import { createPiChildSession, finishPiChildSession, retainPiChildPartial } from './piSubagentSessionLive';
+import { createPiChildSession, finishPiChildSession, retainPiChildPartial, retainPiChildStop } from './piSubagentSessionLive';
 import { runPiChildProcess } from './piSubagentProcessLive';
 import { startPiChild, type PiChildResult } from '../server/engines/shared/piSubagentProcess';
 
@@ -39,7 +39,7 @@ export const makePiSubagentExtension = (
     return (pi) => {
       pi.registerTool({
         name: 'subagent', label: 'Subagent',
-        description: 'Create independent Pi agents dynamically. Supply task (+ optional instructions/model/tools), tasks for parallel execution (up to 8; 4 concurrent), or chain with {previous} placeholders. No predefined agent names. Children have no subagent tool. Use self-contained instructions; only results return to this context.',
+        description: 'Create independent Pi agents dynamically. Supply task (+ optional instructions/model/tools), tasks for parallel execution (up to 8; 4 concurrent), or chain with {previous} placeholders. No predefined agent names. Children have no subagent tool. Use self-contained instructions; only results return to this context. Repeated tool cycles receive a warning, then stop only that child. Use its retained results or change the approach after a no_progress failure.',
         parameters,
         async execute(callId, input, toolSignal, onUpdate, ctx) {
           const params = input as Params;
@@ -77,7 +77,8 @@ export const makePiSubagentExtension = (
               signal.aborted ? 'cancelled' : result.status === 'running' ? 'failed' : result.status).pipe(
                 Effect.catchAll((error) => Effect.logWarning('Cannot finalize Pi child history', error))));
             const args = ['--mode', 'rpc', '--session-dir', dirname(childPath), '--session', childPath, '--no-extensions', '--no-mcp', '--no-prompt-templates', '--no-themes',
-              '--extension', join(root, 'bin', 'pi-subagent-provider.mjs'), '--model', result.model,
+              '--extension', join(root, 'bin', 'pi-subagent-provider.mjs'),
+              '--extension', join(root, 'bin', 'pi-subagent-progress.mjs'), '--model', result.model,
               '--append-system-prompt', prompt, ...(task.tools?.length === 0 ? ['--no-tools'] : ['--tools', (task.tools ?? TOOLS).join(',')])];
             args.push('--thinking', resolved.capabilities.thinking === 'required' ? resolved.capabilities.defaultThinking : !task.model && ctx.thinkingLevel ? ctx.thinkingLevel : resolved.capabilities.defaultThinking);
             const finished = yield* runPiChildProcess(Effect.try({
@@ -86,10 +87,12 @@ export const makePiSubagentExtension = (
                 COCKPIT_PI_SUBAGENT_API_KEY: selection.config.apiKey,
                 COCKPIT_PI_SUBAGENT_MODEL: JSON.stringify({ provider: selection.config.engine, config: { baseUrl: selection.config.baseUrl, api: 'openai-completions', models: [definition], headers: resolved.providerHeaders } }),
               }), (text) => { result.output = text; progress(); }, `Task: ${task.task}`), catch: problem,
-            }), (finished) => finished.needsHistoryFallback
-              ? retainPiChildPartial(childPath, finished.output).pipe(
-                Effect.catchAll((error) => Effect.logWarning('Cannot retain interrupted Pi child output', error)))
-              : Effect.void);
+            }), (finished) => Effect.gen(function* () {
+              if (finished.needsHistoryFallback) yield* retainPiChildPartial(childPath, finished.output).pipe(
+                Effect.catchAll((error) => Effect.logWarning('Cannot retain interrupted Pi child output', error)));
+              if (finished.executionStop) yield* retainPiChildStop(childPath, finished.executionStop).pipe(
+                Effect.catchAll((error) => Effect.logWarning('Cannot retain Pi child stop', error)));
+            }));
             Object.assign(result, finished, { status: finished.truncated ? 'truncated' : finished.error ? 'failed' : 'done' });
             progress(); return result;
           })).pipe(Effect.catchAll((error) => Effect.sync(() => {

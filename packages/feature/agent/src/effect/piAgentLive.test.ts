@@ -49,7 +49,13 @@ beforeAll(async () => {
     send({ role: 'assistant' });
     if (text.includes('truncate-parent')) { send({ content: 'Partial parent answer' }); send({}, 'length'); res.write('data: [DONE]\n\n'); res.end(); return; }
     if (text.includes('hang-stream')) { send({ content: 'waiting' }); return; }
-    if (text.includes('try-unmanaged-pi') && !body.messages.some((m: { role: string }) => m.role === 'tool')) {
+    if (text.includes('parent-repeat-six')) {
+      const rounds = body.messages.filter((m: { role: string }) => m.role === 'tool').length;
+      if (rounds < 6) {
+        send({ tool_calls: [{ index: 0, id: `parent-repeat-${rounds}`, type: 'function', function: { name: 'bash', arguments: JSON.stringify({ command: 'printf parent-result' }) } }] });
+        send({}, 'tool_calls');
+      } else { send({ content: 'Parent finished normally.' }); send({}, 'stop'); }
+    } else if (text.includes('try-unmanaged-pi') && !body.messages.some((m: { role: string }) => m.role === 'tool')) {
       send({ tool_calls: [{ index: 0, id: 'blocked-pi-call', type: 'function', function: { name: 'bash', arguments: JSON.stringify({ command: `printf started > '${join(home, 'shell-started')}'; PI='${join(home, 'fake', 'pi')}'; nohup "$PI" -p review` }) } }] });
       send({}, 'tool_calls');
     } else if (text.includes('use-hanging-subagent') && !body.messages.some((m: { role: string }) => m.role === 'tool')) {
@@ -639,3 +645,13 @@ describe('embedded Pi runtime', () => {
     expect(run.events.some((e) => e.type === 'result')).toBe(false);
   });
 });
+
+
+it('leaves repeated parent tool calls on the native path without a child progress guard', async () => {
+  const start = requests.length;
+  const run = context('parent-no-progress-guard', 'parent-repeat-six');
+  await Effect.runPromise(runPiAgent(run.ctx, { engine: 'ollama', baseUrl, apiKey: 'test' }));
+  expect(requests.slice(start)).toHaveLength(7);
+  expect(JSON.stringify(run.events)).not.toContain('Execution notice:');
+  expect(run.events.at(-1)).toMatchObject({ type: 'result', subtype: 'success' });
+}, 30000);

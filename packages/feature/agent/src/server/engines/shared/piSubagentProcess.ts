@@ -1,5 +1,6 @@
 // Subprocess IPC boundary. Pi owns execution; the host collects bounded events.
 import { spawn } from 'node:child_process';
+import type { SubagentStop } from '../../../../../../../bin/pi-subagent-progress.mjs';
 import type { AssistantMessage } from '@earendil-works/pi-ai';
 
 export interface PiChildResult {
@@ -8,6 +9,7 @@ export interface PiChildResult {
   stopReason?: AssistantMessage['stopReason'];
   truncated?: boolean;
   needsHistoryFallback?: boolean;
+  executionStop?: SubagentStop;
   usage: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; turns: number };
 }
 export interface PiChildProcess {
@@ -70,6 +72,7 @@ export function startPiChild(
   let buffer = '', stderr = '', error: string | undefined;
   let discardLine = false, protocolTruncated = false;
   let last: FinalAssistant | undefined;
+  let executionStop: SubagentStop | undefined;
   let pending = '', pendingLength = 0, activeAssistant = false, pendingChars = 0;
   let reportFailure!: () => void;
   const failed = new Promise<void>((resolve) => { reportFailure = resolve; });
@@ -96,6 +99,19 @@ export function startPiChild(
     try {
       const event = record(JSON.parse(text));
       if (typeof event.type !== 'string') throw new Error('Invalid event type');
+      if (event.type === 'entry_appended') {
+        const entry = record(event.entry);
+        if (entry.customType === 'cockpit.execution-stop') {
+          const data = record(entry.type === 'custom_message' ? entry.details : entry.data);
+          if (data.reason !== 'no_progress' || typeof data.summary !== 'string') throw new Error('Invalid child progress stop');
+          executionStop ??= { reason: 'no_progress', summary: data.summary };
+          error ??= `Pi subagent stopped: no_progress. Partial work and native history are retained.\n${data.summary}`;
+          update(error);
+          // A native abort can race with a newly started compaction request.
+          // Wake the existing Effect owner so this child still exits within bounds.
+          reportFailure();
+        } else if (entry.customType === 'cockpit.execution-notice' && typeof entry.content === 'string') update(entry.content);
+      }
       if (rpc && event.type === 'response') {
         if (typeof event.success !== 'boolean' || typeof event.command !== 'string' || event.id !== undefined && typeof event.id !== 'string') throw new Error('Invalid RPC response');
         if (event.success === false && typeof event.error !== 'string') throw new Error('Invalid RPC error');
@@ -163,7 +179,7 @@ export function startPiChild(
         const hostTruncated = (usePending ? pendingLength : finalText.length) > CAP;
         const incomplete = cancelRequested || activeAssistant || code !== 0 || signal || last?.stopReason !== 'stop'
           ? [`Pi subagent incomplete (stopReason=${activeAssistant ? 'missing' : last?.stopReason ?? 'missing'}; exitCode=${code}; signal=${signal ?? 'none'}).${last?.stopReason === 'length' ? ' Output was truncated; partial output is retained.' : ''}`, last?.errorMessage, stderr].filter(Boolean).join('\n') : undefined;
-        resolve({ output: text.slice(0, CAP), usage, stopReason: activeAssistant ? undefined : last?.stopReason,
+        resolve({ output: text.slice(0, CAP), usage, executionStop, stopReason: activeAssistant ? undefined : last?.stopReason,
           truncated: protocolTruncated || hostTruncated || last?.stopReason === 'length', needsHistoryFallback: usePending,
           error: [error, incomplete, hostTruncated ? `Pi subagent exceeded the host output limit (${CAP} characters). Partial output is retained; open the native child history for the full recorded result.` : undefined].filter(Boolean).join('\n') || undefined });
       } catch (cause) {

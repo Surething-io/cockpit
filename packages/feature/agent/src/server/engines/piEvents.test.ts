@@ -1,7 +1,7 @@
 // Usage is cumulative for one Cockpit run, with each finalized response counted once.
 import { describe, expect, it } from 'vitest';
 import type { AssistantMessage } from '@earendil-works/pi-ai';
-import { createPiRunUsage, piTool, piBranchMessages } from './piEvents';
+import { createPiRunUsage, piTool, piBranchMessages, piRunEvents } from './piEvents';
 
 function response(output: number, stopReason: AssistantMessage['stopReason'] = 'stop'): AssistantMessage {
   return {
@@ -61,4 +61,22 @@ it('renders truncation notices using the latest context edit rather than an olde
   const rows = JSON.stringify(piBranchMessages(manager.getBranch()));
   expect(rows).toContain('stopReason=length');
   expect(rows).not.toContain('excluded this response');
+});
+
+
+it('projects execution notices and stops as metadata in history and live events', async () => {
+  const { SessionManager } = await import('@earendil-works/pi-coding-agent');
+  const manager = SessionManager.inMemory(process.cwd());
+  manager.appendCustomMessageEntry('cockpit.execution-notice', 'Execution notice: repeated query', true);
+  manager.appendCustomMessageEntry('cockpit.execution-stop', 'Execution stopped: no_progress', true);
+  manager.appendCustomEntry('cockpit.execution-stop', { text: 'Execution stopped: no_progress' });
+  const entries = manager.getBranch();
+  const rows = piBranchMessages(entries);
+  expect(rows).toHaveLength(3);
+  expect(rows.every((row) => row.isMeta)).toBe(true);
+  for (const entry of entries) {
+    const events = piRunEvents({ type: 'entry_appended', entry });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: 'user', isMeta: true });
+  }
 });

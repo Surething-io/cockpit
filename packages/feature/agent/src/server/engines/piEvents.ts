@@ -86,7 +86,10 @@ export function piMessage(message: Message, id: string, timestamp: string, cwd?:
 export function piBranchMessages(entries: SessionEntry[], cwd?: string): TranscriptMessage[] {
   const latestEdits = new Map(entries.flatMap((e) => e.type === 'context_edit' ? [[e.targetId, e.replacement] as const] : []));
   return entries.flatMap<TranscriptMessage>((entry) => {
-    if (entry.type === 'custom' && ['cockpit.undelivered-input', 'cockpit.subagent-instructions', 'cockpit.subagent-interrupted-output', 'cockpit.subagent-snapshot'].includes(entry.customType)) {
+    if (entry.type === 'custom_message' && ['cockpit.execution-notice', 'cockpit.execution-stop'].includes(entry.customType)) {
+      return [{ type: 'user', uuid: entry.id, timestamp: entry.timestamp, isMeta: true, message: { role: 'user', content: entry.content } }];
+    }
+    if (entry.type === 'custom' && ['cockpit.undelivered-input', 'cockpit.subagent-instructions', 'cockpit.subagent-interrupted-output', 'cockpit.subagent-snapshot', 'cockpit.execution-stop'].includes(entry.customType)) {
       const data = entry.data as { text?: unknown } | undefined;
       if (typeof data?.text !== 'string') return [];
       return [{ type: 'user', uuid: entry.id, timestamp: entry.timestamp, isMeta: true, message: { role: 'user', content: data.text } }];
@@ -106,6 +109,13 @@ export function piBranchMessages(entries: SessionEntry[], cwd?: string): Transcr
 
 /** Translate streaming events; settled is handled by the scoped runner. */
 export function piRunEvents(event: AgentSessionEvent, cwd?: string): RunEvent[] {
+  if (event.type === 'entry_appended' && event.entry.type === 'custom_message' && ['cockpit.execution-notice', 'cockpit.execution-stop'].includes(event.entry.customType)) {
+    return [{ type: 'user', isMeta: true, message: { role: 'user', content: event.entry.content } }];
+  }
+  if (event.type === 'entry_appended' && event.entry.type === 'custom' && event.entry.customType === 'cockpit.execution-stop') {
+    const data = event.entry.data as { text?: unknown } | undefined;
+    return typeof data?.text === 'string' ? [{ type: 'user', isMeta: true, message: { role: 'user', content: data.text } }] : [];
+  }
   if (event.type === 'message_start' && event.message.role === 'assistant') return [{ type: 'stream_event', event: { type: 'message_start' } }];
   if (event.type === 'message_update') {
     const delta = event.assistantMessageEvent;

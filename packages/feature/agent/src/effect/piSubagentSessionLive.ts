@@ -62,6 +62,14 @@ export const retainPiChildPartial = (path: string, output: string): Effect.Effec
   });
 });
 
+/** Child progress stops are journaled only after the native writer exits. */
+export const retainPiChildStop = (path: string, stop: { reason: 'no_progress'; summary: string }): Effect.Effect<void, AppError> => io(async () => {
+  const { SessionManager } = await import('@earendil-works/pi-coding-agent');
+  const manager = SessionManager.open(path);
+  if (manager.getBranch().some((entry) => (entry.type === 'custom' || entry.type === 'custom_message') && entry.customType === 'cockpit.execution-stop')) return;
+  manager.appendCustomEntry('cockpit.execution-stop', { text: `Execution stopped: ${stop.reason}. Partial work and native history are retained.\n${stop.summary}`, ...stop });
+});
+
 /** Resolve only real files within the selected child's directory; never accept a client path. */
 export const listPiChildren = (parentPath: string, parentId: string, toolUseId?: string): Effect.Effect<PiChildMeta[], AppError> => io(async () => {
   const root = piChildRoot(parentPath, parentId);

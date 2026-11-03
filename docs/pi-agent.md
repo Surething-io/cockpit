@@ -305,3 +305,28 @@ callback only reads normalized text and always settles the result behind an
 exception boundary, including a final record without a newline. Isolated-host
 regressions verify malformed structures cannot terminate the Cockpit process;
 TERM-resistant tests also cover malformed endings racing with cancellation.
+
+### Repeated subagent tool cycles
+
+Only native CLI children load `bin/pi-subagent-progress.mjs`. The embedded parent
+has no progress detector. Each child independently fingerprints ordered tool
+batches by tool names, canonical arguments, returned content and error flags;
+call IDs and timestamps do not affect matching.
+
+The retained thresholds are explicit: three identical batches, or three repeats
+of a cycle up to eight batches, produce a visible `cockpit.execution-notice`.
+The next model request receives corrective feedback. Continuing that cycle stops
+only the child with `no_progress`; changed work can continue and finish. A child
+gets one warning; a later detected cycle stops without another warning. This
+checks exact repeated behavior, not semantic similarity or all infinite loops.
+
+A child stop event also wakes the existing Effect process owner: native abort,
+then the existing TERM/KILL timeouts, followed by actual process exit. This covers
+automatic compaction starting after the extension aborts the stopping turn.
+Partial output, the stop reason and native child history remain inspectable.
+Parallel siblings continue independently; chains stop on a failed child as before.
+There are no shared request/token budgets or same-task retry quotas. Provider
+transport, retries, compaction and usage reporting use the original native paths.
+No budget IPC, receipt journal or post-exit usage reconciliation is involved.
+Bash remains unrestricted, including direct Pi CLI commands. Claude/Codex are
+unchanged.

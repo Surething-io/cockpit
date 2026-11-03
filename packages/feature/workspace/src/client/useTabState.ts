@@ -957,9 +957,9 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     );
   }, []);
 
-  // Create new DeepSeek tab (defaults to v4-flash; picker in chat header lets user switch later) (appended to end)
+  // Create new DeepSeek tab (defaults to v4-pro; picker in chat header lets user switch later) (appended to end)
   const handleNewDeepseekTab = useCallback(() => {
-    addTab(initialCwd, undefined, 'New DeepSeek Chat', { engine: 'deepseek', deepseekModel: 'deepseek-v4-flash', appendToEnd: true });
+    addTab(initialCwd, undefined, 'New DeepSeek Chat', { engine: 'deepseek', deepseekModel: 'deepseek-v4-pro', appendToEnd: true });
   }, [initialCwd, addTab]);
 
   // Update DeepSeek model for a tab

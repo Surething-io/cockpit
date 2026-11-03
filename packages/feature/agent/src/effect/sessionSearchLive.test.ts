@@ -28,9 +28,9 @@ let encodePath: (cwd: string) => string;
 const CLAUDE_SID = '11111111-1111-4111-8111-111111111111';
 const KIMI_SID = '22222222-2222-4222-8222-222222222222';
 const GLM_SID = '44444444-4444-4444-8444-444444444444';
-const projA = '/tmp/projA';
-const projB = '/tmp/projB';
-const projC = '/tmp/projC';
+const projA = path.join(root, 'projA');
+const projB = path.join(root, 'projB');
+const projC = path.join(root, 'projC');
 let claudeFile: string;
 let kimiFile: string;
 

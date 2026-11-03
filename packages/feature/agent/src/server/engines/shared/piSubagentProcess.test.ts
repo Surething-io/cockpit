@@ -37,7 +37,7 @@ it.each([
   expect((await child.closed).error).toContain(error);
   expect(child.isClosed()).toBe(true);
 });
-it('waits for actual exit when a process ignores TERM and requires KILL', async () => {
+it('waits for actual exit after TERM, escalating to KILL on POSIX', async () => {
   const path = await fixture('ignore-term', `process.on('SIGTERM', () => {}); setInterval(() => {}, 1000); console.log(JSON.stringify({ type: 'tool_execution_start', toolName: 'ready' }));`);
   let ready!: () => void;
   const started = new Promise<void>((resolve) => { ready = resolve; });
@@ -46,8 +46,9 @@ it('waits for actual exit when a process ignores TERM and requires KILL', async 
     await started;
     child.terminate();
     expect(child.isClosed()).toBe(false);
-    child.kill();
-    expect((await child.closed).error).toContain('signal=SIGKILL');
+    // Windows cannot ignore SIGTERM; POSIX requires escalation for this fixture.
+    if (process.platform !== 'win32') child.kill();
+    expect((await child.closed).error).toContain(process.platform === 'win32' ? 'signal=SIGTERM' : 'signal=SIGKILL');
     expect(child.isClosed()).toBe(true);
   } finally { child.kill(); await child.closed; }
 });

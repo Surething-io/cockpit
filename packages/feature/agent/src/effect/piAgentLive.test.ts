@@ -303,7 +303,9 @@ describe('embedded Pi runtime', () => {
     const tool = run.events.find((e) => e.type === 'assistant');
     expect(tool).toMatchObject({ message: { content: [{ type: 'tool_use', id: 'test-call', name: 'Bash' }] } });
     const result = run.events.find((e) => e.type === 'user');
-    expect(JSON.stringify(result)).toContain(`run=tool-session cwd=${home} port=`);
+    expect(result).toMatchObject({ message: { content: [{
+      type: 'tool_result', content: expect.stringContaining(`run=tool-session cwd=${home} port=`),
+    }] } });
     const file = await Effect.runPromise(sessions.findPiSession(home, 'tool-session'));
     const parsed = await parser.parseTranscriptFile(file!.path);
     const call = parsed.messages.flatMap((m) => m.toolCalls ?? [])[0];

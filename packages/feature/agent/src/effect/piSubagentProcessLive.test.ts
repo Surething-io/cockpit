@@ -1,4 +1,4 @@
-// Real stubborn processes exercise the same Effect owner used by the subagent tool.
+// Real processes exercise the same Effect owner used by the subagent tool.
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -14,7 +14,7 @@ let dir: string;
 beforeAll(async () => { dir = await mkdtemp(join(tmpdir(), 'pi-fatal-shutdown-')); });
 afterAll(async () => { await rm(dir, { recursive: true, force: true }); });
 it.each(['malformed', 'oversized', 'rpc-error', 'cancel-race', 'structured', 'structured-cancel', 'no-progress'])(
-  'closes a TERM-resistant process after %s and only then persists partial output', async (failure) => {
+  'closes a failed process after %s and only then persists partial output', async (failure) => {
     const entry = join(dir, `${failure}.mjs`);
     const log = join(dir, `${failure}.log`);
     const instructions = join(dir, `${failure}.instructions`);
@@ -68,12 +68,14 @@ it.each(['malformed', 'oversized', 'rpc-error', 'cancel-race', 'structured', 'st
       expect(child.isClosed()).toBe(true);
       expect(child.cancel).toHaveBeenCalledTimes(1);
       expect(child.terminate).toHaveBeenCalledTimes(1);
-      expect(child.kill).toHaveBeenCalledTimes(1);
-      expect(await readFile(log, 'utf8')).toBe('ABORT\nTERM:true\n');
+      // Windows terminates on SIGTERM without running the registered handler.
+      const windows = process.platform === 'win32';
+      expect(child.kill).toHaveBeenCalledTimes(windows ? 0 : 1);
+      expect(await readFile(log, 'utf8')).toBe(windows ? 'ABORT\n' : 'ABORT\nTERM:true\n');
       expect(cleanupCount).toBe(1);
       expect(finished?.output).toBe(`Retained partial ${failure}`);
       expect(finished?.error).toContain(failure === 'oversized' ? 'exceeded 2 MiB' : failure === 'rpc-error' ? 'RPC rejected' : failure === 'no-progress' ? 'no_progress' : 'Invalid Pi JSON event');
-      expect(finished?.error).toContain('signal=SIGKILL');
+      expect(finished?.error).toContain(windows ? 'signal=SIGTERM' : 'signal=SIGKILL');
       expect(finished?.truncated).toBe(failure === 'oversized');
       expect(JSON.stringify(piBranchMessages(SessionManager.open(history).getBranch()))).toContain(`Retained partial ${failure}`);
       await expect(readFile(instructions)).rejects.toMatchObject({ code: 'ENOENT' });

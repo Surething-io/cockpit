@@ -79,7 +79,8 @@ it('dynamically creates an agent with inherited model/key, isolated context and 
   expect(result.isError, JSON.stringify(result)).toBe(false);
   expect(JSON.stringify(result)).toContain('Child finished');
   expect(JSON.stringify(requests)).toContain('Unique dynamic instructions');
-  expect(JSON.stringify(requests)).toContain(`dir=${join(home, 'pi')} key=`);
+  const toolResults = requests.flatMap((request) => request.messages).filter((message) => message.role === 'tool');
+  expect(toolResults).toContainEqual(expect.objectContaining({ content: expect.stringContaining(`dir=${join(home, 'pi')} key=`) }));
   expect(JSON.stringify(requests)).not.toContain(key);
   expect(requests.every((request) => request.model === 'parent-model')).toBe(true);
   expect(requests.every((request) => !request.tools?.some((t) => t.function.name === 'subagent'))).toBe(true);

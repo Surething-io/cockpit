@@ -32,11 +32,6 @@ function isCodexTaskStarted(entry: Record<string, unknown>): boolean {
   return entry.type === 'event_msg' && payload?.type === 'task_started';
 }
 
-function isCodexTaskComplete(entry: Record<string, unknown>): boolean {
-  const payload = entry.payload as { type?: unknown } | undefined;
-  return entry.type === 'event_msg' && payload?.type === 'task_complete';
-}
-
 function ensureCodexAssistantId(state: CodexForkState): string | null {
   if (state.assistantOpen) return null;
   const id = `codex-assistant-${state.msgCounter++}`;
@@ -157,8 +152,7 @@ function codexVisibleMessageIds(
   }
 
   // A failed turn's ⚠️ banner is a bubble in the parser, so it opens an assistant
-  // message here too. Must stay ahead of the caller's finishTurn() on the same line
-  // (it is — the ids are collected first), or the id lands in the following turn.
+  // message here too, keeping message numbering aligned with the parser.
   if (entry.type === 'event_msg' && payload.type === 'task_complete' && payload.error?.message) {
     const id = ensureCodexAssistantId(state);
     if (id) ids.push(id);
@@ -231,7 +225,6 @@ function partitionCodexTurns(
     if (currentTurn.length === 0) return;
     turns.push(currentTurn);
     currentTurn = [];
-    state.assistantOpen = false;
   };
 
   for (const line of originalLines) {
@@ -245,13 +238,14 @@ function partitionCodexTurns(
     }
     if (entry.type === 'session_meta') continue;
 
+    // Completed background items can arrive AFTER task_complete. Keep them with
+    // their task until the next task starts, and preserve the parser's assistant
+    // state: only a visible user message or response_completed closes a bubble.
     if (isCodexTaskStarted(entry) && currentTurn.length > 0) finishTurn();
     currentTurn.push(line);
 
     const ids = codexVisibleMessageIds(entry, state);
     if (ids.includes(targetMessageUuid)) targetTurn = turns.length;
-
-    if (isCodexTaskComplete(entry)) finishTurn();
   }
   finishTurn();
 

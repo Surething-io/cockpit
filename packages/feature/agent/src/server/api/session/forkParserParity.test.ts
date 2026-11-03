@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { parseCodexTranscriptFile } from './transcriptParsers';
-import { buildCodexForkLines } from './codexFork';
+import { buildCodexForkLines, deleteCodexTurnLines } from './codexFork';
 
 /**
  * The fork walker and the transcript parser mint the SAME message ids from the
@@ -52,6 +52,40 @@ const body =
   complete;
 
 describe('fork walker and transcript parser agree on message ids', () => {
+  it('keeps late completed items in their turn without shifting later message ids', async () => {
+    const lateItem = item({
+      type: 'CommandExecution', id: 'late-command', command: 'echo late',
+      aggregated_output: 'late', exit_code: 0,
+    });
+    const firstTurn = body + lateItem;
+    const secondTurn = started + user('second prompt') + say('second answer') + complete;
+    const text = meta + firstTurn + secondTurn;
+    const lines = text.split('\n').filter(Boolean);
+    const { messages } = await parseCodexTranscriptFile({ text });
+
+    expect(messages.map((message) => message.id)).toEqual([
+      'codex-user-0', 'codex-assistant-1', 'codex-user-2', 'codex-assistant-3',
+    ]);
+    expect(messages[1].toolCalls?.some((tool) => tool.id === 'late-command')).toBe(true);
+
+    for (const message of messages) {
+      const first = message.id.endsWith('-0') || message.id.endsWith('-1');
+      const expectedTurn = first ? firstTurn : secondTurn;
+      const remainingTurn = first ? secondTurn : firstTurn;
+      const fork = buildCodexForkLines(lines, 't1', 'new-id', message.id, 'single');
+      expect(fork.targetMissed, message.id).toBe(false);
+      expect(fork.newLines.slice(1)).toEqual(expectedTurn.split('\n').filter(Boolean));
+
+      const deleted = deleteCodexTurnLines(lines, message.id);
+      expect(deleted.targetMissed, message.id).toBe(false);
+      expect(deleted.newLines).toEqual((meta + remainingTurn).split('\n').filter(Boolean));
+      expect(deleted.deletedLineCount).toBe(expectedTurn.split('\n').filter(Boolean).length);
+    }
+
+    const prefix = buildCodexForkLines(lines, 't1', 'new-id', 'codex-assistant-1', 'prefix');
+    expect(prefix.newLines.slice(1)).toEqual(firstTurn.split('\n').filter(Boolean));
+  });
+
   it('resolves every id the parser produced', async () => {
     const p = join(mkdtempSync(join(tmpdir(), 'codex-parity-')), 'r.jsonl');
     writeFileSync(p, meta + body);

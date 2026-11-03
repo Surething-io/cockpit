@@ -32,7 +32,9 @@ interface ProjectState {
   claudeFastModes?: Record<string, boolean>
   claudeThinkings?: Record<string, boolean>
   codexModels?: Record<string, string>
+  grokModels?: Record<string, string>
   codexReasoningEfforts?: Record<string, string>
+  grokReasoningEfforts?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>
   /** Output style id per session; '' (none) is the default and is not stored. */
@@ -151,7 +153,9 @@ export const POST = handler((req) =>
           const claudeFastModes = carryOver(existing.claudeFastModes, body.claudeFastModes, (v) => !v)
           const claudeThinkings = carryOver(existing.claudeThinkings, body.claudeThinkings, (v) => !v)
           const codexModels = carryOver(existing.codexModels, body.codexModels)
+          const grokModels = carryOver(existing.grokModels, body.grokModels)
           const codexReasoningEfforts = carryOver(existing.codexReasoningEfforts, body.codexReasoningEfforts)
+          const grokReasoningEfforts = carryOver(existing.grokReasoningEfforts, body.grokReasoningEfforts)
           const planModes = carryOver(existing.planModes, body.planModes, (v) => !v)
           const noHistories = carryOver(existing.noHistories, body.noHistories, (v) => !v)
           const outputStyles = carryOver(existing.outputStyles, body.outputStyles, (v) => !v)
@@ -201,7 +205,9 @@ export const POST = handler((req) =>
             ...(Object.keys(claudeFastModes).length ? { claudeFastModes } : {}),
             ...(Object.keys(claudeThinkings).length ? { claudeThinkings } : {}),
             ...(Object.keys(codexModels).length ? { codexModels } : {}),
+            ...(Object.keys(grokModels).length ? { grokModels } : {}),
             ...(Object.keys(codexReasoningEfforts).length ? { codexReasoningEfforts } : {}),
+            ...(Object.keys(grokReasoningEfforts).length ? { grokReasoningEfforts } : {}),
             ...(Object.keys(planModes).length ? { planModes } : {}),
             ...(Object.keys(noHistories).length ? { noHistories } : {}),
             ...(Object.keys(outputStyles).length ? { outputStyles } : {}),

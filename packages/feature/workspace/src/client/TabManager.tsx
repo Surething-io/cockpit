@@ -216,6 +216,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
     handleSelectSession,
     handleNewTab,
     handleNewCodexTab,
+    handleNewGrokTab,
     handleNewKimiTab,
     handleNewGlmTab,
     handleNewOllamaTab,
@@ -232,7 +233,9 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
     updateTabClaudeFastMode,
     updateTabClaudeThinking,
     updateTabCodexModel,
+    updateTabGrokModel,
     updateTabCodexReasoningEffort,
+    updateTabGrokReasoningEffort,
     updateTabPlanMode,
     updateTabNoHistory,
     updateTabOutputStyle,
@@ -813,6 +816,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                     onCloseAllTabs={closeAllTabs}
                     onNewTab={handleNewTab}
                     onNewCodexTab={handleNewCodexTab}
+                    onNewGrokTab={handleNewGrokTab}
                     onNewKimiTab={handleNewKimiTab}
                     onNewGlmTab={handleNewGlmTab}
                     onNewOllamaTab={handleNewOllamaTab}
@@ -862,9 +866,13 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                           claudeThinking={tab.claudeThinking}
                           onClaudeThinkingChange={updateTabClaudeThinking}
                           codexModel={tab.codexModel}
+                          grokModel={tab.grokModel}
                           onCodexModelChange={updateTabCodexModel}
+                          onGrokModelChange={updateTabGrokModel}
                           codexReasoningEffort={tab.codexReasoningEffort}
+                          grokReasoningEffort={tab.grokReasoningEffort}
                           onCodexReasoningEffortChange={updateTabCodexReasoningEffort}
+                          onGrokReasoningEffortChange={updateTabGrokReasoningEffort}
                           planMode={tab.planMode}
                           onPlanModeChange={updateTabPlanMode}
                           noHistory={tab.noHistory}
@@ -986,6 +994,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
               onCloseAllTabs={closeAllTabs}
               onNewTab={handleNewTab}
               onNewCodexTab={handleNewCodexTab}
+              onNewGrokTab={handleNewGrokTab}
               onNewKimiTab={handleNewKimiTab}
               onNewGlmTab={handleNewGlmTab}
               onNewDeepseekTab={handleNewDeepseekTab}
@@ -1033,9 +1042,13 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                     claudeThinking={tab.claudeThinking}
                     onClaudeThinkingChange={updateTabClaudeThinking}
                     codexModel={tab.codexModel}
+                    grokModel={tab.grokModel}
                     onCodexModelChange={updateTabCodexModel}
+                    onGrokModelChange={updateTabGrokModel}
                     codexReasoningEffort={tab.codexReasoningEffort}
+                    grokReasoningEffort={tab.grokReasoningEffort}
                     onCodexReasoningEffortChange={updateTabCodexReasoningEffort}
+                    onGrokReasoningEffortChange={updateTabGrokReasoningEffort}
                     planMode={tab.planMode}
                     onPlanModeChange={updateTabPlanMode}
                     noHistory={tab.noHistory}

@@ -48,7 +48,7 @@ function TabNumberIcon({ number, status, statusLabel, isActive, pinned, bot }: {
 // NewTabButton with engine picker popover
 // ============================================
 
-function NewTabButton({ onNewTab, onNewCodexTab, onNewKimiTab, onNewGlmTab, onNewOllamaTab, onNewDeepseekTab }: { onNewTab: () => void; onNewCodexTab?: () => void; onNewKimiTab?: () => void; onNewGlmTab?: () => void; onNewOllamaTab?: () => void; onNewDeepseekTab?: () => void }) {
+function NewTabButton({ onNewTab, onNewCodexTab, onNewGrokTab, onNewKimiTab, onNewGlmTab, onNewOllamaTab, onNewDeepseekTab }: { onNewTab: () => void; onNewCodexTab?: () => void; onNewGrokTab?: () => void; onNewKimiTab?: () => void; onNewGlmTab?: () => void; onNewOllamaTab?: () => void; onNewDeepseekTab?: () => void }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -105,6 +105,7 @@ function NewTabButton({ onNewTab, onNewCodexTab, onNewKimiTab, onNewGlmTab, onNe
   const pick = (engine: EngineAccentId) => {
     setOpen(false);
     if (engine === 'codex') onNewCodexTab?.();
+    else if (engine === 'grok') onNewGrokTab?.();
     else if (engine === 'kimi') onNewKimiTab?.();
     else if (engine === 'glm') onNewGlmTab?.();
     else if (engine === 'ollama') onNewOllamaTab?.();
@@ -200,6 +201,7 @@ interface TabBarProps {
   onCloseAllTabs?: () => void;
   onNewTab: () => void;
   onNewCodexTab?: () => void;
+  onNewGrokTab?: () => void;
   onNewKimiTab?: () => void;
   onNewGlmTab?: () => void;
   onNewOllamaTab?: () => void;
@@ -247,6 +249,7 @@ export function TabBar({
   onCloseAllTabs,
   onNewTab,
   onNewCodexTab,
+  onNewGrokTab,
   onNewKimiTab,
   onNewGlmTab,
   onNewOllamaTab,
@@ -460,7 +463,7 @@ export function TabBar({
             and the new session appears where the button was. Clock, not a chat
             bubble — every row here is a conversation already. */}
         <div className="flex items-center justify-center gap-1 pt-1">
-          <NewTabButton onNewTab={onNewTab} onNewCodexTab={onNewCodexTab} onNewKimiTab={onNewKimiTab} onNewGlmTab={onNewGlmTab} onNewOllamaTab={onNewOllamaTab} onNewDeepseekTab={onNewDeepseekTab} />
+          <NewTabButton onNewTab={onNewTab} onNewCodexTab={onNewCodexTab} onNewGrokTab={onNewGrokTab} onNewKimiTab={onNewKimiTab} onNewGlmTab={onNewGlmTab} onNewOllamaTab={onNewOllamaTab} onNewDeepseekTab={onNewDeepseekTab} />
           {onOpenProjectSessions && (
             <button
               onClick={onOpenProjectSessions}

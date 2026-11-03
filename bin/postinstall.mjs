@@ -7,7 +7,7 @@ import { execSync } from 'child_process';
 import { homedir } from 'os';
 import { copyTreeSitterWasms } from '../scripts/copy-tree-sitter-wasms.mjs';
 import { copyPdfjsWorker } from '../scripts/copy-pdfjs-worker.mjs';
-import { missingAgentBinaries } from '../scripts/agentBinaries.mjs';
+import { missingAgentBinaries, prepareGrokBinary } from '../scripts/agentBinaries.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, '..');
@@ -33,6 +33,11 @@ try {
 // it. npm can skip these optional platform sub-packages during an in-place
 // `npm i -g` upgrade; catching it here turns a mid-chat runtime error into an
 // install-time hint. See scripts/agentBinaries.mjs.
+try {
+  prepareGrokBinary();
+} catch (err) {
+  console.warn('[postinstall] Grok binary preparation failed:', err?.message ?? err);
+}
 try {
   const missing = missingAgentBinaries();
   if (missing.length) {

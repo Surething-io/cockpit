@@ -18,7 +18,7 @@
 export type SessionStatus = 'normal' | 'loading' | 'unread'
 
 /** Engines that write a transcript, i.e. everything a session list can show. */
-export type SessionEngine = 'claude' | 'ollama' | 'codex' | 'kimi' | 'deepseek' | 'glm'
+export type SessionEngine = 'claude' | 'ollama' | 'codex' | 'kimi' | 'deepseek' | 'glm' | 'grok'
 
 /** One row of a project's session list (`/api/sessions/projects/[encodedPath]`). */
 export interface SessionListItem {

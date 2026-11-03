@@ -1,7 +1,7 @@
 /**
  * Report how far the pinned agent SDKs are behind the registry.
  *
- * Both SDKs are pinned to an EXACT version on purpose (see package.json). A caret range would
+ * Agent packages are pinned to an EXACT version on purpose (see package.json). A caret range would
  * let every user's install resolve to whatever shipped that day, so the version under test and
  * the version in the field silently diverge — and the SDK performs NO version negotiation with
  * the CLI it spawns, so that divergence is unguarded. The cost of pinning is that nothing
@@ -10,6 +10,7 @@
  * The pairing that matters is not the SDK version but the CLI version behind it:
  *   @anthropic-ai/claude-agent-sdk  declares `claudeCodeVersion` (the bundled Claude Code build)
  *   @openai/codex                   the CLI itself; Cockpit spawns its `app-server`
+ *   @xai-official/grok              the CLI itself; Cockpit spawns its ACP stdio mode
  *
  * Run: npm run check-agents           human-readable table
  *      npm run check-agents -- --json  machine-readable, for CI
@@ -65,6 +66,10 @@ const targets = [
     // non-streaming `exec` transport.
     name: '@openai/codex',
     cli: (meta) => (meta?.version ? `codex ${meta.version}` : null),
+  },
+  {
+    name: '@xai-official/grok',
+    cli: (meta) => (meta?.version ? `grok ${meta.version}` : null),
   },
 ];
 

@@ -17,6 +17,7 @@ export const HOME_DIR = homedir();
 export const COCKPIT_DIR = process.env.COCKPIT_HOME
   ? resolve(expandHomePath(process.env.COCKPIT_HOME, HOME_DIR))
   : join(HOME_DIR, '.cockpit');
+export const GROK_SESSIONS_DIR = join(COCKPIT_DIR, 'grok', 'sessions');
 export const COCKPIT_PROJECTS_DIR = join(COCKPIT_DIR, 'projects');
 export const GLOBAL_STATE_FILE = join(COCKPIT_DIR, 'state.json');
 export const PINNED_SESSIONS_FILE = join(COCKPIT_DIR, 'pinned-sessions.json');

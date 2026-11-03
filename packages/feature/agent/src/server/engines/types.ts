@@ -22,6 +22,7 @@ export interface DispatchParams {
   claudeFastMode?: boolean;
   claudeThinking?: boolean;
   codexReasoningEffort?: string;
+  grokReasoningEffort?: string;
   // claude-only (other runners ignore)
   permissionMode?: string;
   // Send ONLY this turn to the model, no prior messages — each user message becomes an

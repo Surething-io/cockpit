@@ -28,6 +28,7 @@ import type { ChatMessage, TokenUsage, LiveOutputTokens, BackgroundTaskInfo, Ima
 // In-package siblings (chat-only)
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { OllamaModelPicker } from './OllamaModelPicker';
+import { GrokModelTraitsPicker } from './GrokModelTraitsPicker';
 import { EngineConfigPicker } from './EngineConfigPicker';
 import {
   AgentModelTraitsPicker,
@@ -84,9 +85,13 @@ interface ChatProps {
   claudeThinking?: boolean;
   onClaudeThinkingChange?: (thinking: boolean) => void;
   codexModel?: CodexModelId;
+  grokModel?: string;
   onCodexModelChange?: (model: CodexModelId) => void;
+  onGrokModelChange?: (model: string) => void;
   codexReasoningEffort?: CodexReasoningEffort;
+  grokReasoningEffort?: string;
   onCodexReasoningEffortChange?: (effort: CodexReasoningEffort) => void;
+  onGrokReasoningEffortChange?: (effort: string) => void;
   planMode?: boolean;
   onPlanModeChange?: (planMode: boolean) => void;
   noHistory?: boolean;
@@ -161,7 +166,7 @@ interface ChatProps {
  */
 const ENGINE_OPTIONS_ROW = `${COLUMN_HEADER_ROW} pl-3 pr-14 bg-card/50`;
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, outputStyle: outputStyleProp, onOutputStyleChange, hideHeader, hideSidebar, isActive = true, isFocused = isActive, peerTabId, peerSide, refreshSignal, onLoadingChange, onDraftPresenceChange, onSessionIdChange, onTitleChange, onBotChange, onShowGitStatus, onOpenNote, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, grokModel, onGrokModelChange, grokReasoningEffort, onGrokReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, outputStyle: outputStyleProp, onOutputStyleChange, hideHeader, hideSidebar, isActive = true, isFocused = isActive, peerTabId, peerSide, refreshSignal, onLoadingChange, onDraftPresenceChange, onSessionIdChange, onTitleChange, onBotChange, onShowGitStatus, onOpenNote, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();
   const composerSlot = useComposerSlot();
   // Owned here, not in ChatInput: the composer is portalled when this pane is
@@ -283,6 +288,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   const effectiveClaudeModel = claudeModel ?? DEFAULT_CLAUDE_MODEL;
   const effectiveClaudeEffort = resolveClaudeEffortForModel(effectiveClaudeModel, claudeEffort);
   const effectiveCodexModel = codexModel ?? DEFAULT_CODEX_MODEL;
+  const effectiveGrokModel = grokModel ?? (loadedEngine === 'grok' ? loadedModel ?? undefined : undefined);
   const effectiveCodexReasoningEffort = resolveCodexReasoningEffortForModel(effectiveCodexModel, codexReasoningEffort);
   // Engines configured by API key rather than by a local CLI login. They share one UI: a
   // key+model picker and a consumption readout, and one Pi runtime.
@@ -299,7 +305,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   // Pi filters prior model context through its context extension. Claude and Codex
   // retain their native transcript/rollout stashing for independent tasks.
   const supportsNoHistory =
-    engine === 'ollama' || apiKeyEngine !== null || isClaudeEngine || isCodexEngine;
+    engine === 'ollama' || apiKeyEngine !== null || isClaudeEngine || isCodexEngine || engine === 'grok';
 
   // Write what the store proved back into the host's per-tab record — repair, not just
   // fill-in: session.json may hold no entry (a tab reopened from a session list never had
@@ -345,7 +351,9 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     claudeFastMode,
     claudeThinking,
     codexModel: effectiveCodexModel,
+    grokModel: effectiveGrokModel,
     codexReasoningEffort: effectiveCodexReasoningEffort,
+    grokReasoningEffort,
     onSessionId: setSessionId,
     onFetchTitle: fetchSessionTitle,
     onRunComplete: () => reconcileFromDiskRef.current?.(),
@@ -897,6 +905,14 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
                 </span>
               </label>
             )}
+            {independentTaskToggle}
+            {outputStyleControl}
+          </div>
+        )}
+
+        {engine === 'grok' && (
+          <div className={ENGINE_OPTIONS_ROW}>
+            <GrokModelTraitsPicker model={effectiveGrokModel} onModelChange={onGrokModelChange} reasoningEffort={grokReasoningEffort} onReasoningEffortChange={onGrokReasoningEffortChange} />
             {independentTaskToggle}
             {outputStyleControl}
           </div>

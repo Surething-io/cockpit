@@ -255,7 +255,7 @@ function MenuRow<T extends string>({
   );
 }
 
-function TraitSelect<T extends string>({
+export function TraitSelect<T extends string>({
   title,
   selected,
   value,

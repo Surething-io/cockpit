@@ -22,6 +22,8 @@ interface ResolvedRun {
   deepseekModel?: EngineModelId;
   kimiModel?: EngineModelId;
   glmModel?: EngineModelId;
+  grokModel?: string;
+  grokReasoningEffort?: string;
 }
 
 // Mobile chat surface for /m. Reuses the proven streaming orchestration from
@@ -62,6 +64,8 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
           deepseekModel: d.deepseekModels?.[initialSessionId] as EngineModelId | undefined,
           kimiModel: d.kimiModels?.[initialSessionId] as EngineModelId | undefined,
           glmModel: d.glmModels?.[initialSessionId] as EngineModelId | undefined,
+          grokModel: d.grokModels?.[initialSessionId],
+          grokReasoningEffort: d.grokReasoningEfforts?.[initialSessionId],
         });
       }
     });
@@ -120,6 +124,8 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     engine,
     planMode: false,
     ollamaModel: resolved.ollamaModel,
+    grokModel: resolved.grokModel,
+    grokReasoningEffort: resolved.grokReasoningEffort,
     engineModel:
       engine === 'kimi'
         ? resolved.kimiModel

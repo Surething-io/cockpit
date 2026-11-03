@@ -42,6 +42,8 @@ const dispatchChat = (
   req: AgentRequest
 ): Effect.Effect<AgentResponse, AgentError> => {
   switch (req.provider) {
+    case "grok":
+      return Effect.fail(new AgentError({ provider: "grok", kind: "unsupported-engine", cause: "Use the Grok ACP chat engine" }))
     case "ollama":
       return ollamaChat(req)
     case "claude":
@@ -57,6 +59,8 @@ const dispatchStream = (
   req: AgentRequest
 ): Stream.Stream<AgentChunk, AgentError> => {
   switch (req.provider) {
+    case "grok":
+      return Stream.fail(new AgentError({ provider: "grok", kind: "unsupported-engine", cause: "Use the Grok ACP chat engine" }))
     case "ollama":
       return ollamaStream(req)
     case "claude":

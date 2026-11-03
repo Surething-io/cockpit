@@ -15,6 +15,8 @@ export function buildResumeCommand(engine: ChatEngine | undefined, sessionId: st
     // A human pasting this wants to keep talking, which is the interactive form.
     case 'codex':
       return `codex resume ${sessionId}`;
+    case 'grok':
+      return `grok --resume ${sessionId}`;
     case 'kimi':
     case 'glm':
     case 'deepseek':

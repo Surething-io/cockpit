@@ -1,11 +1,12 @@
 /**
  * Detect whether the bundled agent CLIs actually landed for the current platform.
  *
- * Both chat engines run a native binary that ships as an OPTIONAL dependency, one sub-package
+ * The bundled chat engines run a native binary that ships as an OPTIONAL dependency, one sub-package
  * per platform:
  *
  *   Claude  @anthropic-ai/claude-agent-sdk-<platform>-<arch>/claude
  *   Codex   @openai/codex-<platform>-<arch>/vendor/<target-triple>/bin/codex
+ *   Grok    @xai-official/grok/bin/grok-native[.exe] (extracted at install time)
  *
  * npm can silently skip an optional sub-package during an in-place `npm i -g` upgrade when the
  * parent's version bumps. The install still exits 0, so nothing notices until a message is sent:
@@ -19,8 +20,9 @@
  * repaired) BEFORE the user hits it mid-chat.
  */
 import { createRequire } from 'module';
-import { existsSync, readdirSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync, renameSync, chmodSync } from 'fs';
 import { join, dirname } from 'path';
+import { brotliDecompressSync } from 'zlib';
 
 const require = createRequire(import.meta.url);
 
@@ -70,17 +72,44 @@ function hasCodexBinary() {
   }
 }
 
+/** Resolve only the pinned package; never use the CLI's mutable ~/.grok/bin copy. */
+export function bundledGrokBinary() {
+  const cliDir = packageDir('@xai-official/grok');
+  if (!cliDir) return null;
+  const binary = join(cliDir, 'bin', process.platform === 'win32' ? 'grok-native.exe' : 'grok-native');
+  return existsSync(binary) ? binary : null;
+}
+
+/** Upstream extracts beside its launcher only on Unix/npm; Windows needs this too. */
+export function prepareGrokBinary() {
+  if (bundledGrokBinary()) return;
+  const cliDir = packageDir('@xai-official/grok');
+  if (!cliDir) return;
+  const cliRequire = createRequire(join(cliDir, 'package.json'));
+  const platformPackage = `@xai-official/grok-${process.platform}-${process.arch}`;
+  const platformDir = dirname(cliRequire.resolve(`${platformPackage}/package.json`));
+  const suffix = process.platform === 'win32' ? '.exe' : '';
+  const source = join(platformDir, 'bin', `grok${suffix}`);
+  const target = join(cliDir, 'bin', `grok-native${suffix}`);
+  const temp = `${target}.tmp.${process.pid}`;
+  const bytes = existsSync(`${source}.br`) ? brotliDecompressSync(readFileSync(`${source}.br`)) : readFileSync(source);
+  writeFileSync(temp, bytes, { mode: 0o755 });
+  if (process.platform !== 'win32') chmodSync(temp, 0o755);
+  renameSync(temp, target);
+}
+
 /**
  * Names of the agent CLIs whose native binary is missing.
  *
  * Returns [] when everything resolved. Callers report the names verbatim, which is why this
  * returns labels rather than booleans: every call site has to tell the user WHICH engine is
- * broken, and deriving that from two booleans at four call sites is the same sentence written
+ * broken, and deriving that from separate booleans at multiple call sites is the same sentence written
  * four times.
  */
 export function missingAgentBinaries() {
   const missing = [];
   if (!hasClaudeBinary()) missing.push('Claude');
   if (!hasCodexBinary()) missing.push('Codex');
+  if (!bundledGrokBinary()) missing.push('Grok');
   return missing;
 }

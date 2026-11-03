@@ -1,3 +1,4 @@
+import { listGrokProjects } from '../../../effect/grokSessionLive';
 import { listPiSessions } from '../../../effect/piSessionLive';
 import { readdir } from 'fs/promises';
 import * as path from 'path';
@@ -160,6 +161,12 @@ const buildProjectsList: Effect.Effect<ProjectInfo[], never, TranscriptIndex> = 
     const existing = projectMap.get(key);
     if (existing) existing.sessionCount++;
     else projectMap.set(key, { fullPath: session.cwd, sessionCount: 1 });
+  }
+
+  for (const project of yield* listGrokProjects.pipe(Effect.orElseSucceed(() => []))) {
+    const existing = projectMap.get(project.encodedPath);
+    if (existing) existing.sessionCount += project.count;
+    else projectMap.set(project.encodedPath, { fullPath: project.cwd, sessionCount: project.count });
   }
 
   // --- Source 3: Codex sessions via cockpit session.json + global Codex index ---

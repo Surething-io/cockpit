@@ -56,7 +56,7 @@ import {
 } from "../server/api/session/transcriptParsers"
 
 export const DELEGATION_ENGINES: ReadonlyArray<DelegationEngine> = [
-  "claude", "codex", "deepseek", "kimi", "glm", "ollama",
+  "claude", "codex", "deepseek", "kimi", "glm", "ollama", "grok",
 ]
 const TITLE_MAX = 80
 export const LAST_REPLY_MAX = 4000

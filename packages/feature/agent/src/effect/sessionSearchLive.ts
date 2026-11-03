@@ -34,6 +34,7 @@ import {
 } from "@cockpit/effect-services"
 import {
   CLAUDE_PROJECTS_DIR,
+  GROK_SESSIONS_DIR,
   GLOBAL_STATE_FILE,
   isPiSessionPath, PI_SESSIONS_DIR,
 } from "@cockpit/shared-utils"
@@ -248,6 +249,7 @@ export const listCorpusSources: Effect.Effect<CorpusSource[], never> = Effect.ge
     })
 
   yield* fromShardedStore("claude", CLAUDE_PROJECTS_DIR)
+  yield* fromShardedStore("grok", GROK_SESSIONS_DIR)
   yield* fromShardedStore("pi", PI_SESSIONS_DIR)
   // Sub-agent rollouts are out of scope (see header), as in every session list.
   const codex = (yield* codexSessionEntries).filter((entry) => !isCodexSubagent(entry))
@@ -293,7 +295,7 @@ const resolveCwd = (
 ): Effect.Effect<string | null, never> =>
   Effect.gen(function* () {
     if (source.cwd) return source.cwd
-    if (source.engine === "claude" || source.engine === "pi") {
+    if (source.engine === "claude" || source.engine === "pi" || source.engine === "grok") {
       const fromFile = yield* firstCwdInTranscript(source.sourcePath)
       if (fromFile) {
         if (source.encodedDir) lookup.set(source.encodedDir, fromFile)

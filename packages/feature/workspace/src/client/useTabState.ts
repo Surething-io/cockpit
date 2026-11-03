@@ -48,7 +48,9 @@ export interface TabInfo {
   claudeFastMode?: boolean;
   claudeThinking?: boolean;
   codexModel?: CodexModelId;
+  grokModel?: string;
   codexReasoningEffort?: CodexReasoningEffort;
+  grokReasoningEffort?: string;
   planMode?: boolean;
   /** ollama only: send every user message with no prior history (independent task) */
   noHistory?: boolean;
@@ -348,7 +350,9 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
         const savedClaudeFastModes: Record<string, boolean> = data.claudeFastModes || {};
         const savedClaudeThinkings: Record<string, boolean> = data.claudeThinkings || {};
         const savedCodexModels: Record<string, string> = data.codexModels || {};
+        const savedGrokModels: Record<string, string> = data.grokModels || {};
         const savedCodexReasoningEfforts: Record<string, string> = data.codexReasoningEfforts || {};
+        const savedGrokReasoningEfforts: Record<string, string> = data.grokReasoningEfforts || {};
         const savedPlanModes: Record<string, boolean> = data.planModes || {};
         const savedNoHistories: Record<string, boolean> = data.noHistories || {};
         const savedOutputStyles: Record<string, string> = data.outputStyles || {};
@@ -389,7 +393,9 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
               claudeFastMode: savedClaudeFastModes[sessionId] ?? prev?.claudeFastMode,
               claudeThinking: savedClaudeThinkings[sessionId] ?? prev?.claudeThinking,
               codexModel: (savedCodexModels[sessionId] as CodexModelId) || prev?.codexModel || undefined,
+              grokModel: (savedGrokModels[sessionId] as string) || prev?.grokModel || undefined,
               codexReasoningEffort: (savedCodexReasoningEfforts[sessionId] as CodexReasoningEffort) || prev?.codexReasoningEffort || undefined,
+              grokReasoningEffort: (savedGrokReasoningEfforts[sessionId] as string) || prev?.grokReasoningEffort || undefined,
               planMode: savedPlanModes[sessionId] ?? prev?.planMode,
               noHistory: savedNoHistories[sessionId] ?? prev?.noHistory,
               outputStyle: savedOutputStyles[sessionId] ?? prev?.outputStyle,
@@ -489,7 +495,9 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     const claudeFastModes: Record<string, boolean> = {};
     const claudeThinkings: Record<string, boolean> = {};
     const codexModels: Record<string, string> = {};
+    const grokModels: Record<string, string> = {};
     const codexReasoningEfforts: Record<string, string> = {};
+    const grokReasoningEfforts: Record<string, string> = {};
     const planModes: Record<string, boolean> = {};
     const noHistories: Record<string, boolean> = {};
     const outputStyles: Record<string, string> = {};
@@ -520,6 +528,12 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
       }
       if (tab.sessionId && tab.codexReasoningEffort) {
         codexReasoningEfforts[tab.sessionId] = tab.codexReasoningEffort;
+      }
+      if (tab.sessionId && tab.grokModel) {
+        grokModels[tab.sessionId] = tab.grokModel;
+      }
+      if (tab.sessionId && tab.grokReasoningEffort !== undefined) {
+        grokReasoningEfforts[tab.sessionId] = tab.grokReasoningEffort;
       }
       // Persist the DECIDED value for sessions THIS tab has open, so switching back to the
       // default actually overrides a previously-saved non-default. The server merge is a
@@ -574,7 +588,9 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
       claudeFastModes,
       claudeThinkings,
       codexModels,
+      grokModels,
       codexReasoningEfforts,
+      grokReasoningEfforts,
       planModes,
       noHistories,
       outputStyles,
@@ -643,7 +659,9 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
       const claudeFastModes = (data.claudeFastModes || {}) as Record<string, boolean>;
       const claudeThinkings = (data.claudeThinkings || {}) as Record<string, boolean>;
       const codexModels = (data.codexModels || {}) as Record<string, string>;
+      const grokModels = (data.grokModels || {}) as Record<string, string>;
       const codexReasoningEfforts = (data.codexReasoningEfforts || {}) as Record<string, string>;
+      const grokReasoningEfforts = (data.grokReasoningEfforts || {}) as Record<string, string>;
       const planModes = (data.planModes || {}) as Record<string, boolean>;
       const noHistories = (data.noHistories || {}) as Record<string, boolean>;
       const outputStyles = (data.outputStyles || {}) as Record<string, string>;
@@ -674,7 +692,9 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
         claudeFastMode: claudeFastModes[sid] ?? undefined,
         claudeThinking: claudeThinkings[sid] ?? undefined,
         codexModel: (codexModels[sid] as CodexModelId) || undefined,
+        grokModel: (grokModels[sid] as string) || undefined,
         codexReasoningEffort: (codexReasoningEfforts[sid] as CodexReasoningEffort) || undefined,
+        grokReasoningEffort: (grokReasoningEfforts[sid] as string) || undefined,
         planMode: planModes[sid] || undefined,
         noHistory: noHistories[sid] || undefined,
         outputStyle: outputStyles[sid] || undefined,
@@ -749,14 +769,16 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
       claudeFastMode?: boolean;
       claudeThinking?: boolean;
       codexModel?: CodexModelId;
+      grokModel?: string;
       codexReasoningEffort?: CodexReasoningEffort;
+      grokReasoningEffort?: string;
       planMode?: boolean;
       noHistory?: boolean;
       outputStyle?: string;
       appendToEnd?: boolean;
     }
   ) => {
-    const { engine, ollamaModel, deepseekModel, kimiModel, glmModel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, planMode, noHistory, outputStyle, appendToEnd = false } = opts ?? {};
+    const { engine, ollamaModel, deepseekModel, kimiModel, glmModel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, planMode, noHistory, outputStyle, appendToEnd = false } = opts ?? {};
     const newTab: TabInfo = {
       id: `tab-${Date.now()}`,
       cwd,
@@ -772,7 +794,9 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
       claudeFastMode,
       claudeThinking,
       codexModel,
+      grokModel,
       codexReasoningEffort,
+      grokReasoningEffort,
       planMode,
       noHistory,
       outputStyle,
@@ -875,7 +899,9 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
         claudeFastMode: data?.claudeFastModes?.[sid],
         claudeThinking: data?.claudeThinkings?.[sid],
         codexModel: data?.codexModels?.[sid] as CodexModelId | undefined,
+        grokModel: data?.grokModels?.[sid] as string | undefined,
         codexReasoningEffort: data?.codexReasoningEfforts?.[sid] as CodexReasoningEffort | undefined,
+        grokReasoningEffort: data?.grokReasoningEfforts?.[sid] as string | undefined,
         planMode: data?.planModes?.[sid],
         noHistory: data?.noHistories?.[sid],
         outputStyle: data?.outputStyles?.[sid],
@@ -892,6 +918,10 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
   // Create new Codex tab (appended to end)
   const handleNewCodexTab = useCallback(() => {
     addTab(initialCwd, undefined, 'New Codex Chat', { engine: 'codex', appendToEnd: true });
+  }, [initialCwd, addTab]);
+
+  const handleNewGrokTab = useCallback(() => {
+    addTab(initialCwd, undefined, 'New Grok Chat', { engine: 'grok', appendToEnd: true });
   }, [initialCwd, addTab]);
 
   // Create new Kimi tab (appended to end). Seed the tab with the preferred model so the
@@ -1029,10 +1059,26 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     );
   }, []);
 
+  const updateTabGrokModel = useCallback((tabId: string, model: string) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, grokModel: model } : tab
+      )
+    );
+  }, []);
+
   const updateTabCodexReasoningEffort = useCallback((tabId: string, codexReasoningEffort: CodexReasoningEffort) => {
     setTabs((prev) =>
       prev.map((tab) =>
         tab.id === tabId ? { ...tab, codexReasoningEffort } : tab
+      )
+    );
+  }, []);
+
+  const updateTabGrokReasoningEffort = useCallback((tabId: string, grokReasoningEffort: string) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, grokReasoningEffort } : tab
       )
     );
   }, []);
@@ -1080,7 +1126,9 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
       claudeFastMode: source?.claudeFastMode,
       claudeThinking: source?.claudeThinking,
       codexModel: source?.codexModel,
+      grokModel: source?.grokModel,
       codexReasoningEffort: source?.codexReasoningEffort,
+      grokReasoningEffort: source?.grokReasoningEffort,
     });
   }, [initialCwd, addTab]);
 
@@ -1255,6 +1303,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     handleSelectSession,
     handleNewTab,
     handleNewCodexTab,
+    handleNewGrokTab,
     handleNewKimiTab,
     handleNewGlmTab,
     handleNewOllamaTab,
@@ -1271,7 +1320,9 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     updateTabClaudeFastMode,
     updateTabClaudeThinking,
     updateTabCodexModel,
+    updateTabGrokModel,
     updateTabCodexReasoningEffort,
+    updateTabGrokReasoningEffort,
     updateTabPlanMode,
     updateTabNoHistory,
     updateTabOutputStyle,

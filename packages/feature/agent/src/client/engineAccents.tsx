@@ -38,6 +38,7 @@ export type EngineAccentId = ChatEngine;
 export const ENGINE_LABELS: Record<EngineAccentId, string> = {
   claude: 'Claude',
   codex: 'Codex',
+  grok: 'Grok',
   deepseek: 'DeepSeek',
   kimi: 'Kimi',
   glm: 'GLM',
@@ -57,6 +58,7 @@ const ENGINE_ORDER: Record<EngineAccentId, number> = {
   glm: 3,
   kimi: 4,
   ollama: 5,
+  grok: 3.5,
 };
 
 /** Every engine, in the order any "pick an engine" list should offer them. */
@@ -100,6 +102,7 @@ export const ENGINE_TEXT_TONES: Record<EngineAccentId, string> = {
   // the lightness moves per theme.
   // OpenAI green (#10A37F) rounded to emerald, matching the CX chip in TabBar.
   codex: 'text-emerald-600 dark:text-emerald-400',
+  grok: 'text-foreground',
   deepseek: 'text-sky-600 dark:text-sky-400',
   kimi: 'text-purple-600 dark:text-purple-400',
   glm: 'text-amber-600 dark:text-amber-400',

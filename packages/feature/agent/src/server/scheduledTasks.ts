@@ -1,3 +1,4 @@
+import { grokSessionPath } from '../effect/grokSessionLive';
 import { findPiSession } from "../effect/piSessionLive";
 import { existsSync } from 'fs';
 import {
@@ -332,6 +333,7 @@ export async function readSessionOutputStyleId(task: ScheduledTask): Promise<str
  */
 async function sessionPathFor(engine: string, task: ScheduledTask): Promise<string | null> {
   if (isPiEngine(engine)) return (await Effect.runPromise(findPiSession(task.cwd, task.sessionId)))?.path ?? null;
+  if (engine === 'grok') return grokSessionPath(task.cwd, task.sessionId);
   if (engine === 'codex') return (await findCodexSession(task.sessionId))?.path ?? null;
   return getClaudeSessionPath(task.cwd, task.sessionId);
 }
@@ -347,7 +349,7 @@ export const sendChatMessageEff = (task: ScheduledTask): Effect.Effect<boolean, 
   Effect.gen(function* () {
     const engine = task.engine ?? 'claude';
 
-    if (!['claude', 'ollama', 'codex', 'kimi', 'deepseek', 'glm'].includes(engine)) {
+    if (!['claude', 'ollama', 'codex', 'kimi', 'deepseek', 'glm', 'grok'].includes(engine)) {
       return yield* Effect.fail(
         new AgentError({
           provider: 'claude',

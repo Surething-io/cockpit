@@ -1,7 +1,7 @@
 import { readdir, stat } from 'fs/promises';
 import * as path from 'path';
 import { Effect } from 'effect';
-import { CLAUDE_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, encodePath, normalizeCodexSessionId } from '@cockpit/shared-utils';
+import { CLAUDE_PROJECTS_DIR, GROK_SESSIONS_DIR, COCKPIT_PROJECTS_DIR, encodePath, normalizeCodexSessionId } from '@cockpit/shared-utils';
 import { listPiSessions } from '../../../effect/piSessionLive';
 import { dynamicHandler } from '@cockpit/effect-runtime/server';
 import { isJsonObject, readJsonOr } from '@cockpit/effect-runtime/server/fs';
@@ -143,6 +143,7 @@ const loadSessions = (encodedPath: string): Effect.Effect<SessionInfo[], never, 
     const stores = yield* Effect.forEach(
       [
         { dir: path.join(CLAUDE_PROJECTS_DIR, encodedPath), engine: 'claude' as const },
+        { dir: path.join(GROK_SESSIONS_DIR, encodedPath), engine: 'grok' as const },
       ],
       ({ dir, engine }) => collectSessionFiles(dir, engine),
       { concurrency: 'unbounded' }

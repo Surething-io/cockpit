@@ -34,9 +34,13 @@ interface ChatPanelProps {
   claudeThinking?: boolean;
   onClaudeThinkingChange?: (tabId: string, thinking: boolean) => void;
   codexModel?: CodexModelId;
+  grokModel?: string;
   onCodexModelChange?: (tabId: string, model: CodexModelId) => void;
+  onGrokModelChange?: (tabId: string, model: string) => void;
   codexReasoningEffort?: CodexReasoningEffort;
+  grokReasoningEffort?: string;
   onCodexReasoningEffortChange?: (tabId: string, effort: CodexReasoningEffort) => void;
+  onGrokReasoningEffortChange?: (tabId: string, effort: string) => void;
   planMode?: boolean;
   onPlanModeChange?: (tabId: string, planMode: boolean) => void;
   noHistory?: boolean;
@@ -64,7 +68,7 @@ interface ChatPanelProps {
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
 }
 
-export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, outputStyle, onOutputStyleChange, isActive, isFocused, peerTabId, peerSide, refreshSignal, onDraftChange, onStateChange, onShowGitStatus, onOpenNote, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink }: ChatPanelProps) {
+export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, grokModel, onGrokModelChange, grokReasoningEffort, onGrokReasoningEffortChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, outputStyle, onOutputStyleChange, isActive, isFocused, peerTabId, peerSide, refreshSignal, onDraftChange, onStateChange, onShowGitStatus, onOpenNote, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink }: ChatPanelProps) {
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
   }, [tabId, onStateChange]);
@@ -127,9 +131,17 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollam
     onCodexModelChange?.(tabId, model);
   }, [tabId, onCodexModelChange]);
 
+  const handleGrokModelChange = useCallback((model: string) => {
+    onGrokModelChange?.(tabId, model);
+  }, [tabId, onGrokModelChange]);
+
   const handleCodexReasoningEffortChange = useCallback((effort: CodexReasoningEffort) => {
     onCodexReasoningEffortChange?.(tabId, effort);
   }, [tabId, onCodexReasoningEffortChange]);
+
+  const handleGrokReasoningEffortChange = useCallback((effort: string) => {
+    onGrokReasoningEffortChange?.(tabId, effort);
+  }, [tabId, onGrokReasoningEffortChange]);
 
 
   const handlePlanModeChange = useCallback((p: boolean) => {
@@ -167,9 +179,13 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollam
       claudeThinking={claudeThinking}
       onClaudeThinkingChange={handleClaudeThinkingChange}
       codexModel={codexModel}
+      grokModel={grokModel}
       onCodexModelChange={handleCodexModelChange}
+      onGrokModelChange={handleGrokModelChange}
       codexReasoningEffort={codexReasoningEffort}
+      grokReasoningEffort={grokReasoningEffort}
       onCodexReasoningEffortChange={handleCodexReasoningEffortChange}
+      onGrokReasoningEffortChange={handleGrokReasoningEffortChange}
       planMode={planMode}
       onPlanModeChange={handlePlanModeChange}
       noHistory={noHistory}

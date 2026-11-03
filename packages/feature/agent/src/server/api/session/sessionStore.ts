@@ -1,3 +1,4 @@
+import { grokSessionPath } from '../../../effect/grokSessionLive';
 import { Effect } from 'effect';
 import { findPiSession } from '../../../effect/piSessionLive';
 import { access } from 'fs/promises';
@@ -14,7 +15,8 @@ export type SessionEngine =
   | 'kimi'
   | 'ollama'
   | 'deepseek'
-  | 'glm';
+  | 'glm'
+  | 'grok';
 
 export interface SessionStore {
   sessionPath: string;
@@ -29,6 +31,7 @@ export async function resolveSessionPath(
   const exists = (p: string) => access(p).then(() => true, () => false);
   // Probe order is the precedence order when a session id exists in more than one store.
   const probes: Array<[SessionEngine, () => Promise<string | null>]> = [
+    ['grok', async () => /^[a-zA-Z0-9_-]+$/.test(sessionId) ? grokSessionPath(cwd, sessionId) : null],
     ['claude', async () => getClaudeSessionPath(cwd, sessionId)],
     ['codex', async () => (await findCodexSession(sessionId))?.path ?? null],
   ];
@@ -48,7 +51,8 @@ export async function resolveSessionPath(
  * a rollout copied to the normal dated path with `session_meta.payload.id` rewritten.
  */
 export function isForkableStore(store: SessionStore): boolean {
-  return !!store.engine;
+  // Grok forks require a synchronized native context copy (handled before this gate).
+  return store.engine !== 'grok';
 }
 
 /**

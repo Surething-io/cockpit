@@ -1,3 +1,4 @@
+import { editGrokTurn } from '../../../effect/grokNativeSessionLive';
 import { isPiSessionPath } from '@cockpit/shared-utils';
 import { deletePiTurn } from '../../../effect/piSessionEditLive';
 import { readFile } from 'fs/promises';
@@ -45,7 +46,9 @@ export const DELETE = dynamicHandler<
       return yield* Effect.fail(new ValidationError({ field: 'sessionId', reason: 'session is running' }));
     }
 
-    const result = yield* (isPiSessionPath(store.sessionPath)
+    const result = yield* (store.engine === 'grok'
+      ? editGrokTurn(body.cwd, sessionId, body.messageUuid, 'delete').pipe(Effect.map((result) => result ?? { targetMissed: true, deletedLineCount: 0 }))
+      : isPiSessionPath(store.sessionPath)
       ? deletePiTurn(store.sessionPath, body.messageUuid).pipe(Effect.mapError((cause) => new FSError({ path: store.sessionPath, op: 'write', cause })))
       : Effect.tryPromise({
       try: () => withFileLock(store.sessionPath, async () => {

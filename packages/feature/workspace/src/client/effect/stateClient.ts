@@ -39,7 +39,9 @@ export interface LoadedProjectState {
   claudeFastModes?: Record<string, boolean>
   claudeThinkings?: Record<string, boolean>
   codexModels?: Record<string, string>
+  grokModels?: Record<string, string>
   codexReasoningEfforts?: Record<string, string>
+  grokReasoningEfforts?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>
   outputStyles?: Record<string, string>
@@ -81,7 +83,9 @@ export interface ProjectStateSave {
   claudeFastModes?: Record<string, boolean>
   claudeThinkings?: Record<string, boolean>
   codexModels?: Record<string, string>
+  grokModels?: Record<string, string>
   codexReasoningEfforts?: Record<string, string>
+  grokReasoningEfforts?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>
   outputStyles?: Record<string, string>

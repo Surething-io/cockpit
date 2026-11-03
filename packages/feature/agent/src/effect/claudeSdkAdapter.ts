@@ -61,6 +61,7 @@ const providerEnvFor = (
         baseUrl: "https://open.bigmodel.cn/api/anthropic",
         apiKey: apiKeyOverride,
       }
+    case "grok":
     case "ollama":
       // Ollama uses its own adapter; this function should not be reached for ollama.
       return {}

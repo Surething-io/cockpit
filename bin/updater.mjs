@@ -171,7 +171,7 @@ function missingAgentBinaries() {
     req = createRequire(join(installRoot, 'package.json'));
   } catch {
     // Install tree unreadable — same answer as everything missing.
-    return ['Claude', 'Codex'];
+    return ['Claude', 'Codex', 'Grok'];
   }
 
   const dirOf = (name) => {
@@ -206,6 +206,10 @@ function missingAgentBinaries() {
     } catch { /* no vendor dir — same answer as missing */ }
   }
   if (!hasCodex) missing.push('Codex');
+
+  const grokDir = dirOf('@xai-official/grok');
+  const grokName = process.platform === 'win32' ? 'grok-native.exe' : 'grok-native';
+  if (!grokDir || !existsSync(join(grokDir, 'bin', grokName))) missing.push('Grok');
 
   return missing;
 }

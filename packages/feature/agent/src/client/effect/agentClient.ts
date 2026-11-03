@@ -79,6 +79,8 @@ export interface SessionEngineState {
   deepseekModels?: Record<string, string>
   kimiModels?: Record<string, string>
   glmModels?: Record<string, string>
+  grokModels?: Record<string, string>
+  grokReasoningEfforts?: Record<string, string>
 }
 
 export const loadSessionEngineState = (

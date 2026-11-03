@@ -11,7 +11,7 @@
 import { Context, Effect } from "effect"
 import type { AgentError, AppError, NotFoundError, ValidationError } from "@cockpit/effect-core"
 
-export type DelegationEngine = "claude" | "codex" | "deepseek" | "kimi" | "glm" | "ollama"
+export type DelegationEngine = "claude" | "codex" | "deepseek" | "kimi" | "glm" | "ollama" | "grok"
 
 export interface DelegateRequest {
   readonly cwd: string

@@ -117,7 +117,7 @@ export interface RateLimitInfo {
 // Chat engine / model selection types — used by useChatStream, ChatPanel,
 // MessageList, etc. Migrated here from useTabState so the types live with
 // the agent feature instead of a generic tab-state hook.
-export type ChatEngine = 'claude' | 'codex' | 'kimi' | 'ollama' | 'deepseek' | 'glm';
+export type ChatEngine = 'claude' | 'codex' | 'kimi' | 'ollama' | 'deepseek' | 'glm' | 'grok';
 /**
  * A model id for the API-key engines (deepseek, kimi, glm). Deliberately a plain string, not a
  * union: the pickers fill their lists live from /api/<engine>/models, so any id the account

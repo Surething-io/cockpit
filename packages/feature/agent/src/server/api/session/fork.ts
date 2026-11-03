@@ -1,3 +1,5 @@
+import { editGrokTurn } from '../../../effect/grokNativeSessionLive';
+import { beginTranscriptEdit } from '../../sessionRunHub';
 import { isPiSessionPath } from '@cockpit/shared-utils';
 import { forkPiSession } from '../../../effect/piSessionEditLive';
 import { createReadStream } from 'fs';
@@ -119,6 +121,13 @@ export const POST = dynamicHandler<
       return yield* Effect.fail(
         new NotFoundError({ resource: 'session', id: originalSessionId })
       );
+    }
+    if (store.engine === 'grok') {
+      const endEdit = beginTranscriptEdit(originalSessionId);
+      if (!endEdit) return yield* Effect.fail(new ValidationError({ field: 'sessionId', reason: 'session is running' }));
+      const result = yield* editGrokTurn(cwd, originalSessionId, fromMessageUuid, scope).pipe(Effect.ensuring(Effect.sync(endEdit)));
+      if (!result) return yield* Effect.fail(new NotFoundError({ resource: 'message', id: fromMessageUuid ?? originalSessionId }));
+      return ok({ success: true, originalSessionId, ...result, artifactCount: 0 });
     }
     if (!isForkableStore(store)) {
       return yield* Effect.fail(

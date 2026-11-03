@@ -13,6 +13,7 @@ export interface ScheduleSource {
   deepseekModel?: EngineModelId;
   claudeModel?: ClaudeModelId;
   codexModel?: CodexModelId;
+  grokModel?: string;
 }
 
 /**
@@ -23,7 +24,8 @@ export interface ScheduleSource {
 export function scheduleTarget(s: ScheduleSource) {
   const engine = s.engine;
   const model =
-    engine === 'ollama' ? s.ollamaModel
+    engine === 'grok' ? s.grokModel
+    : engine === 'ollama' ? s.ollamaModel
     : engine === 'kimi' ? s.kimiModel
     : engine === 'glm' ? s.glmModel
     : engine === 'deepseek' ? s.deepseekModel

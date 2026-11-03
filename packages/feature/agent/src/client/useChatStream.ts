@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { GROK_DEFAULT_MODEL, GROK_DEFAULT_REASONING } from '../shared/grokModels';
 import { injectChatMessage } from './effect/agentClient';
 import { estimateOutputUnits } from '@cockpit/shared-utils/outputProgress';
 import { applyStreamEvent, isSubagentFrame, isTaskEvent, settleRunningTasks, type StreamEvent } from './applyStreamEvent';
@@ -66,6 +67,8 @@ interface UseChatStreamOptions {
   claudeThinking?: boolean;
   codexModel?: CodexModelId;
   codexReasoningEffort?: CodexReasoningEffort;
+  grokModel?: string;
+  grokReasoningEffort?: string;
   onSessionId: (sid: string) => void;
   onFetchTitle: (sid: string) => void;
   /**
@@ -114,7 +117,7 @@ interface UseChatStreamReturn {
 export function useChatStream(
   messages: ChatMessage[],
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-  { sessionId, cwd, engine, planMode, noHistory, outputStyleId, ollamaModel, engineModel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, onSessionId, onFetchTitle, onRunComplete, taskStore }: UseChatStreamOptions
+  { sessionId, cwd, engine, planMode, noHistory, outputStyleId, ollamaModel, engineModel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, onSessionId, onFetchTitle, onRunComplete, taskStore }: UseChatStreamOptions
 ): UseChatStreamReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
@@ -707,9 +710,9 @@ export function useChatStream(
       const isApiKeyEngine = engine === 'deepseek' || engine === 'kimi' || engine === 'glm';
       // Independent task: Pi filters prior context (ollama, deepseek,
       // kimi, glm). Claude and Codex stash their vendor transcript/rollout for the turn.
-      // Every engine is on one of those two paths, so this is currently always true — it
-      // stays explicit as the contract for the next engine added.
-      const canDropHistory = engine === 'ollama' || isApiKeyEngine || isClaudeEngine || engine === 'codex';
+      // Grok runs an isolated native branch and merges its new turn back afterwards.
+      // Keep the supported engines explicit as the contract for future providers.
+      const canDropHistory = engine === 'ollama' || isApiKeyEngine || isClaudeEngine || engine === 'codex' || engine === 'grok';
 
       try {
         // No client-side model guard for ollama. Dispatch resolves one itself — this session's,
@@ -717,7 +720,7 @@ export function useChatStream(
         // the reason (server unreachable, nothing pulled), which is the message worth showing.
         // The old guard shadowed all of that with "select a model first" even when the real
         // problem was that ollama wasn't running.
-        const apiUrl = engine === 'codex' ? '/api/chat/codex' : engine === 'kimi' ? '/api/chat/kimi' : engine === 'ollama' ? '/api/chat/ollama' : engine === 'deepseek' ? '/api/chat/deepseek' : engine === 'glm' ? '/api/chat/glm' : '/api/chat';
+        const apiUrl = engine && engine !== 'claude' ? `/api/chat/${engine}` : '/api/chat';
         // POST only STARTS the detached run and returns its runKey — no SSE body to read.
         // The ws consumer (above) tails /ws/session-stream and drives the UI from here.
         const response = await fetch(apiUrl, {
@@ -738,6 +741,8 @@ export function useChatStream(
             ...(isClaudeEngine && claudeThinking !== undefined && { claudeThinking }),
             ...(engine === 'codex' && codexModel && { model: codexModel }),
             ...(engine === 'codex' && codexReasoningEffort && { codexReasoningEffort }),
+            ...(engine === 'grok' && { model: grokModel && grokModel !== 'grok-build' ? grokModel : GROK_DEFAULT_MODEL }),
+            ...(engine === 'grok' && { grokReasoningEffort: grokReasoningEffort || GROK_DEFAULT_REASONING }),
             // Plan mode: only meaningful on a claude engine.
             // When unchecked, omit → server defaults to bypassPermissions.
             ...(usePlanMode && isClaudeEngine && { permissionMode: 'plan' }),
@@ -794,7 +799,7 @@ export function useChatStream(
         setActiveRun(null);
       }
     },
-    [cwd, engine, planMode, noHistory, outputStyleId, ollamaModel, engineModel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, setMessages, endRun]
+    [cwd, engine, planMode, noHistory, outputStyleId, ollamaModel, engineModel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, setMessages, endRun]
   );
 
   const injectMessage = useCallback(
@@ -811,9 +816,10 @@ export function useChatStream(
         inject: true,
         ...(isPiProvider ? { model: engine === 'ollama' ? ollamaModel : engineModel, noHistory, outputStyleId } : {}),
         ...(engine === 'codex' ? { model: codexModel, codexReasoningEffort, noHistory, outputStyleId } : {}),
+        ...(engine === 'grok' ? { model: grokModel && grokModel !== 'grok-build' ? grokModel : GROK_DEFAULT_MODEL, grokReasoningEffort: grokReasoningEffort || GROK_DEFAULT_REASONING, noHistory, outputStyleId } : {}),
       }));
     },
-    [cwd, engine, ollamaModel, engineModel, codexModel, codexReasoningEffort, noHistory, outputStyleId]
+    [cwd, engine, ollamaModel, engineModel, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, noHistory, outputStyleId]
   );
 
   return {

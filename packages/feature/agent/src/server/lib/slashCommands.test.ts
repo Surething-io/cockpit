@@ -43,6 +43,30 @@ afterAll(() => {
 });
 
 describe('resolveCommandPrompt', () => {
+  it.each(['qa', 'spec'])('lists and dispatches /%s as a visible builtin', async (name) => {
+    const { listBuiltinSkillsMeta } = await import('./builtinSkills');
+    expect(listBuiltinSkillsMeta()).toContainEqual({
+      name,
+      description: expect.any(String),
+      hidden: false,
+    });
+    const { listBuiltinSkills } = await import('@cockpit/feature-skills/server/lib/builtinSkillsList');
+    expect(await listBuiltinSkills()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: `builtin:${name}`, name, valid: true }),
+    ]));
+
+    const skillFile = path.join(cockpitHome, 'skills', name, 'SKILL.md');
+    expect(resolveCommandPrompt(`/${name} define the sidebar behavior`)).toBe([
+      `[${name}] define the sidebar behavior`,
+      '',
+      'Read these skill files first, then act accordingly:',
+      `- ${name}: ${skillFile}`,
+    ].join('\n'));
+    expect(fs.readFileSync(skillFile, 'utf-8')).toBe(
+      fs.readFileSync(path.join(process.cwd(), 'skills', name, 'SKILL.md'), 'utf-8'),
+    );
+  });
+
   it('delegates every registered @bot line to a subagent and lists its BOT.md', () => {
     const out = resolveCommandPrompt('@product check the roadmap\n\n@finance review the budget\nwith Q3 numbers');
     const builtin = (name: string) => path.join(cockpitHome, 'skills', name, 'SKILL.md');

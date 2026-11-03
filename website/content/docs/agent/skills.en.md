@@ -1,4 +1,4 @@
-**Skills** are short prompts you trigger with `/` in any Agent tab — each one rewires how the AI works on a single reply. OpenCockpit ships **12 built-in Skills** (the `/qa /fx /ex /go /cg /cc /cr` modes, plus `/html /new-branch /skillify /ss /dl`); you can also write your own as `SKILL.md` files and install them the same way. Both flavours live in the same `/` menu.
+**Skills** are short prompts you trigger with `/` in any Agent tab — each one rewires how the AI works on a single reply. OpenCockpit ships **14 visible built-in Skills** (the `/qa /spec /fx /ex /go /cg /cc /cr` modes, plus `/html /new-branch /skillify /ss /dl /bot`); you can also write your own as `SKILL.md` files and install them the same way. Both flavours live in the same `/` menu.
 
 > Don't confuse these with the slash menu inside **Notes** (the project-notes editor), which is a formatter palette for headings, lists, tables and so on. The chat input only recognises Skills — typing `/` there opens a menu listing the built-ins plus any installed `/skill-name`.
 
@@ -6,20 +6,22 @@
 
 | Command | Intent | Asks back? | Writes code? |
 |---|---|---|---|
-| **`/qa`** | Requirement clarification | ✅ Yes | ❌ No |
-| **`/fx`** | Bug evidence-chain analysis | ❌ | ❌ |
-| **`/ex`** | Heavy structured discussion | ❌ | ❌ |
-| **`/go`** | Execution / landing mode | ❌ | ✅ Yes, with self-verification |
+| **`/qa`** | Lean PRD: goals, scope, assumptions, and decisions | For open decisions | ❌ No |
+| **`/spec`** | Implementation-ready specification | ✅ For material decisions | ❌ No |
+| **`/fx`** | Root-cause evidence, fix options, and verification | For fix decisions | ❌ |
+| **`/ex`** | Evidence-backed deep analysis | ❌ | ❌ |
+| **`/go`** | Implement agreed work, verify slices, and log decisions | For blockers or costly choices | ✅ Yes |
 | **`/cg`** | CodeGraph project exploration | ❌ | ❌ |
-| **`/cc`** | End-to-end verification via `cockpit` CLI (browser + terminal bubbles) | ❌ | ❌ (drives bubbles, not source edits) |
+| **`/cc`** | Cockpit CLI: browsers, terminal observation, codegraph | If the target remains unclear | ❌ (operates the CLI) |
 | **`/cr`** | Full code review (static + dynamic) | ❌ | ❌ (produces findings, no edits) |
-| **`/html`** | Build an interactive local React app wired to the [bash SDK](/en/docs/agent/html-apps/) | ❌ | ✅ Yes (writes the app) |
-| **`/new-branch`** | Cut a clean branch off the latest `origin/main` | ❌ | ❌ (git only) |
-| **`/skillify`** | Distil this conversation's workflow into a reusable Skill | ❌ | ✅ Yes (writes the SKILL.md) |
+| **`/html`** | Build an interactive local React app wired to the [bash SDK](/en/docs/agent/html-apps/) | Confirms the app and directory first | ✅ Yes |
+| **`/new-branch`** | Cut and verify a clean branch from the latest `origin/main` | If naming or working-tree state needs a choice | ❌ (git only) |
+| **`/skillify`** | Assess and distil a proven workflow into a reusable Skill | For the save directory if missing | ✅ If worth extracting |
 | **`/ss`** | Find a past session — any project, engine or date — from one sentence | ❌ | ❌ (search only) |
-| **`/dl`** | Delegate a sub-task to a new session in any directory, on any engine, without waiting | ❌ | ❌ (the child session does the work) |
+| **`/dl`** | Delegate to a new session; return immediately or wait with `--wait` | If required task details are missing | The child performs the task |
+| **`/bot`** | Create and register a Bot with long-term context | Confirms role, name, and directory first | Writes Bot files |
 
-The first seven are *modes* — they change how the AI works for one reply — and each gets a section below. The last five are one-shot jobs; their SKILL.md carries the full instructions, so there is nothing to configure. `/ss` and `/dl` also get short sections below, since they work across sessions.
+The first eight are *modes* — they change how the AI works for one reply — and each gets a section below. The remaining six are task commands; their SKILL.md carries the full instructions, so there is nothing to configure. `/ss` and `/dl` also get short sections below, since they work across sessions.
 
 ## `/qa` — Clarify before changing anything
 
@@ -31,11 +33,21 @@ Use when you're about to ask for a code change but the request is still half-bak
 
 The AI will:
 
-1. State what it thinks you want.
-2. List the ambiguous parts.
-3. Ask numbered questions, expecting your answers before touching any file.
+1. Produce a lean PRD covering the problem, goal, success criteria, scope, constraints, and assumptions.
+2. Present unresolved decisions with numbered options, tradeoffs, and a recommendation.
+3. On answers, return only changed requirements and remaining open decisions.
 
-It follows KISS and **never writes code in this mode**. The output is understanding + questions only. This is the right entry point for any non-trivial feature.
+This mode clarifies what and why; it does not design the solution or write code. Use `/spec` when the requirements need implementation-ready detail.
+
+## `/spec` — Specify agreed requirements
+
+Use when the intent is agreed and development needs explicit behavior, contracts, boundaries, and acceptance criteria. A `/qa` brief, a document, or the current conversation can supply the input; `/qa` is optional.
+
+```text
+/spec Turn the agreed sidebar requirements into a specification
+```
+
+The AI checks relevant integration assumptions, links acceptance scenarios to behavior rules, and asks only about unresolved material decisions. It does not implement the feature. Output stays in the conversation unless you request a saved document; answering decisions does not authorize implementation.
 
 ## `/fx` — Build a bug evidence chain
 
@@ -50,19 +62,19 @@ The AI will:
 1. Form a hypothesis.
 2. Inspect the code paths involved.
 3. Lay out the evidence — what triggered what, line by line.
-4. Propose minimal repro and root cause without suggesting a fix yet.
+4. Identify the root cause and blast radius, compare fix options, and describe how to verify a fix. Unverified links stay explicitly labelled as hypotheses; this mode makes no code changes.
 
 Pair with `/go` once you've agreed on the diagnosis.
 
-## `/ex` — Deep structured discussion
+## `/ex` — Deep analysis, answer first
 
-Use when you want analysis without being interrupted by clarification questions. `/ex` is `/qa` minus the asking-back loop — it produces a long, structured discussion document.
+Use when a complex question needs an evidence-backed conclusion without clarification pauses. The AI gives the answer first, then cited findings, adding options, risks, and pending points where relevant. It marks missing information and its impact, keeps analyzing, and makes no code changes.
 
 ```text
 /ex compare three caching strategies for this endpoint
 ```
 
-Good for design docs, RFCs, comparative analysis.
+Good for complex questions, comparing approaches, and explaining how something works. Simple questions get a direct answer; follow-ups return only what changed.
 
 ## `/go` — Land the change
 
@@ -74,13 +86,13 @@ Use when the plan is agreed and you want the AI to actually do the work.
 
 `/go` mode:
 
-1. Splits the work into MVP-sized stages, each one self-contained and verifiable.
-2. Writes code, runs the verification (typecheck, tests, hit the endpoint, etc.), emits a delivery summary + verification report.
-3. **Advances to the next stage automatically** — no waiting for sign-off between stages.
-4. Stops only for three reasons: a blocking ambiguity (missing API contract), a destructive operation (`git push --force`, drop table, …), or a branching decision the prior research didn't cover.
-5. At the end, runs one end-to-end recap.
+1. Takes a supplied spec or brief, or the agreement in the conversation; asks once if success criteria cannot be inferred.
+2. Implements small slices and verifies each by running commands, requests, or tests.
+3. Retries failed verification at most three times, then marks the slice blocked and continues independent work.
+4. Records reversible choices the spec did not cover; asks about costly choices, destructive operations, or information that blocks progress. Finished slices need no sign-off.
+5. Runs the full user flow and reports its result, the decision-notes link, and residual work. Notes live outside the repository and expire after 30 days untouched.
 
-This is the mode you spend the most actual code-writing time in. Use after `/qa` or `/ex` has converged the plan.
+This is the mode you spend the most actual code-writing time in. Use after requirements or analysis have converged, with `/spec` when explicit behavior and acceptance rules are needed.
 
 ## `/cg` — Explore the project as a graph
 
@@ -94,7 +106,7 @@ Use when you need to understand code structure without grepping everything.
 
 The graph builds itself the first time you ask. No setup, no project config. Works on TypeScript / JavaScript / Python / Go / Rust today.
 
-## `/cc` — End-to-end verification via Cockpit CLI
+## `/cc` — Operate Cockpit through the CLI
 
 Use when the code change is done and you want the AI to **actually run it**, click through the UI, watch network traffic, and confirm the behaviour really works.
 
@@ -105,7 +117,7 @@ Use when the code change is done and you want the AI to **actually run it**, cli
     and the UI should refresh in real time
 ```
 
-`/cc` switches the AI into a mode that **uses the Cockpit CLI** — `cockpit terminal <id> output` to read terminal output, `cockpit browser <id> click/type/network` to drive a Browser bubble, etc. You need to give it the **short IDs** (click the badge on the terminal / browser bubble's header) so it knows which bubbles to drive.
+`/cc` switches the AI into a mode that **uses the Cockpit CLI** — `cockpit terminal <id> output` to read terminal output, `cockpit browser <id> click/type/network` to drive a Browser bubble, etc. Give **short IDs** when available. Otherwise the AI lists project bubbles and matches their titles or URLs; it can open a browser bubble itself and closes those it creates when done. Terminal observation is read-only. It defaults to `cockpit` (production); use `/cc dev …` or explicitly name `cockpit-dev` for development.
 
 Typically chained after [`/go`](#go-land-the-change) — `/go` writes the code, `/cc` verifies it actually works in the rendered UI. Full walkthrough in [Quickstart](/en/docs/get-started/quickstart/#end-to-end-verification--console---cc).
 
@@ -117,9 +129,9 @@ Use when a PR is done and you want one complete review pass — both static corr
 /cr review the current branch against main
 ```
 
-`/cr` splits the review into two tracks: **static triangulation** (cross-locate each change against three references — intent / input domain / surrounding contracts) sweeps every change; slices touching state / timing / concurrency additionally run **dynamic derivation** (draw a state diagram + timeline, evaluate 6 classes of dynamic risk). The actual review runs in clean subagents while the main session only dispatches and merges, ending with findings ranked by impact × probability plus a gradient chart.
+`/cr` splits the review into two tracks: **static triangulation** (cross-locate each change against three references — intent / input domain / surrounding contracts) sweeps every change; slices touching state / timing / concurrency additionally run **dynamic derivation** (draw a state diagram + timeline, evaluate 6 classes of dynamic risk). The actual review runs in clean subagents while the main session only dispatches and merges, ending with a verdict, a solution diagram, severity-ranked findings, and a coverage report.
 
-It's a self-contained methodology with no external tooling; trivial changes skip the dynamic track and get a static-only report. Typically paired with [`/go`](#go-land-the-change) — `/go` lands the change, `/cr` does the quality pass.
+It's a self-contained methodology with no external tooling; tiny changes use one reviewer, while the default separates static and dynamic review. Dynamic modeling depends on the surfaces touched; `hard` explicitly requests one reviewer per dynamic slice. Typically paired with [`/go`](#go-land-the-change) — `/go` lands the change, `/cr` does the quality pass.
 
 ## `/ss` — Find a past session
 
@@ -133,7 +145,7 @@ The AI doesn't search your sentence verbatim. It expands it into a few keywords 
 
 Under the hood Cockpit keeps a text-only copy of each session's prompts and replies — no tool output, system reminders or images — under `<data-dir>/search-corpus`, updated incrementally, and searches it with ripgrep, so short Chinese words like `快照` match too. Subagent transcripts are not included. The first search on a machine can take a few seconds while that copy is built. Endpoint: `GET /api/sessions/search`.
 
-## `/dl` — Delegate without waiting
+## `/dl` — Delegate, optionally wait
 
 Use when a piece of work belongs in another directory, suits another engine, or simply shouldn't block the conversation you're in.
 
@@ -142,6 +154,8 @@ Use when a piece of work belongs in another directory, suits another engine, or 
 ```
 
 The AI writes a self-contained brief (the child sees none of your conversation), starts a brand-new session in the target directory on the chosen engine, and gets a receipt back at once — engine, directory, session id, link. It repeats the receipt in its reply and carries on. The child runs on its own like any other session; open the link any time to watch it or take over.
+
+Add `--wait` to wait for the child and continue with its result in the same turn. Without the flag, the command returns immediately.
 
 Later, ask "how did that delegated task go?". The AI finds the receipt — in this conversation, or through the `/ss` flow — and checks the child: `running`, `done`, `failed`, or `incomplete` (stopped or interrupted; open it and continue), plus its last reply.
 
@@ -170,12 +184,13 @@ The right entry point depends on what you have:
 - If you have a symptom → `/fx`
 - If you have a question about the code → `/cg`
 - If you want analysis without interruption → `/ex`
+- If requirements need behavior, contracts, and acceptance criteria → `/spec`
 - If the plan is ready → `/go`
 - If a change is done and needs review → `/cr`
 - If you need an earlier conversation back → `/ss`
 - If the work belongs in another project or on another engine → `/dl`
 
-> The 12 built-in Skills above are the complete set Cockpit ships. For repeated workflows of your own, see [Custom Skills](#custom-skills) below — they show up in the same `/` menu as `/skill-name`.
+> The table above lists the visible built-in Skills. Internal `bot-run` and `bot-turn` workflows are hidden from the `/` menu. For repeated workflows of your own, see [Custom Skills](#custom-skills) below — they show up in the same `/` menu as `/skill-name`.
 
 ## Custom Skills
 
@@ -233,7 +248,7 @@ To remove a skill, hover its card and click the trash icon.
 
 Once installed, just type `/` in any Agent tab. The chat dropdown shows two sections:
 
-- **Commands** — the seven built-in AI mode commands.
+- **Commands** — visible built-in commands.
 - **Skills** — everything you've installed, with their icons and argument hints.
 
 Type to filter, then press Enter or Tab to insert. The chat input gets `/your-skill-name ` (with a trailing space, ready for arguments). Type any arguments you want, press Enter to send.

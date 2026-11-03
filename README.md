@@ -50,7 +50,7 @@ Cockpit is the instrument panel. It does **not** replace Claude Code; it stands 
 | Agent can't reach your browser / DB | **Smart Bubbles**: Chrome, PostgreSQL, MySQL, Redis — drivable by the agent |
 | Reading an unfamiliar repo means a 90-min file-tree scavenger hunt | **Code Map** chip view — caller / callee pins, click to walk the call graph |
 | Reviewing AI output is friction | Line-level comments on any file, send any comment back as AI context |
-| Same "do X but don't change code" prompt every day | **Slash modes** `/qa /fx /ex /go /cg /cc /cr` + custom `SKILL.md` via the Skills sidebar |
+| Same "do X but don't change code" prompt every day | **Slash modes** `/qa /spec /fx /ex /go /cg /cc /cr` + custom `SKILL.md` via the Skills sidebar |
 | No automation hooks | One-time / interval / cron-based **scheduled tasks** |
 | "Cloud relay" trust concerns | **Fully local**. No telemetry. API keys (DeepSeek / GLM / Kimi) stay in `~/.cockpit/<engine>/credentials.json` on your laptop. |
 
@@ -131,13 +131,14 @@ An honest snapshot as of July 2026 — each tool wins somewhere. Spotted an erro
 
 ### Slash modes — change the agent's posture
 
-- `/qa` — **Clarify-only**: restate, ask back, never code
-- `/fx` — **Diagnose-only**: bug evidence chain, never edit
-- `/ex` — **Explore**: 6-step structured discussion skeleton (study → diverge → converge → re-diverge → iterate-verify → summarize)
-- `/go` — **Land**: take a converged plan, slice into MVP stages, write + self-verify per stage, recap at end
-- `/cg` — **CodeGraph** project exploration: 10 HTTP endpoints for symbol / callers / impact / co-edit / risk / affected queries (precise where grep is fuzzy)
-- `/cc` — **Cockpit CLI**: drive the cockpit CLI surface — codegraph subcommands, terminal observation, browser automation
-- `/cr` — **Code review**: full PR review — static triangulation (intent / input domain / surroundings) + dynamic modelling (state diagram + timeline → 6 risk classes), findings ranked by impact × probability
+- `/qa` — **Clarify requirements**: produce a lean PRD with goals, scope, assumptions, and decisions; no solution design or code
+- `/spec` — **Specify**: turn agreed requirements into behavior, contracts, and acceptance criteria; no implementation
+- `/fx` — **Diagnose**: trace evidence to the root cause, then give blast radius, fix options, and verification steps; no code changes
+- `/ex` — **Deep analysis**: answer first, then evidence, options, and open points; no clarification pauses or code changes
+- `/go` — **Implement**: build agreed work in small verified slices, record decisions the spec did not cover, and report blockers and residuals
+- `/cg` — **Explore code**: use CodeGraph symbols, call relations, and co-edit history to locate code, trace calls, and assess change impact
+- `/cc` — **Cockpit CLI**: open and control browser bubbles, observe terminal output read-only, and query the codegraph; production instance by default
+- `/cr` — **Code review**: independently review static correctness and state, timing, and concurrency; report a solution diagram, severity-ranked findings, and coverage; `hard` fans out by dynamic slice
 - **Custom**: drop any `SKILL.md` and add it via the Skills sidebar — it auto-appears in the slash autocomplete menu (see [Skills](#skills--extensibility))
 
 ### Scheduled tasks — Cron for AI

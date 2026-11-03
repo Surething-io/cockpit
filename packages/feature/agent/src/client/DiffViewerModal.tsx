@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Effect } from 'effect';
 import { useEffectQuery } from '@cockpit/effect-react';
-import { Portal, blurActiveElement, ChangeClassChip, MenuContainerProvider } from '@cockpit/shared-ui';
+import { Portal, blurActiveElement, ChangeClassChip, MenuContainerProvider, ResizableSidebar } from '@cockpit/shared-ui';
 import { classifyPath, classifyFiles, type ChangeClass } from '@cockpit/shared-utils';
 import { relativeToRoot } from '@cockpit/shared-utils/pathWithin';
 import { COLUMN_HEADER_ROW } from './columnHeaderRow';
@@ -855,7 +855,7 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
                 <div className="flex-1 flex overflow-hidden">
                   {/* File tree (reuses explorer's GitFileTree) */}
                   {showLeft && (
-                    <div className="w-72 flex-shrink-0 border-r border-border overflow-y-auto overflow-x-hidden">
+                    <ResizableSidebar>
                       {aggregateLoading ? (
                         <div className="p-4 text-center text-muted-foreground text-sm">
                           {t('diffViewer.aggregateLoading')}
@@ -900,13 +900,13 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
                         }}
                       />
                       )}
-                    </div>
+                    </ResizableSidebar>
                   )}
 
                   {/* Diff: split (side-by-side) or unified — toggled via the
                       meta bar. Both support compact / preview / comments /
                       search. */}
-                  <div className="flex-1 overflow-hidden">
+                  <div className="flex-1 min-w-0 overflow-hidden">
                     {selectedFile ? (
                       selectedFile.isImage ? (
                         <ImageDiffView

@@ -49,6 +49,7 @@ export { useJsonSearch, JsonSearchBar } from './useJsonSearch';
 // Tooltip primitives
 export { Tooltip } from './Tooltip';
 export { TooltipProvider } from './TooltipProvider';
+export { ResizableSidebar } from './ResizableSidebar';
 
 // Session/project number badge colours (tab bar, sidebar, every session list)
 export { sessionNumberClass, sessionNumberRing, sessionNumberWash, type SessionNumberStatus } from './sessionNumberStyles';

@@ -13,7 +13,7 @@ import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { fetchCommitDiff } from './effect/gitClient';
 import { isHtmlFile, isMarkdownFile } from './toolCallUtils';
 import { JsonPreviewModal } from './fileBrowser/JsonPreviewModal';
-import { useJsonSearch, blurActiveElement, useAIBridge } from '@cockpit/shared-ui';
+import { useJsonSearch, blurActiveElement, useAIBridge, ResizableSidebar } from '@cockpit/shared-ui';
 
 // Types
 export interface CommitInfo {
@@ -303,7 +303,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
       {/* File tree + Diff container */}
       <div className="flex-1 flex overflow-hidden">
         {/* File tree */}
-        <div className="w-72 flex-shrink-0 border-r border-border overflow-y-auto overflow-x-hidden">
+        <ResizableSidebar>
           {isLoadingFiles ? (
             <div className="p-4 text-center text-muted-foreground text-sm">{t('commitDetail.loadingFiles')}</div>
           ) : (
@@ -322,10 +322,10 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
               explainDisabled={aiBridge?.isLoading}
             />
           )}
-        </div>
+        </ResizableSidebar>
 
         {/* Diff view */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 min-w-0 overflow-hidden">
           {isLoadingDiff ? (
             <div className="h-full flex items-center justify-center text-muted-foreground text-sm">{t('commitDetail.loadingDiff')}</div>
           ) : fileDiff ? (

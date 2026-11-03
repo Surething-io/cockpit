@@ -107,11 +107,18 @@ export class GrokAcpClient {
 
   dispose(force = false): void {
     this.fail(new Error('Grok ACP connection closed'));
-    if (!this.child.pid) return;
+    if (!this.child.pid || this.child.exitCode !== null || this.child.signalCode !== null) return;
     try {
       if (process.platform === 'win32') {
-        const killer = spawn('taskkill', ['/pid', String(this.child.pid), '/T', ...(force ? ['/F'] : [])], { stdio: 'ignore' });
-        killer.on('error', () => this.child.kill());
+        // Windows console processes cannot be terminated reliably without /F.
+        // Match the Codex adapter: kill the whole tree immediately instead of
+        // waiting for a non-forced taskkill that leaves tool processes alive.
+        const killer = spawn('taskkill', ['/pid', String(this.child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+        const fallback = (): void => {
+          if (this.child.exitCode === null && this.child.signalCode === null) this.child.kill();
+        };
+        killer.on('error', fallback);
+        killer.on('exit', (code) => { if (code !== 0) fallback(); });
       } else process.kill(-this.child.pid, force ? 'SIGKILL' : 'SIGTERM');
     } catch { /* The process group has already exited. */ }
   }

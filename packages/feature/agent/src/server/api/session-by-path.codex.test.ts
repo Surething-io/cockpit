@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import { join } from 'path';
@@ -20,6 +20,14 @@ vi.mock('../../effect/transcriptIndexLive', async (importOriginal) => {
     },
   };
 });
+
+let POST: typeof import('./session-by-path').POST;
+
+// Load the route and its Effect runtime once as suite setup. Cold transforms on
+// shared CI runners can exceed the per-request test budget before any IO runs.
+beforeAll(async () => {
+  ({ POST } = await import('./session-by-path'));
+}, 30_000);
 
 function writeCodexTranscript(sessionId: string, lines: unknown[]): string {
   const dir = fs.mkdtempSync(join(os.tmpdir(), 'codex-session-by-path-'));
@@ -53,7 +61,6 @@ describe('session-by-path codex history', () => {
       { type: 'response_item', payload: { type: 'function_call_output', call_id: 'call_1', output: 'ok' } },
     ]);
 
-    const { POST } = await import('./session-by-path');
     const response = await POST(
       new Request('http://test.local/api/session-by-path', {
         method: 'POST',
@@ -103,7 +110,6 @@ describe('session-by-path codex history', () => {
       },
     ]);
 
-    const { POST } = await import('./session-by-path');
     const response = await POST(
       new Request('http://test.local/api/session-by-path', {
         method: 'POST',
@@ -148,7 +154,6 @@ describe('session-by-path codex history', () => {
       },
     ]);
 
-    const { POST } = await import('./session-by-path');
     const response = await POST(
       new Request('http://test.local/api/session-by-path', {
         method: 'POST',
@@ -182,7 +187,6 @@ describe('session-by-path codex history', () => {
       },
     ]);
 
-    const { POST } = await import('./session-by-path');
     const response = await POST(
       new Request('http://test.local/api/session-by-path', {
         method: 'POST',
@@ -244,7 +248,6 @@ const waitOutput = (callId: string, status: Record<string, Record<string, string
 });
 
 const loadSession = async (sessionId: string, extra: Record<string, unknown> = {}) => {
-  const { POST } = await import('./session-by-path');
   const response = await POST(
     new Request('http://test.local/api/session-by-path', {
       method: 'POST',
@@ -262,7 +265,6 @@ describe('session-by-path codex paging', () => {
     { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: `a${n}` }] } },
   ];
   const post = async (body: Record<string, unknown>) => {
-    const { POST } = await import('./session-by-path');
     const response = await POST(
       new Request('http://test.local/api/session-by-path', { method: 'POST', body: JSON.stringify(body) })
     );
@@ -442,7 +444,6 @@ describe('session-by-path codex subagents', () => {
       spawnCall('call_s1', 'explorer', 'go'),
     ]);
 
-    const { POST } = await import('./session-by-path');
     const response = await POST(
       new Request('http://test.local/api/session-by-path', {
         method: 'POST',
@@ -1052,7 +1053,6 @@ describe('session-by-path codex tool types', () => {
     stashCodexRollout(filePath);
     fs.appendFileSync(filePath, [say('user', 'second'), say('assistant', 'two')].map((l) => JSON.stringify(l)).join('\n') + '\n');
 
-    const { POST } = await import('./session-by-path');
     const read = async (ifFingerprint?: string) =>
       (await POST(
         new Request('http://test.local/api/session-by-path', {

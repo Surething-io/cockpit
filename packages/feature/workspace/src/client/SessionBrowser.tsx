@@ -11,7 +11,7 @@ import {
   loadSessionsByProject,
 } from './effect/workspaceClient';
 import { FolderPicker } from './FolderPicker';
-import { EngineBadge, SessionNumberBadge, type SessionListItem } from '@cockpit/feature-agent';
+import { SessionTitle, EngineBadge, SessionNumberBadge, type SessionListItem } from '@cockpit/feature-agent';
 
 // The picker is one column of names, so the full-width board would be mostly
 // empty space; it gets its own compact shell, never wider than the board (so
@@ -361,13 +361,13 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject,
                           <div
                             key={session.path}
                             onClick={() => handleSessionClick(project.fullPath, session)}
-                            className="p-3 rounded border border-border hover:border-brand hover:shadow-lv2 cursor-pointer transition-all"
+                            className="group/session-title p-3 rounded border border-border hover:border-brand hover:shadow-lv2 cursor-pointer transition-all"
                           >
                             {/* Session Title + Engine Badge */}
                             <div className="flex items-center gap-1.5 mb-1">
                               <EngineBadge engine={session.engine} />
-                              <h4 className="text-xs font-medium text-foreground truncate" data-tooltip={session.title}>
-                                {session.title}
+                              <h4 className="flex flex-1 min-w-0 items-center gap-1 text-xs font-medium text-foreground">
+                                <SessionTitle cwd={project.fullPath} sessionId={session.sessionId || session.path.split('/').pop()?.replace(/\.jsonl$/, '') || ''} title={session.title} titleRevision={session.titleRevision} />
                               </h4>
                               {number && <SessionNumberBadge projectNumber={mappedProjectNumber} sessionNumber={sessionNumber} bot={session.bot} className="ml-auto" />}
                             </div>

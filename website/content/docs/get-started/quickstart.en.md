@@ -90,46 +90,48 @@ Open the project (on `main`). The **top bar** of the Cockpit window (the TabMana
 
 Now the same Cockpit window can hold 5 project tabs in parallel: 3 for feature work, 2 for bug-fixing — each its own checkout, its own chat session, no stepping on each other.
 
-### Feature work — `/qa` → `/cg` → `/ex` → `/go` → `/cr`
+### Feature work — `/qa` → `/spec` → `/design` → `/go` → `/cr`
 
-1. **`/qa`** — describe the requirement. Claude switches to **clarification mode**: instead of jumping into code, it asks back about ambiguous points.
+This shows the full workflow; simple changes can skip stages that add no useful information. The first three stages clarify requirements, specify behavior, and design the implementation without implementing the feature. Use `/go` explicitly to start coding.
+
+1. **`/qa`** — clarify the requirement. The AI produces a lean PRD covering goals, scope, assumptions, and material choices that need your input.
 
    ```text
    /qa add a "related products" module to the PDP, sourced from the
    top-10-viewed items in the same category
    ```
 
-2. **Highlight comments** — select a key sentence in the AI's reply and add a comment; Cockpit numbers them in order (1, 2, 3, …). Each comment stays **local-only as a pending note**; **the next chat message you send automatically carries every pending comment (with the anchored text) along to the AI**.
+2. **Highlight comments** — select a key sentence in the AI's reply and add a comment; Cockpit numbers them in order. Comments stay local until your next chat message automatically carries all pending comments and their anchored text to the AI. Or type in the **Send to AI** input that appears on selection and press Enter to send a follow-up immediately.
 
-   To fire a fresh request directly from a selection instead of waiting, the "Send to AI" small input that appears when you highlight text in the AI's reply lets you type a follow-up there and Enter — the highlighted text plus all pending comments go out as the next prompt.
-
-3. **`/cg`** — impact assessment, powered by the [CodeGraph](/en/docs/explorer/search/#codegraph) index.
+3. **`/spec`** — turn agreed requirements into behavior rules, contracts, boundaries, and acceptance criteria for development and testing.
 
    ```text
-   /cg which files, APIs, and tests does this change touch?
+   /spec specify the related-products module, including behavior and acceptance
+   criteria for fewer than 10 products, no results, and loading failures
    ```
 
-4. **`/ex`** — have the AI summarise its understanding.
+4. **`/design`** — ground the technical approach in existing code, explain responsibilities, data flow, and material tradeoffs, then order implementation steps and verification. Use `/cg` first if you need separate impact exploration through [CodeGraph](/en/docs/explorer/search/#codegraph).
 
    ```text
-   /ex summarise your understanding of the requirement and how you plan to implement it
+   /design trace the product query and detail-page data flow, then propose
+   a technical design, implementation order, and verification for the spec above
    ```
 
-5. **Highlight again** — comment on the summary to align on disputed points.
+5. **Highlight again** — comment on the specification or technical design to resolve disagreements; carry confirmed decisions forward without reopening them.
 
-6. **`/go`** — ship it. Claude breaks the change into MVP stages, writes code, self-verifies each stage, and **finishes with a decision tree** showing what path it took at each branch and why.
+6. **`/go`** — implement agreed work in small verified slices, record decisions the specification did not cover, and report results, blockers, and residuals.
 
    ```text
-   /go land the plan above
+   /go implement the specification and technical design above
    ```
 
-7. **`/cr`** — let the AI review the change first: static correctness plus the runtime behaviour a line-by-line read misses.
+7. **`/cr`** — ask the AI to check static correctness and runtime behavior involving state, timing, and concurrency, and report findings.
 
    ```text
    /cr review this change
    ```
 
-8. **Code review** — switch to Explorer's **Status** tab to walk the diff file-by-file. Unhappy with something? **Highlight-comment** (multiple rounds); comments support a "Send to AI" action that kicks off a fix-up pass — see [Comments](/en/docs/explorer/file-tree/#comments).
+8. **Code review** — switch to Explorer's **Status** tab to walk the diff file-by-file. Highlight-comment on anything that needs adjustment and use "Send to AI" for a fix-up pass — see [Comments](/en/docs/explorer/file-tree/#comments).
 
 ### End-to-end verification — Console + `/cc`
 
@@ -149,7 +151,7 @@ Once the code's in, run it locally:
 
    `/cc` has the AI drive your terminal and browser bubbles directly through the `cockpit` CLI, capture network traffic and DOM, then hand you the evidence.
 
-### Bug fixing — `/fx` → `/cg` → `/ex` → `/go`
+### Bug fixing — `/fx` → `/cg` → `/design` → `/go`
 
 Switch to another worktree's tab to chase a bug. The loop mirrors feature work, just entering through `/fx`:
 
@@ -168,7 +170,12 @@ Switch to another worktree's tab to chase a bug. The loop mirrors feature work, 
    /cg look at PaginatedList's callers and any N+1 query risk
    ```
 
-4. **`/ex`** — output a fix plan with trade-offs.
+4. **`/design`** — use the root cause and code evidence to design the fix, including preserved behavior, implementation steps, and regression checks. A simple fix with an established approach can go straight to `/go`.
+
+   ```text
+   /design design a fix for the root cause above, including impact,
+   implementation steps, and checks that pagination behavior is preserved
+   ```
 
 5. **Highlight again** — align on the fix.
 
@@ -177,7 +184,7 @@ Switch to another worktree's tab to chase a bug. The loop mirrors feature work, 
 ### What you used
 
 - **worktrees** — 5 parallel work streams, features and bugs side by side
-- **Agent** — six built-in slash commands (`/qa /cg /ex /go /fx /cc`) plus highlight-comment for multi-round alignment
+- **Agent** — built-in slash commands (`/qa /spec /design /go /cr /fx /cg /cc`) plus highlight-comment for multi-round alignment
 - **Explorer** — **Status** tab plus comment-driven fix-up loop
 - **Console** — zsh service runner + Browser bubble + each bubble's **short-ID badge** so the AI can close the loop through the `cockpit` CLI
 
@@ -212,5 +219,5 @@ rm -rf ~/.cockpit
 ## What's next
 
 - [Engines Overview](/en/docs/agent/engines/) — add Codex, DeepSeek, GLM, Kimi, or Ollama as alternative tabs
-- [Skills](/en/docs/agent/skills/) — what `/qa /fx /ex /go /cg /cc /cr` actually do
+- [Skills](/en/docs/agent/skills/) — what `/qa /spec /design /fx /ex /go /cg /cc /cr` actually do
 - [CLI Reference](/en/docs/reference/cli/) — drive bubbles from external scripts

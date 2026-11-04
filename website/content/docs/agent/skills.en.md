@@ -1,4 +1,4 @@
-**Skills** are short prompts you trigger with `/` in any Agent tab — each one rewires how the AI works on a single reply. OpenCockpit ships **14 visible built-in Skills** (the `/qa /spec /fx /ex /go /cg /cc /cr` modes, plus `/html /new-branch /skillify /ss /dl /bot`); you can also write your own as `SKILL.md` files and install them the same way. Both flavours live in the same `/` menu.
+**Skills** are short prompts you trigger with `/` in any Agent tab — each one rewires how the AI works on a single reply. OpenCockpit ships **15 visible built-in Skills** (the `/qa /spec /design /fx /ex /go /cg /cc /cr` modes, plus `/html /new-branch /skillify /ss /dl /bot`); you can also write your own as `SKILL.md` files and install them the same way. Both flavours live in the same `/` menu.
 
 > Don't confuse these with the slash menu inside **Notes** (the project-notes editor), which is a formatter palette for headings, lists, tables and so on. The chat input only recognises Skills — typing `/` there opens a menu listing the built-ins plus any installed `/skill-name`.
 
@@ -8,6 +8,7 @@
 |---|---|---|---|
 | **`/qa`** | Lean PRD: goals, scope, assumptions, and decisions | For open decisions | ❌ No |
 | **`/spec`** | Implementation-ready specification | ✅ For material decisions | ❌ No |
+| **`/design`** | Code-grounded technical design and implementation plan | For material decisions | ❌ No |
 | **`/fx`** | Root-cause evidence, fix options, and verification | For fix decisions | ❌ |
 | **`/ex`** | Evidence-backed deep analysis | ❌ | ❌ |
 | **`/go`** | Implement agreed work, verify slices, and log decisions | For blockers or costly choices | ✅ Yes |
@@ -21,7 +22,7 @@
 | **`/dl`** | Delegate to a new session; return immediately or wait with `--wait` | If required task details are missing | The child performs the task |
 | **`/bot`** | Create and register a Bot with long-term context | Confirms role, name, and directory first | Writes Bot files |
 
-The first eight are *modes* — they change how the AI works for one reply — and each gets a section below. The remaining six are task commands; their SKILL.md carries the full instructions, so there is nothing to configure. `/ss` and `/dl` also get short sections below, since they work across sessions.
+The first nine are *modes* — they change how the AI works for one reply — and each gets a section below. The remaining six are task commands; their SKILL.md carries the full instructions, so there is nothing to configure. `/ss` and `/dl` also get short sections below, since they work across sessions.
 
 ## `/qa` — Clarify before changing anything
 
@@ -48,6 +49,18 @@ Use when the intent is agreed and development needs explicit behavior, contracts
 ```
 
 The AI checks relevant integration assumptions, links acceptance scenarios to behavior rules, and asks only about unresolved material decisions. It does not implement the feature. Output stays in the conversation unless you request a saved document; answering decisions does not authorize implementation.
+
+## `/design` — Design the implementation
+
+Use when the expected behavior is clear but the technical approach and execution steps need to be established. Input can be a SPEC, agreed requirements, or the current conversation; `/qa` and `/spec` are optional.
+
+```text
+/design Design the implementation of the agreed sidebar specification
+```
+
+The AI traces relevant code and contracts, explains responsibilities and material tradeoffs, and produces ordered implementation steps with completion checks and acceptance-linked verification. Technical unknowns are investigated where possible or recorded as prerequisites. Existing SPEC decisions are reused, not reopened; the output scales to the change.
+
+This mode does not implement the feature. Output stays in the conversation unless you request a saved document; answering decisions does not authorize implementation.
 
 ## `/fx` — Build a bug evidence chain
 
@@ -168,7 +181,9 @@ Endpoints: `POST /api/sessions/delegate`, `GET /api/sessions/status`.
 
 ## Pattern: chain modes
 
-A typical end-to-end task chains modes:
+For a feature, use `/qa` → `/spec` → `/design` → `/go` as needed; simple changes can skip stages that add no useful information.
+
+A typical investigation task chains modes:
 
 ```text
 /qa we want to cache the heavy endpoint        ← clarify
@@ -185,6 +200,7 @@ The right entry point depends on what you have:
 - If you have a question about the code → `/cg`
 - If you want analysis without interruption → `/ex`
 - If requirements need behavior, contracts, and acceptance criteria → `/spec`
+- If behavior is clear but the technical approach and steps need design → `/design`
 - If the plan is ready → `/go`
 - If a change is done and needs review → `/cr`
 - If you need an earlier conversation back → `/ss`

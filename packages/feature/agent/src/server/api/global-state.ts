@@ -1,9 +1,10 @@
+import { readProjectTitles } from '../../effect/sessionTitles';
 /**
  * /api/global-state — P8+ migration
  */
 import type { GlobalSessionInfo } from "../../shared/sessionDto"
 import { Effect } from "effect"
-import { GLOBAL_STATE_FILE, readJsonFile } from "@cockpit/shared-utils"
+import { GLOBAL_STATE_FILE, readJsonFile, encodePath } from "@cockpit/shared-utils"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { FSError, ValidationError } from "@cockpit/effect-core"
 import {
@@ -35,11 +36,13 @@ export const GET = handler(() =>
     // first/last user-message preview so the search panel can render the same
     // card layout as ProjectSessionsModal. Each entry reads its transcript once;
     // IO is local (<10ms) so a one-shot read on panel open is acceptable.
+    const encodedProjects = [...new Set(state.sessions.map((s) => encodePath(s.cwd)))];
+    const titleFiles = new Map(yield* Effect.forEach(encodedProjects, (encoded) => readProjectTitles(encoded).pipe(Effect.map((data) => [encoded, data] as const))));
     const sessions = yield* Effect.all(
       state.sessions.map((session) =>
         Effect.promise(() =>
           // Search panel needs the full-text corpus; the WS snapshot omits it.
-          getSessionPreview(session.cwd, session.sessionId, { includeSearchText: true })
+          getSessionPreview(session.cwd, session.sessionId, { includeSearchText: true, titleData: titleFiles.get(encodePath(session.cwd)) })
         ).pipe(
           Effect.map((preview) => {
             // Live title (summary line preferred). The persisted title is a
@@ -51,6 +54,9 @@ export const GET = handler(() =>
                 : (session.title ?? preview.title)
             return {
               ...session,
+              customTitle: preview.customTitle,
+              defaultTitle: preview.defaultTitle,
+              titleRevision: preview.titleRevision,
               title,
               lastUserMessage: preview.lastUserMessage ?? session.lastUserMessage,
               // Disk wins over the value persisted at insert time — same rule as
@@ -58,10 +64,10 @@ export const GET = handler(() =>
               bot: preview.bot ?? session.bot,
               firstMessages: preview.firstMessages,
               lastMessages: preview.lastMessages,
-              // Untruncated full-text corpus for the search panel: cwd + title +
+              // Untruncated body corpus; clients match the effective title separately: cwd +
               // summary + every user message (preview.searchText). Display fields
               // above stay truncated; matching reads this instead.
-              searchText: `${session.cwd}\n${title}\n${preview.searchText}`,
+              searchText: `${session.cwd}\n${preview.searchText}`,
             }
           })
         )

@@ -301,7 +301,7 @@ export function ProjectSidebar({
     setUpdatePopoverOpen(false);
     beginUpdate();
   }, [beginUpdate]);
-  const { pinnedSessions, unpinSession, updateTitle, reorder } = usePinnedSessions();
+  const { pinnedSessions, unpinSession, reorder } = usePinnedSessions();
   const { tasks: scheduledTasks, unreadCount: scheduledUnread, reload: reloadScheduled, pauseTask, resumeTask, triggerTask, deleteTask: deleteScheduledTask, updateTask: updateScheduledTask, markRead: markScheduledRead } = useScheduledTasks();
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -536,7 +536,6 @@ export function ProjectSidebar({
           sessionNumbers={sessionNumbers}
           onSwitchProject={onSwitchProject}
           onUnpin={unpinSession}
-          onUpdateTitle={updateTitle}
           onReorder={reorder}
         />
         {/* Scheduled tasks */}

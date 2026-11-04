@@ -1,5 +1,7 @@
 'use client';
 
+import { SessionTitle, effectiveTitle, useSessionTitleOverrides } from './SessionTitle';
+
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MODAL_SHELL_CLASS_IN_PROJECT } from '@cockpit/shared-ui';
@@ -80,6 +82,7 @@ interface ProjectSessionsModalProps {
  */
 export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession, projectNumber, openSessionIds = [] }: ProjectSessionsModalProps) {
   const { t } = useTranslation();
+  const titleOverrides = useSessionTitleOverrides();
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   // When the list was loaded — the "now" the date groups are cut against. Taken
   // at load rather than at render, so the grouping is stable while the board is
@@ -141,7 +144,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession, pr
 
     if (onSelectSession) {
       // Use onSelectSession callback if provided (adds a new tab in TabManager)
-      onSelectSession(sessionId, session.title);
+      onSelectSession(sessionId, effectiveTitle(titleOverrides, cwd, sessionId, session.title, session.titleRevision));
       onClose();
     } else {
       // Otherwise notify parent Workspace to open
@@ -158,14 +161,15 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession, pr
     if (!searchKeyword) return sorted;
     const keyword = searchKeyword.toLowerCase();
     return sorted.filter((session) => {
+      if (effectiveTitle(titleOverrides, cwd, sessionIdOf(session), session.title, session.titleRevision).toLowerCase().includes(keyword)) return true;
       if (session.searchText !== undefined) return session.searchText.includes(keyword);
       return (
-        session.title.toLowerCase().includes(keyword) ||
+        effectiveTitle(titleOverrides, cwd, sessionIdOf(session), session.title, session.titleRevision).toLowerCase().includes(keyword) ||
         session.firstMessages.some((msg) => msg.toLowerCase().includes(keyword)) ||
         session.lastMessages.some((msg) => msg.toLowerCase().includes(keyword))
       );
     });
-  }, [sessions, searchKeyword]);
+  }, [sessions, titleOverrides, cwd, searchKeyword]);
 
   const groups = useMemo(() => {
     const out: Record<DateGroupKey, SessionInfo[]> = { today: [], yesterday: [], last7Days: [], earlier: [] };
@@ -195,14 +199,14 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession, pr
         key={session.path}
         onClick={() => setSelectedId(sessionId)}
         onDoubleClick={() => openSession(session)}
-        className={`rounded-md px-3 py-2 cursor-pointer transition-colors ${
+        className={`group/session-title rounded-md px-3 py-2 cursor-pointer transition-colors ${
           isSelected ? 'bg-brand/10' : 'hover:bg-hover'
         }`}
       >
         <div className="flex items-center gap-1.5">
           <EngineBadge engine={session.engine} />
-          <span className="text-xs font-medium text-foreground truncate flex-1 min-w-0">
-            {session.title}
+          <span className="text-xs font-medium text-foreground flex items-center gap-1 flex-1 min-w-0">
+            <SessionTitle cwd={cwd} sessionId={sessionId} title={session.title} titleRevision={session.titleRevision} />
           </span>
           <span className="text-[10px] text-muted-foreground flex-shrink-0">
             {formatRelativeTime(t, Date.parse(session.modifiedAt))}
@@ -326,7 +330,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession, pr
                 key={sessionIdOf(selected)}
                 cwd={cwd}
                 sessionId={sessionIdOf(selected)}
-                subtitle={selected.title}
+                subtitle={effectiveTitle(titleOverrides, cwd, sessionIdOf(selected), selected.title, selected.titleRevision)}
                 emptyText={t('sessions.noSessionMessages')}
                 onOpenSession={() => openSession(selected)}
               />

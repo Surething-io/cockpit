@@ -1,3 +1,4 @@
+import { readProjectTitles, titleFromProject, titleStore, type TitleFile } from './sessionTitles';
 /**
  * SessionSearchServiceLive — derived-text corpus + ripgrep.
  *
@@ -10,7 +11,7 @@
  * Layout:    <cockpitDir>/search-corpus/<engine>/<sessionId>.txt + manifest.v2.json
  * Source:    corpus text is rendered from the TranscriptIndex snapshot (prompts and
  *            replies it has already folded) — this layer never parses a transcript.
- * Freshness: a session is re-rendered when its source mtime+size fingerprint changes,
+ * Freshness: a session is re-rendered when its source mtime+size fingerprint or Cockpit title metadata changes,
  *            or when its project directory was unknown and has since become resolvable
  *            (the directory lookup draws on projects.json / state.json / other
  *            transcripts, none of which change the source fingerprint).
@@ -326,7 +327,8 @@ const resolveCwd = (
 const extractText = (
   source: CorpusSource,
   cwd: string | null,
-  updatedAt: number
+  updatedAt: number,
+  titles?: TitleFile
 ): Effect.Effect<string | null, AppError> =>
   Effect.gen(function* () {
     const format = isPiSessionPath(source.sourcePath) ? "pi" : source.engine === "codex" ? "codex" : "claude"
@@ -340,7 +342,7 @@ const extractText = (
         ? listMessages(snap)[0]?.slice(0, 80) || "Untitled Session"
         : generateTitle(snap.aiTitle, snap.summary, titleMessages(snap))
     return renderCorpusText(
-      { engine: snap.engine ?? source.engine, sessionId: source.sessionId, cwd, title, updatedAt },
+      { engine: snap.engine ?? source.engine, sessionId: source.sessionId, cwd, title: titles ? titleFromProject(titles, source.sessionId, title, titleStore(source.engine), cwd).title : title, updatedAt },
       snap.corpus.map((line) => ({ role: line.role, content: line.text }))
     )
   })
@@ -350,6 +352,7 @@ const extractText = (
 // ─────────────────────────────────────────────────────────
 
 interface Planned {
+  readonly titles?: TitleFile
   readonly source: CorpusSource
   readonly fingerprint: string
   readonly corpusPath: string
@@ -374,12 +377,21 @@ const syncImpl = (cockpitDir: string, corpusDir: string): Effect.Effect<CorpusSy
       sources.flatMap((s) => (s.cwd ? [s.cwd] : []))
     )
 
+    const titleFiles = new Map<string, TitleFile>()
     const next: Manifest = {}
     const planned: Planned[] = []
     for (const source of sources) {
       const st = yield* fsTry(source.sourcePath, "stat", () => stat(source.sourcePath)).pipe(Effect.option)
       if (st._tag === "None") continue
-      const fingerprint = `${Math.floor(st.value.mtimeMs)}-${st.value.size}`
+      const titleCwd = source.cwd ?? previous[source.sourcePath]?.cwd ?? (yield* resolveCwd(source, lookup))
+      const titleProject = source.encodedDir ?? (titleCwd ? encodePath(titleCwd) : null)
+      let titles = titleProject ? titleFiles.get(titleProject) : undefined
+      if (titleProject && !titles) {
+        titles = yield* readProjectTitles(titleProject)
+        titleFiles.set(titleProject, titles)
+      }
+      const titleInfo = titles ? titleFromProject(titles, source.sessionId, '', titleStore(source.engine), titleCwd) : null
+      const fingerprint = `${Math.floor(st.value.mtimeMs)}-${st.value.size}:${JSON.stringify([titleInfo?.titleRevision, titleInfo?.customTitle])}`
       const corpusPath = join(corpusDir, source.engine, `${source.sessionId}.txt`)
       const prev = previous[source.sourcePath]
       const unchanged = prev !== undefined && prev.fingerprint === fingerprint
@@ -398,18 +410,18 @@ const syncImpl = (cockpitDir: string, corpusDir: string): Effect.Effect<CorpusSy
           next[source.sourcePath] = { fingerprint, corpusPath: prev.corpusPath, cwd: prevCwd }
           continue
         }
-        planned.push({ source, fingerprint, corpusPath, mtimeMs: st.value.mtimeMs, cwd: resolved })
+        planned.push({ source, titles, fingerprint, corpusPath, mtimeMs: st.value.mtimeMs, cwd: resolved })
         continue
       }
-      planned.push({ source, fingerprint, corpusPath, mtimeMs: st.value.mtimeMs, cwd: undefined })
+      planned.push({ source, titles, fingerprint, corpusPath, mtimeMs: st.value.mtimeMs, cwd: undefined })
     }
 
     const rebuilt = yield* Effect.forEach(
       planned,
-      ({ source, fingerprint, corpusPath, mtimeMs, cwd: plannedCwd }): Effect.Effect<readonly [string, ManifestEntry | null], never> =>
+      ({ source, titles, fingerprint, corpusPath, mtimeMs, cwd: plannedCwd }): Effect.Effect<readonly [string, ManifestEntry | null], never> =>
         Effect.gen(function* () {
           const cwd = plannedCwd !== undefined ? plannedCwd : yield* resolveCwd(source, lookup)
-          const extracted = yield* Effect.either(extractText(source, cwd, mtimeMs))
+          const extracted = yield* Effect.either(extractText(source, cwd, mtimeMs, titles))
           if (Either.isLeft(extracted)) {
             // A read failure is NOT "no searchable text": keep whatever was indexed before
             // (old corpus file, old fingerprint), so the next sync sees a mismatch and retries.

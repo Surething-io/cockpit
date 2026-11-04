@@ -1,3 +1,4 @@
+import { readSessionTitle, titleStore } from '../../effect/sessionTitles';
 import * as fs from 'fs';
 import * as readline from 'readline';
 import { dirname, join, resolve } from 'path';
@@ -410,7 +411,8 @@ export const POST = handler((req) =>
     // Through the view, not the raw file: mid independent-task turn the file holds only
     // that turn (see session/transcriptView.ts).
     const view = openTranscriptView(sessionPath, engine);
-    const { fingerprint } = view;
+    const metadata = yield* readSessionTitle(cwd, sessionId, '', titleStore(engine));
+    const fingerprint = metadata.titleRevision ? `${view.fingerprint}:title-${metadata.titleRevision}` : view.fingerprint;
     if (ifFingerprint && ifFingerprint === fingerprint) {
       return ok({ notModified: true, fingerprint });
     }
@@ -439,7 +441,9 @@ export const POST = handler((req) =>
     return ok({
       messages,
       sessionId,
-      title,
+      ...metadata,
+      defaultTitle: title,
+      title: metadata.customTitle ?? title,
       // Set only for a session a Bot dispatch opened (shared/botSession.ts). The tab
       // strip and the running line render it beside the engine mark, so "a Bot is
       // driving this" is answered by the same payload that answers "which engine".

@@ -105,3 +105,5 @@ export type {
   CodexModelId,
   CodexReasoningEffort,
 } from './types';
+
+export { SessionTitle, SessionTitlesBridge, useSessionTitleOverrides, effectiveTitle } from './SessionTitle';

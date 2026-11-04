@@ -1,5 +1,6 @@
 'use client';
 
+import { SessionTitlesBridge } from '@cockpit/feature-agent';
 import { I18nProvider } from './I18nProvider';
 import { ThemeProvider } from '@cockpit/shared-ui';
 import { ToastProvider } from '@cockpit/shared-ui';
@@ -34,6 +35,7 @@ export function Providers({ children }: ProvidersProps) {
     <I18nProvider>
       <ThemeProvider>
         <ToastProvider>
+          <SessionTitlesBridge />
           {children}
           {/* Single global popover for every `data-tooltip` attribute,
               including those forwarded by the <Tooltip> wrapper. Lives

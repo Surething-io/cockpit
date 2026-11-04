@@ -1,5 +1,8 @@
 'use client';
 
+import { acceptSessionTitle, effectiveTitle, titleSnapshot } from './sessionTitleState';
+import type { SessionTitleInfo } from '../shared/sessionTitle';
+
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { ChatMessage, TokenUsage, ChatEngine } from './types';
 import { mergeIncrementalMessages, mergeJumpWindow } from './mergeIncrementalMessages';
@@ -54,7 +57,7 @@ const FIRST_PAGE_CACHE_MAX = 20;
 const firstPageCache = new Map<string, { data: SessionPageData; fingerprint: string }>();
 
 // Shape of a /api/session-by-path response (fields the client consumes).
-interface SessionPageData {
+interface SessionPageData extends Partial<SessionTitleInfo> {
   notModified?: boolean;
   fingerprint?: string;
   totalTurns?: number;
@@ -237,7 +240,10 @@ export function useChatHistory(
         setLoadedBot(data.bot ?? null);
         // Notify parent component of title change
         if (data.title) {
-          onTitleChangeRef.current?.(data.title);
+          if (typeof data.titleRevision === 'number' && data.defaultTitle !== undefined && data.customTitle !== undefined) {
+            acceptSessionTitle({ cwd: cwdPath, sessionId: sid, title: data.title, defaultTitle: data.defaultTitle, customTitle: data.customTitle, titleRevision: data.titleRevision });
+          }
+          onTitleChangeRef.current?.(effectiveTitle(titleSnapshot(), cwdPath, sid, data.title, data.titleRevision));
         }
         // Set token usage info (from last assistant message in history)
         if (data.usage) {

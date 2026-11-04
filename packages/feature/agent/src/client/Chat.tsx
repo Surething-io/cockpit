@@ -1,5 +1,8 @@
 'use client';
 
+import { acceptSessionTitle, effectiveTitle, titleSnapshot } from './sessionTitleState';
+import type { SessionTitleChange } from '../shared/sessionTitle';
+
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { ClipboardList, MessageSquareOff } from 'lucide-react';
 import { toast } from '@cockpit/shared-ui';
@@ -222,7 +225,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       querySessionByPath({ cwd: initialCwd, sessionId: sid })
     );
     if (exit._tag === 'Success' && exit.value && typeof exit.value.title === 'string') {
-      onTitleChange?.(exit.value.title);
+      if (typeof exit.value.titleRevision === 'number') acceptSessionTitle({ ...exit.value, cwd: initialCwd, sessionId: sid } as SessionTitleChange);
+      onTitleChange?.(effectiveTitle(titleSnapshot(), initialCwd, sid, exit.value.title, exit.value.titleRevision as number | undefined));
     } else if (exit._tag === 'Failure') {
       console.error('Failed to fetch session title:', exit.cause);
     }

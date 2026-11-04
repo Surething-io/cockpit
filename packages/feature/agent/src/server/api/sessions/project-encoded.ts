@@ -1,3 +1,4 @@
+import { readProjectTitles, titleFromProject, titleStore } from '../../../effect/sessionTitles';
 import { readdir, stat } from 'fs/promises';
 import * as path from 'path';
 import { Effect } from 'effect';
@@ -110,7 +111,7 @@ const getCodexSessionIds = (encodedPath: string): Effect.Effect<string[], never>
 
 export const GET = dynamicHandler<
   { encodedPath: string },
-  ValidationError
+  ValidationError | import("@cockpit/effect-core").FSError
 >((_req, { encodedPath }) =>
   Effect.gen(function* () {
     if (!encodedPath) {
@@ -137,7 +138,7 @@ interface ListSource {
  * Every session of one project across all engine stores. Row content comes from
  * the transcript index, so an unchanged transcript costs a stat, not a parse.
  */
-const loadSessions = (encodedPath: string): Effect.Effect<SessionInfo[], never, TranscriptIndex> =>
+const loadSessions = (encodedPath: string) =>
   Effect.gen(function* () {
     // Claude native files are indexed here; Pi and Codex use their own readers below.
     const stores = yield* Effect.forEach(
@@ -184,6 +185,7 @@ const loadSessions = (encodedPath: string): Effect.Effect<SessionInfo[], never, 
       sources.push({ sessionId, path: filePath, engine: 'codex', format: 'codex' });
     }
 
+    const titles = yield* readProjectTitles(encodedPath);
     const snaps = yield* index.snapshots(sources);
     const sessions: SessionInfo[] = [];
     sources.forEach((source, i) => {
@@ -199,7 +201,10 @@ const loadSessions = (encodedPath: string): Effect.Effect<SessionInfo[], never, 
         snap.summary,
         listMessages(snap),
       );
-      if (session) sessions.push(session);
+      if (session) {
+        const metadata = titleFromProject(titles, source.sessionId, session.title, titleStore(source.engine), snap.cwd);
+        sessions.push({ ...session, ...metadata, searchText: session.searchText });
+      }
     });
 
     // Sort all sessions by modification time descending

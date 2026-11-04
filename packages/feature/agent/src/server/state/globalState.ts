@@ -1,32 +1,22 @@
+import type { SessionTitleInfo } from '../../shared/sessionTitle';
+import { readProjectTitles, readSessionTitle, titleFromProject, titleStore, type TitleFile } from '../../effect/sessionTitles';
+import { resolveSessionPath } from '../api/session/sessionStore';
 import { Effect } from 'effect';
-import { findPiSession } from '../../effect/piSessionLive';
 import {
   GLOBAL_STATE_FILE,
   readJsonFile,
   writeJsonFile,
   withFileLock,
-  getClaudeSessionPath,
   getSessionFilePath,
+  encodePath,
 } from '@cockpit/shared-utils';
 import { detectBotName } from '../../shared/botSession';
 import type { GlobalSessionInfo, GlobalSessionRecord, SessionStatus } from '../../shared/sessionDto';
 
-/** Claude native storage; Pi and Codex are resolved separately. */
-const CLAUDE_STYLE_PATHS = [getClaudeSessionPath];
-
-/** First existing Claude-format transcript for this session, or null. */
-async function findClaudeStylePath(cwd: string, sessionId: string): Promise<string | null> {
-  for (const resolve of CLAUDE_STYLE_PATHS) {
-    const path = resolve(cwd, sessionId);
-    if (await access(path).then(() => true, () => false)) return path;
-  }
-  return null;
-}
 import { existsSync } from 'fs';
-import { access } from 'fs/promises';
 import { basename } from 'path';
 import type { TranscriptFormat, TranscriptSnapshot } from '@cockpit/effect-services';
-import { findCodexSession, runWithTranscriptIndex } from '../../effect/transcriptIndexLive';
+import { runWithTranscriptIndex } from '../../effect/transcriptIndexLive';
 import { codexTitle, previewMessages, titleMessages } from '../transcriptViews';
 import { isRunActive } from '../sessionRunHub';
 import { sendPushNotification } from '../push/push';
@@ -237,12 +227,8 @@ async function resolveSessionFile(
   cwd: string,
   sessionId: string
 ): Promise<{ path: string; format: TranscriptFormat } | null> {
-  const claudeStylePath = await findClaudeStylePath(cwd, sessionId);
-  if (claudeStylePath) return { path: claudeStylePath, format: 'claude' };
-  const pi = await Effect.runPromise(findPiSession(cwd, sessionId));
-  if (pi) return { path: pi.path, format: 'pi' };
-  const codex = await findCodexSession(sessionId);
-  return codex ? { path: codex.path, format: 'codex' } : null;
+  const store = await resolveSessionPath(cwd, sessionId);
+  return store ? { path: store.sessionPath, format: store.engine === 'codex' ? 'codex' : ['ollama', 'kimi', 'deepseek', 'glm'].includes(store.engine) ? 'pi' : 'claude' } : null;
 }
 
 /** Up-to-date folded transcript for a session, or null when it has none on disk. */
@@ -255,11 +241,18 @@ async function sessionSnapshot(cwd: string, sessionId: string): Promise<Transcri
 /**
  * Read the session title from a transcript file.
  */
-export async function getSessionTitle(cwd: string, sessionId: string): Promise<string> {
+export async function getDefaultSessionTitle(cwd: string, sessionId: string): Promise<string> {
   const snap = await sessionSnapshot(cwd, sessionId);
   if (!snap) return UNTITLED_SESSION;
   if (snap.format === 'codex') return codexTitle(snap) || UNTITLED_SESSION;
   return generateTitle(snap.aiTitle, snap.summary, titleMessages(snap));
+}
+
+/** Effective Cockpit title; callers that need the native fallback use getDefaultSessionTitle. */
+export async function getSessionTitle(cwd: string, sessionId: string): Promise<string> {
+  const store = await resolveSessionPath(cwd, sessionId);
+  const fallback = await getDefaultSessionTitle(cwd, sessionId);
+  return (await Effect.runPromise(readSessionTitle(cwd, sessionId, fallback, titleStore(store?.engine ?? 'claude')))).title;
 }
 
 /**
@@ -277,7 +270,7 @@ const SUMMARY_TAIL = 5;
 
 export const UNTITLED_SESSION = 'Untitled Session';
 
-export interface SessionPreview {
+export interface SessionPreview extends SessionTitleInfo {
   /** Live title (summary line preferred), regenerated from disk on every read. */
   title: string;
   /** Bot that dispatched the session, from its first user message. */
@@ -322,10 +315,15 @@ async function getSessionContent(cwd: string, sessionId: string): Promise<Sessio
 export async function getSessionPreview(
   cwd: string,
   sessionId: string,
-  opts?: { includeSearchText?: boolean }
+  opts?: { includeSearchText?: boolean; titleData?: TitleFile }
 ): Promise<SessionPreview> {
   const { aiTitle, summary, messages } = await getSessionContent(cwd, sessionId);
-  const title = generateTitle(aiTitle, summary, messages);
+  const defaultTitle = generateTitle(aiTitle, summary, messages);
+  const store = await resolveSessionPath(cwd, sessionId);
+  const titleInfo = opts?.titleData
+    ? titleFromProject(opts.titleData, sessionId, defaultTitle, titleStore(store?.engine ?? 'claude'), cwd)
+    : await Effect.runPromise(readSessionTitle(cwd, sessionId, defaultTitle, titleStore(store?.engine ?? 'claude')));
+  const { title } = titleInfo;
   // `messages` are the session's human turns in order, so [0] is the line a Bot
   // dispatch writes. Free: this read already happened for the title.
   const bot = detectBotName(messages[0]);
@@ -336,9 +334,10 @@ export async function getSessionPreview(
   // searchText, so skip the multi-MB join+toLowerCase there.
   const searchText = opts?.includeSearchText ? [summary, ...messages].join('\n').toLowerCase() : '';
   if (messages.length <= SUMMARY_THRESHOLD) {
-    return { title, bot, lastUserMessage, firstMessages: messages.map((m) => truncate(m)!), lastMessages: [], searchText };
+    return { ...titleInfo, title, bot, lastUserMessage, firstMessages: messages.map((m) => truncate(m)!), lastMessages: [], searchText };
   }
   return {
+    ...titleInfo,
     title,
     bot,
     lastUserMessage,
@@ -405,14 +404,24 @@ export async function getGlobalSessionsSnapshot(limit = 20): Promise<GlobalSessi
   state.sessions.sort((a, b) => b.lastActive - a.lastActive);
   const recent = state.sessions.slice(0, limit);
 
+  const titleFiles = new Map(await Promise.all([...new Set(recent.map((s) => encodePath(s.cwd)))].map(async (encoded) =>
+    [encoded, await Effect.runPromise(readProjectTitles(encoded))] as const,
+  )));
   const previews = await Promise.all(
     recent.map(async (session): Promise<GlobalSessionSnapshot> => {
       // Actively-loading sessions already carry a fresh lastUserMessage.
-      if (session.status === 'loading' && session.lastUserMessage) return session;
+      if (session.status === 'loading' && session.lastUserMessage) {
+        const store = await resolveSessionPath(session.cwd, session.sessionId);
+        const title = titleFromProject(titleFiles.get(encodePath(session.cwd))!, session.sessionId, session.title ?? UNTITLED_SESSION, titleStore(store?.engine ?? session.engine ?? 'claude'), session.cwd);
+        return { ...session, ...title };
+      }
       try {
-        const preview = await getSessionPreview(session.cwd, session.sessionId);
+        const preview = await getSessionPreview(session.cwd, session.sessionId, { titleData: titleFiles.get(encodePath(session.cwd)) });
         return {
           ...session,
+          customTitle: preview.customTitle,
+          defaultTitle: preview.defaultTitle,
+          titleRevision: preview.titleRevision,
           // Re-derive the title from disk on every read (aiTitle > summary >
           // first message) instead of trusting the value persisted in
           // state.json — that snapshot is only refreshed when a run finishes,
@@ -431,7 +440,7 @@ export async function getGlobalSessionsSnapshot(limit = 20): Promise<GlobalSessi
           lastMessages: preview.lastMessages,
         };
       } catch {
-        return session; // preview is best-effort — never block the snapshot
+        return { ...session, ...titleFromProject(titleFiles.get(encodePath(session.cwd))!, session.sessionId, session.title ?? UNTITLED_SESSION, titleStore(session.engine ?? 'claude'), session.cwd) }; // Preserve names even if the native transcript cannot be read.
       }
     })
   );

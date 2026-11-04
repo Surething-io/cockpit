@@ -1,5 +1,7 @@
 'use client';
 
+import { SessionTitle } from '../SessionTitle';
+
 import { useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pin, Bell, BellOff, Sun, Moon } from 'lucide-react';
@@ -42,7 +44,7 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
 
   const handleMessage = useCallback((msg: unknown) => {
     const parsed = msg as { type?: string; data?: { sessions?: GlobalSession[] } };
-    if (parsed.type === 'task-fired') return;
+    if (parsed.type !== 'global-state') return;
     if (!parsed.data) return;
     setSessions(parsed.data.sessions || []);
     setNow(Date.now());
@@ -161,8 +163,11 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
                   </div>
                   {(session.lastUserMessage || session.title) && (
                     <div className="mt-0.5 truncate text-xs text-foreground/70">
-                      {session.lastUserMessage || session.title}
+                      <SessionTitle editable={false} cwd={session.cwd} sessionId={session.sessionId} title={session.title || session.lastUserMessage || session.sessionId} titleRevision={session.titleRevision} />
                     </div>
+                  )}
+                  {session.lastUserMessage && session.lastUserMessage !== session.title && (
+                    <div className="mt-0.5 truncate text-xs text-muted-foreground">{session.lastUserMessage}</div>
                   )}
                 </div>
               </button>
@@ -174,12 +179,12 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
           pinnedSessions.map((p) => (
             <button
               key={`${p.cwd}-${p.sessionId}`}
-              onClick={() => onOpen({ cwd: p.cwd, sessionId: p.sessionId, title: p.customTitle })}
+              onClick={() => onOpen({ cwd: p.cwd, sessionId: p.sessionId, title: p.title })}
               className="flex w-full items-start gap-3 border-b border-border/50 px-4 py-3.5 text-left active:bg-active"
             >
               <Pin className="mt-0.5 h-4 w-4 flex-shrink-0 text-brand" />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{p.customTitle || projectName(p.cwd)}</div>
+                <div className="truncate text-sm font-medium"><SessionTitle editable={false} cwd={p.cwd} sessionId={p.sessionId} title={p.title || projectName(p.cwd)} /></div>
                 <div className="truncate text-xs text-muted-foreground">{projectName(p.cwd)}</div>
               </div>
             </button>

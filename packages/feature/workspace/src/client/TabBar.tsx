@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useCallback, useLayoutEffect } from
 
 import { TabInfo } from './useTabState';
 import { SessionNumberChip, sessionNumberRing, sessionNumberWash, type SessionNumberStatus } from '@cockpit/shared-ui';
-import { COLUMN_HEADER_ROW, EngineBadge, EngineIcon, ENGINE_IDS, ENGINE_LABELS, ScheduleTaskPopover, type EngineAccentId, type ScheduleTaskParams } from '@cockpit/feature-agent';
+import { SessionTitle, COLUMN_HEADER_ROW, EngineBadge, EngineIcon, ENGINE_IDS, ENGINE_LABELS, ScheduleTaskPopover, type EngineAccentId, type ScheduleTaskParams } from '@cockpit/feature-agent';
 import { Portal, usePanelPortalTarget } from '@cockpit/shared-ui';
 import { useTranslation } from 'react-i18next';
 import { AlarmClock, History, ListX, Plus, Star } from 'lucide-react';
@@ -383,7 +383,7 @@ export function TabBar({
               onDrop={() => onDrop(index)}
               onDragEnd={onDragEnd}
               onClick={() => onSwitchTab(tab.id)}
-              className={`group flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer rounded-md transition-colors ${
+              className={`group group/session-title flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer rounded-md transition-colors ${
                 isActive
                   ? 'bg-brand/10 text-foreground font-medium'
                   : isVisible
@@ -405,7 +405,7 @@ export function TabBar({
                   bot={tab.bot}
                 />
               </div>
-              <span className="flex-1 min-w-0 truncate" data-tooltip={tab.title}>{tab.title}</span>
+              <span className="flex flex-1 items-center gap-1 min-w-0"><SessionTitle cwd={tab.cwd || ''} sessionId={tab.sessionId || ''} title={tab.title} /></span>
               {/* Hover actions (they used to sit in the composer toolbar): they act
                   on a session, so they live on its row. The scheduler stays shown
                   while its popover is open. */}

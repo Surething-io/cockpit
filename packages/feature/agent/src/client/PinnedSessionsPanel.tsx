@@ -1,6 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { SessionTitle, effectiveTitle, useSessionTitleOverrides } from './SessionTitle';
+import { insertPinnedSession, pinnedDropSide, type DropSide } from './pinnedSessionOrder';
+
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Effect } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
@@ -32,7 +35,6 @@ interface PinnedSessionsPanelProps {
   currentCwd?: string;
   onSwitchProject: (cwd: string, sessionId: string) => void;
   onUnpin: (sessionId: string) => void;
-  onUpdateTitle: (sessionId: string, title: string) => void;
   onReorder: (sessions: PinnedSession[]) => void;
 }
 
@@ -56,8 +58,8 @@ interface PinnedSessionsPanelProps {
  * CLAUDE.md); the transcript pane polls its own session for live updates.
  *
  * A session favourited months ago has aged out of that list entirely. Such a
- * row degrades to what the stored record itself holds (project + custom title)
- * rather than inventing a status or a timestamp it cannot know.
+ * row still receives its effective title from the favorites API, without
+ * inventing a status or timestamp it cannot know.
  *
  * Naming: the UI says "favorite" everywhere (star icon, `sessions.*Favorite*`
  * copy), while the code and storage still say "pin" — the component name, the
@@ -76,14 +78,11 @@ export function PinnedSessionsPanel({
   currentCwd,
   onSwitchProject,
   onUnpin,
-  onUpdateTitle,
   onReorder,
 }: PinnedSessionsPanelProps) {
   const { t } = useTranslation();
+  const titleOverrides = useSessionTitleOverrides();
   const [isOpen, setIsOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState('');
-  const editInputRef = useRef<HTMLInputElement>(null);
 
   // Which favorite the right-hand transcript follows. Reset on close so every
   // open lands on the top of the list again.
@@ -92,10 +91,9 @@ export function PinnedSessionsPanel({
 
   const groups = useMemo(() => groupByProject(pinnedSessions), [pinnedSessions]);
 
-  // Drag-to-reorder state, by sessionId. `dragCwd` limits drops to one group.
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const dragCwd = dragId ? pinnedSessions.find(s => s.sessionId === dragId)?.cwd : undefined;
+  // The target is an insertion boundary, not a highlighted destination row.
+  const [dragging, setDragging] = useState<PinnedSession | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ cwd: string; sessionId: string; side: DropSide } | null>(null);
 
   // Row detail, keyed `${cwd}\n${sessionId}`; empty until the first open.
   const [fetched, setFetched] = useState<Record<string, SessionRowInfo>>({});
@@ -125,110 +123,100 @@ export function PinnedSessionsPanel({
   const closeBoard = useCallback(() => {
     setIsOpen(false);
     setSelectedId(null);
-    setEditingId(null);
+    setDragging(null);
+    setDropTarget(null);
   }, []);
 
-  // Close on ESC — unless a title is being edited: the input handles its own ESC
-  // (cancel the edit), and that must not also close the board under it.
+  // The shared title dialog consumes Escape before this board listener.
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || editingId) return;
+      if (e.key !== 'Escape') return;
       closeBoard();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, editingId, closeBoard]);
-
-  // Auto-focus in edit mode
-  useEffect(() => {
-    if (editingId) {
-      editInputRef.current?.focus();
-      editInputRef.current?.select();
-    }
-  }, [editingId]);
+  }, [isOpen, closeBoard]);
 
   const openSession = useCallback((session: PinnedSession) => {
     onSwitchProject(session.cwd, session.sessionId);
     closeBoard();
   }, [onSwitchProject, closeBoard]);
 
-  const startEdit = useCallback((session: PinnedSession, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditingId(session.sessionId);
-    setEditValue(session.customTitle || '');
-  }, []);
-
-  const saveEdit = useCallback(() => {
-    if (editingId && editValue.trim()) {
-      onUpdateTitle(editingId, editValue.trim());
-    }
-    setEditingId(null);
-  }, [editingId, editValue, onUpdateTitle]);
-
-  // Drag-to-reorder, within one project group
-  const handleDragStart = useCallback((session: PinnedSession) => {
-    setDragId(session.sessionId);
+  const handleDragStart = useCallback((e: React.DragEvent, session: PinnedSession) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', session.sessionId);
+    const row = e.currentTarget.parentElement;
+    if (row) e.dataTransfer.setDragImage(row, 16, row.clientHeight / 2);
+    setDragging(session);
+    setDropTarget(null);
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent, session: PinnedSession) => {
-    // Not calling preventDefault is what refuses the drop: the browser shows the
-    // no-drop cursor over another project's rows.
-    if (session.cwd !== dragCwd) return;
+    if (!dragging || session.cwd !== dragging.cwd) {
+      setDropTarget(null);
+      return;
+    }
     e.preventDefault();
-    setDragOverId(session.sessionId);
-  }, [dragCwd]);
+    e.dataTransfer.dropEffect = 'move';
+    if (session.sessionId === dragging.sessionId) { setDropTarget(null); return; }
+    const bounds = e.currentTarget.getBoundingClientRect();
+    const side = pinnedDropSide(e.clientY, bounds);
+    setDropTarget((previous) => previous?.sessionId === session.sessionId && previous.cwd === session.cwd && previous.side === side
+      ? previous : { cwd: session.cwd, sessionId: session.sessionId, side });
+  }, [dragging]);
 
   const handleDragEnd = useCallback(() => {
-    setDragId(null);
-    setDragOverId(null);
+    setDragging(null);
+    setDropTarget(null);
   }, []);
 
-  const handleDrop = useCallback((target: PinnedSession) => {
-    if (!dragId || dragId === target.sessionId || target.cwd !== dragCwd) {
+  const handleDrop = useCallback((e: React.DragEvent, target: PinnedSession) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!dragging || target.cwd !== dragging.cwd || target.sessionId === dragging.sessionId) {
       handleDragEnd();
       return;
     }
-    const reordered = groups.flatMap((group) => {
-      if (group.cwd !== target.cwd) return group.items;
-      const items = [...group.items];
-      const from = items.findIndex(s => s.sessionId === dragId);
-      const to = items.findIndex(s => s.sessionId === target.sessionId);
-      const [moved] = items.splice(from, 1);
-      items.splice(to, 0, moved);
-      return items;
-    });
-    onReorder(reordered);
+    // Drop coordinates are authoritative; dragleave/continuous React updates may
+    // clear or lag behind the last displayed insertion marker.
+    const side = pinnedDropSide(e.clientY, e.currentTarget.getBoundingClientRect());
+    const reordered = groups.flatMap((group) => group.cwd !== target.cwd ? group.items
+      : insertPinnedSession(group.items, dragging.sessionId, target.sessionId, side));
+    if (reordered.some((item, index) => item !== pinnedSessions[index])) onReorder(reordered);
     handleDragEnd();
-  }, [dragId, dragCwd, groups, onReorder, handleDragEnd]);
+  }, [dragging, groups, pinnedSessions, onReorder, handleDragEnd]);
 
-  /** The pin record's own title wins — it is the name the user chose. Only when
-   *  there is none do we fall back to the live title, and only then to the id. */
+  /** Favorites display the same effective title as every other session surface. */
   const titleOf = (session: PinnedSession) =>
-    session.customTitle || fetched[keyOf(session.cwd, session.sessionId)]?.title || session.sessionId;
+    effectiveTitle(titleOverrides, session.cwd, session.sessionId, session.title || fetched[keyOf(session.cwd, session.sessionId)]?.title || session.sessionId);
 
   const renderRow = (session: PinnedSession) => {
     const info = fetched[keyOf(session.cwd, session.sessionId)];
-    const isEditing = editingId === session.sessionId;
     const isSelected = session.sessionId === selectedId;
+    const isDragging = dragging?.cwd === session.cwd && dragging.sessionId === session.sessionId;
+    const insertionSide = dropTarget?.cwd === session.cwd && dropTarget.sessionId === session.sessionId ? dropTarget.side : null;
     return (
       <div
         key={session.sessionId}
-        draggable={!isEditing}
-        onDragStart={() => handleDragStart(session)}
         onDragOver={(e) => handleDragOver(e, session)}
-        onDrop={() => handleDrop(session)}
+        onDrop={(e) => handleDrop(e, session)}
+        onDragLeave={(e) => {
+          if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
+          setDropTarget((previous) => previous?.cwd === session.cwd && previous.sessionId === session.sessionId ? null : previous);
+        }}
         onDragEnd={handleDragEnd}
-        onClick={() => { if (!isEditing) setSelectedId(session.sessionId); }}
-        onDoubleClick={() => { if (!isEditing) openSession(session); }}
-        className={`group rounded-md px-2 py-2 cursor-pointer transition-colors flex items-start gap-1.5 ${
+        onClick={() => setSelectedId(session.sessionId)}
+        onDoubleClick={() => openSession(session)}
+        className={`group relative rounded-md px-2 py-2 cursor-pointer transition-colors flex items-start gap-1.5 ${
           isSelected ? 'bg-brand/10' : 'hover:bg-hover'
-        } ${dragId === session.sessionId ? 'opacity-50' : ''} ${
-          dragOverId === session.sessionId && dragId !== session.sessionId ? 'ring-1 ring-inset ring-brand' : ''
-        }`}
+        } ${isDragging ? 'opacity-35' : ''}`}
       >
-        {/* Drag handle */}
-        <span className="mt-1 text-muted-foreground/30 flex-shrink-0 cursor-grab">
+        {insertionSide && <div aria-hidden="true" className={`pointer-events-none absolute left-1 right-1 z-10 h-0.5 rounded-full bg-brand ${insertionSide === 'before' ? '-top-px' : '-bottom-px'}`}>
+          <span className="absolute -left-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-brand" />
+        </div>}
+        {/* Only the grip starts a drag; clicking the title still selects the row. */}
+        <span draggable onDragStart={(e) => handleDragStart(e, session)} onClick={(e) => e.stopPropagation()} title={t('sessions.dragToReorder')} className={`mt-1 text-muted-foreground/30 hover:text-foreground flex-shrink-0 select-none ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}>
           <svg className="w-3 h-3" viewBox="0 0 10 16" fill="currentColor">
             <circle cx="3" cy="2" r="1.5"/><circle cx="7" cy="2" r="1.5"/>
             <circle cx="3" cy="8" r="1.5"/><circle cx="7" cy="8" r="1.5"/>
@@ -245,31 +233,10 @@ export function PinnedSessionsPanel({
                 a mark. `undefined` means Claude across the whole app;
                 EngineBadge resolves it. */}
             <EngineBadge engine={info?.engine} />
-            {isEditing ? (
-              <input
-                ref={editInputRef}
-                type="text"
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.nativeEvent.isComposing) return;
-                  if (e.key === 'Enter') saveEdit();
-                  if (e.key === 'Escape') setEditingId(null);
-                }}
-                onBlur={saveEdit}
-                onClick={(e) => e.stopPropagation()}
-                className="flex-1 min-w-0 text-xs px-1 py-0.5 border border-border rounded bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-            ) : (
-              <span className="text-xs font-medium text-foreground truncate flex-1 min-w-0" data-tooltip={titleOf(session)}>
-                {titleOf(session)}
-              </span>
-            )}
-            {!isEditing && info?.lastActive ? (
-              <span className="text-[10px] text-muted-foreground flex-shrink-0 group-hover:hidden">
-                {formatRelativeTime(t, info.lastActive)}
-              </span>
-            ) : null}
+            <span className="flex items-center gap-1 text-xs font-medium text-foreground flex-1 min-w-0">
+              <SessionTitle cwd={session.cwd} sessionId={session.sessionId} title={titleOf(session)} editable={false} />
+            </span>
+            {info?.lastActive ? <span className="text-[10px] text-muted-foreground flex-shrink-0 group-hover:hidden">{formatRelativeTime(t, info.lastActive)}</span> : null}
             <SessionNumberBadge
               coordinate={sessionNumbers?.[keyOf(session.cwd, session.sessionId)]}
               status={badgeStatus(info?.status)}
@@ -277,18 +244,7 @@ export function PinnedSessionsPanel({
               bot={info?.bot}
             />
             {/* Hover action buttons */}
-            {!isEditing && (
-              <div className="flex-shrink-0 hidden group-hover:flex items-center gap-0.5">
-                {/* Edit */}
-                <button
-                  onClick={(e) => startEdit(session, e)}
-                  className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-                  title={t('sessions.editTitle')}
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                  </svg>
-                </button>
+            <div className="flex-shrink-0 hidden group-hover:flex items-center gap-0.5">
                 {/* Unfavorite */}
                 <button
                   onClick={(e) => { e.stopPropagation(); onUnpin(session.sessionId); }}
@@ -299,10 +255,9 @@ export function PinnedSessionsPanel({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
-              </div>
-            )}
+            </div>
           </div>
-          {!isEditing && info?.lastUserMessage && (
+          {info?.lastUserMessage && (
             <div className="text-xs text-muted-foreground truncate mt-0.5 pl-[22px]" data-tooltip={info.lastUserMessage}>
               {info.lastUserMessage}
             </div>

@@ -100,6 +100,22 @@ describe('SessionSearchServiceLive', () => {
     expect(stats.indexed).toBe(3);
     expect(stats.rebuilt).toBe(3);
   });
+  it('indexes rename and reset without touching the native transcript or its timestamp', async () => {
+    const titles = await import('./sessionTitles');
+    await sync();
+    const before = fs.statSync(claudeFile);
+    await Effect.runPromise(titles.writeSessionTitle(projA, CLAUDE_SID, 'claude', 'UniqueSessionNameForRename'));
+    await sync();
+    const hits = await search(['UniqueSessionNameForRename']);
+    expect(hits.find((h) => h.sessionId === CLAUDE_SID)?.title).toBe('UniqueSessionNameForRename');
+    expect(fs.statSync(claudeFile).mtimeMs).toBe(before.mtimeMs);
+    expect(fs.statSync(claudeFile).size).toBe(before.size);
+    await Effect.runPromise(titles.writeSessionTitle(projA, CLAUDE_SID, 'claude', null));
+    await sync();
+    expect(await search(['UniqueSessionNameForRename'])).toEqual([]);
+  });
+
+
 
   it('matches a 2-character Chinese word and resolves the claude cwd', async () => {
     const hits = await search(['快照']);

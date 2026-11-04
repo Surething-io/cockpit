@@ -1,3 +1,4 @@
+import type { SessionTitleInfo } from './sessionTitle';
 /**
  * Session DTOs — the shapes the session APIs return and the session lists render.
  *
@@ -21,7 +22,7 @@ export type SessionStatus = 'normal' | 'loading' | 'unread'
 export type SessionEngine = 'claude' | 'ollama' | 'codex' | 'kimi' | 'deepseek' | 'glm' | 'grok'
 
 /** One row of a project's session list (`/api/sessions/projects/[encodedPath]`). */
-export interface SessionListItem {
+export interface SessionListItem extends Partial<SessionTitleInfo> {
   sessionId?: string
   path: string
   title: string
@@ -44,7 +45,7 @@ export interface SessionListItem {
 }
 
 /** A session as persisted in `state.json` (the cross-project recent list). */
-export interface GlobalSessionRecord {
+export interface GlobalSessionRecord extends Partial<SessionTitleInfo> {
   cwd: string
   sessionId: string
   lastActive: number

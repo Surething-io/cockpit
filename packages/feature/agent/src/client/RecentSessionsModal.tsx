@@ -1,5 +1,7 @@
 'use client';
 
+import { SessionTitle, effectiveTitle, useSessionTitleOverrides } from './SessionTitle';
+
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MODAL_SHELL_CLASS } from '@cockpit/shared-ui';
@@ -56,6 +58,7 @@ interface RecentSessionsModalProps {
  */
 export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionNumbers = {}, projectOrder, currentCwd, liveSessions }: RecentSessionsModalProps) {
   const { t } = useTranslation();
+  const titleOverrides = useSessionTitleOverrides();
   const [fetched, setFetched] = useState<RecentSessionInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -119,6 +122,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
     if (!searchKeyword) return sessions;
     const keyword = searchKeyword.toLowerCase();
     return sessions.filter((session) => {
+      if (effectiveTitle(titleOverrides, session.cwd, session.sessionId, session.title || session.sessionId, session.titleRevision).toLowerCase().includes(keyword)) return true;
       if (session.searchText !== undefined) return session.searchText.includes(keyword);
       return (
         session.cwd.toLowerCase().includes(keyword) ||
@@ -128,7 +132,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
         (session.lastMessages?.some((m) => m.toLowerCase().includes(keyword)) ?? false)
       );
     });
-  }, [sessions, searchKeyword]);
+  }, [sessions, searchKeyword, titleOverrides]);
 
   const groups = useMemo(() => groupByProject(filteredSessions), [filteredSessions]);
   const runningCount = sessions.filter((s) => s.status === 'loading').length;
@@ -153,7 +157,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
     onClose();
   }, [onSwitchProject, onClose]);
 
-  const titleOf = (session: RecentSessionInfo) => session.title || session.sessionId;
+  const titleOf = (session: RecentSessionInfo) => effectiveTitle(titleOverrides, session.cwd, session.sessionId, session.title || session.sessionId, session.titleRevision);
 
   const renderCard = (session: RecentSessionInfo) => {
     const key = keyOf(session.cwd, session.sessionId);
@@ -163,15 +167,15 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
         key={key}
         onClick={() => setSelectedKey(key)}
         onDoubleClick={() => openSession(session)}
-        className={`rounded-md px-3 py-2 cursor-pointer transition-colors ${
+        className={`group/session-title rounded-md px-3 py-2 cursor-pointer transition-colors ${
           isSelected ? 'bg-brand/10' : 'hover:bg-hover'
         }`}
       >
         {/* The project is the group header now, so the row leads with the title. */}
         <div className="flex items-center gap-1.5">
           <EngineBadge engine={session.engine} />
-          <span className="text-xs font-medium text-foreground truncate flex-1 min-w-0" data-tooltip={titleOf(session)}>
-            {titleOf(session)}
+          <span className="text-xs font-medium text-foreground flex items-center gap-1 flex-1 min-w-0" data-tooltip={titleOf(session)}>
+            <SessionTitle cwd={session.cwd} sessionId={session.sessionId} title={session.title || session.sessionId} titleRevision={session.titleRevision} />
           </span>
           <span className="text-[10px] text-muted-foreground flex-shrink-0">
             {formatRelativeTime(t, session.lastActive)}

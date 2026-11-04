@@ -1,5 +1,7 @@
 'use client';
 
+import { SessionTitle } from '../SessionTitle';
+
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
@@ -202,7 +204,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
           <ChevronLeft className="h-6 w-6" />
         </button>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium">{title || '…'}</div>
+          <div className="truncate text-sm font-medium"><SessionTitle cwd={cwd} sessionId={sessionId || ''} title={title || '…'} editable={false} /></div>
           <div className="truncate text-xs text-muted-foreground">{cwd.split('/').pop()}</div>
         </div>
       </div>

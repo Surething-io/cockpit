@@ -1,3 +1,5 @@
+import { readLogicalTranscript } from './logicalTranscript';
+import type { TranscriptSource } from '../server/transcriptSource';
 import { isPiSessionPath } from '@cockpit/shared-utils';
 import { readPiSession } from './piSessionLive';
 /**
@@ -345,11 +347,12 @@ const readTail = (file: string, bytes: number): Effect.Effect<{ text: string; cu
  * Only a whole-file read without evidence is incomplete.
  */
 export const readTerminal = (
-  file: string,
+  file: TranscriptSource,
   terminalOf: (entries: ReadonlyArray<TranscriptEntry>) => Terminal | null,
   initialBytes: number = TAIL_BYTES
 ): Effect.Effect<Terminal, AppError> =>
   Effect.gen(function* () {
+    if (typeof file !== "string") return terminalOf(parseTailEntries(file.text, false)) ?? "incomplete"
     let bytes = initialBytes
     for (;;) {
       const tail = yield* readTail(file, bytes)
@@ -389,43 +392,48 @@ const statusImpl = (
 ): Effect.Effect<SessionStatusReport, NotFoundError | AppError> =>
   Effect.gen(function* () {
     const busyAtStart = yield* Effect.sync(() => isSessionBusy(sessionId))
-    const store = yield* Effect.promise(() => resolveSessionPath(cwd, sessionId))
+    const store = yield* Effect.tryPromise({ try: () => resolveSessionPath(cwd, sessionId), catch: (cause) => new AppError({ message: "Cannot resolve session status", cause }) })
     const link = buildSessionLink(cwd, sessionId)
     if (!store) {
       if (!busyAtStart && !isSessionBusy(sessionId)) return yield* Effect.fail(new NotFoundError({ resource: "session", id: sessionId }))
       return { cwd, sessionId, engine: null, title: "", status: "running", lastReply: null, lastReplyTruncated: false, link }
     }
-    const parsed = yield* Effect.tryPromise({
-      try: () =>
-        store.engine === "codex" ? parseCodexTranscriptFile(store.sessionPath) : parseTranscriptFile(store.sessionPath),
-      catch: (cause) => new AppError({ message: `failed to parse transcript ${store.sessionPath}`, cause }),
-    })
-    const engine = store.engine
-    const piView = isPiSessionPath(store.sessionPath) ? yield* readPiSession(store.sessionPath) : undefined
-    const unfinished = piView ? piUnfinishedInput(piView.entries) : undefined
-    // Stop ends live streaming immediately, but the writer still owns cleanup
-    // and persistence. Never derive completion from an older disk image then.
-    const running = busyAtStart || (yield* Effect.sync(() => isSessionBusy(sessionId)))
-    const status: SessionRunStatus = running
-      ? "running"
-      : piView
-        ? unfinished?.status ?? (() => {
-            const last = piView.entries.findLast((entry) => entry.type === 'message');
-            if (last?.type !== 'message' || last.message.role !== 'assistant') return 'incomplete';
-            return last.message.stopReason === 'error' ? 'failed' : last.message.stopReason === 'stop' ? 'done' : 'incomplete';
-          })()
-        : yield* readTerminal(store.sessionPath, (entries) =>
-            engine === "codex" ? codexTerminal(entries) : claudeShapedTerminal(entries, engine)
-          )
-    return {
-      cwd,
-      sessionId,
-      engine: store.engine,
-      title: parsed.title,
-      status,
-      ...lastReplyOf(unfinished && !running ? [{ role: 'assistant', content: unfinished.text }] : parsed.messages, full ? Number.POSITIVE_INFINITY : LAST_REPLY_MAX),
-      link,
-    }
+    return yield* readLogicalTranscript(store.sessionPath, store.engine, (reader) => Effect.gen(function* () {
+      const source = yield* reader.source
+      const parsed = yield* Effect.tryPromise({
+        try: () =>
+          store.engine === "codex" ? parseCodexTranscriptFile(source) : parseTranscriptFile(source),
+        catch: (cause) => new AppError({ message: `failed to parse transcript ${store.sessionPath}`, cause }),
+      })
+      const engine = store.engine
+      const piView = isPiSessionPath(store.sessionPath) ? yield* readPiSession(store.sessionPath) : undefined
+      const unfinished = piView ? piUnfinishedInput(piView.entries) : undefined
+      // Stop ends live streaming immediately, but the writer still owns cleanup
+      // and persistence. Never derive completion from an older disk image then.
+      const running = busyAtStart || (yield* Effect.sync(() => isSessionBusy(sessionId)))
+      const status: SessionRunStatus = running
+        ? "running"
+        : piView
+          ? unfinished?.status ?? (() => {
+              const last = piView.entries.findLast((entry) => entry.type === 'message');
+              if (last?.type !== 'message' || last.message.role !== 'assistant') return 'incomplete';
+              return last.message.stopReason === 'error' ? 'failed' : last.message.stopReason === 'stop' ? 'done' : 'incomplete';
+            })()
+          : yield* readTerminal(store.sessionPath, (entries) =>
+              engine === "codex" ? codexTerminal(entries) : claudeShapedTerminal(entries, engine)
+            ).pipe(Effect.catchAll((error) => (error.cause as NodeJS.ErrnoException)?.code === 'ENOENT'
+              ? readTerminal(source, (entries) => engine === "codex" ? codexTerminal(entries) : claudeShapedTerminal(entries, engine))
+              : Effect.fail(error)))
+      return {
+        cwd,
+        sessionId,
+        engine: store.engine,
+        title: parsed.title,
+        status,
+        ...lastReplyOf(unfinished && !running ? [{ role: 'assistant', content: unfinished.text }] : parsed.messages, full ? Number.POSITIVE_INFINITY : LAST_REPLY_MAX),
+        link,
+      }
+    })).pipe(Effect.mapError((cause) => cause instanceof AppError ? cause : new AppError({ message: "Cannot read session status", cause })))
   })
 
 // ─────────────────────────────────────────────────────────

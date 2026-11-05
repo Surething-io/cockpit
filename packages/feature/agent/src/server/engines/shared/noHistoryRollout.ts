@@ -15,12 +15,10 @@ import * as fs from 'fs';
 import { dirname, join } from 'path';
 import { CODEX_SESSIONS_DIR } from '@cockpit/shared-utils';
 import { rewriteTranscriptSync } from '../../transcriptWrite';
-
-const STASH_SUFFIX = '.nohistory-backup';
-
-export function codexNoHistoryStashPath(sessionPath: string): string {
-  return `${sessionPath}${STASH_SUFFIX}`;
-}
+import { invalidateTranscript } from '../../../effect/transcriptIndexLive';
+import { CODEX_NO_HISTORY_SUFFIX, codexNoHistoryStashPath } from '../../transcriptLayout';
+import { spliceCodexTranscript } from '../../transcriptSplice';
+export { codexNoHistoryStashPath } from '../../transcriptLayout';
 
 function readLines(filePath: string): string[] {
   return fs
@@ -50,8 +48,12 @@ function hasOnlyCompleteJsonLines(lines: string[]): boolean {
 }
 
 function replaceWithStash(stash: string, sessionPath: string): void {
-  if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
-  fs.renameSync(stash, sessionPath);
+  try {
+    if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
+    fs.renameSync(stash, sessionPath);
+  } finally {
+    invalidateTranscript(sessionPath);
+  }
 }
 
 /**
@@ -118,31 +120,7 @@ export function mergeStashedCodexRollout(sessionPath: string): 'merged' | 'resto
 
 /** The in-flight rollout minus the `session_meta` stashCodexRollout seeded it with. */
 function withoutStubMeta(turn: string[]): string[] {
-  return turn[0] && isSessionMeta(turn[0]) ? turn.slice(1) : turn;
-}
-
-/**
- * The rollout as a reader should see it while an independent turn is in flight: exactly
- * what mergeStashedCodexRollout will write, assembled in memory. Null when nothing is
- * stashed. Never writes.
- *
- * Needed beyond "history is missing": codex bubble ids are positional
- * (`codex-user-0`, …), so the stub-plus-turn file numbers the in-flight prompt as the
- * session's FIRST message — a client aligning by id then takes it for the conversation's
- * real first message and replaces the whole history with the one turn.
- *
- * Read order and the race it covers: see readStashedTranscriptView.
- */
-export function readStashedCodexRolloutView(sessionPath: string): string | null {
-  const stash = codexNoHistoryStashPath(sessionPath);
-  if (!fs.existsSync(stash)) return null;
-  try {
-    const turnLines = withoutStubMeta(fs.existsSync(sessionPath) ? readLines(sessionPath) : []);
-    const history = readLines(stash);
-    return [...history, ...turnLines].join('\n') + '\n';
-  } catch {
-    return null;
-  }
+  return spliceCodexTranscript([], turn);
 }
 
 /**
@@ -166,8 +144,8 @@ export function recoverStashedCodexRollouts(
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
         stack.push(full);
-      } else if (entry.isFile() && full.endsWith(STASH_SUFFIX)) {
-        const sessionPath = full.slice(0, -STASH_SUFFIX.length);
+      } else if (entry.isFile() && full.endsWith(CODEX_NO_HISTORY_SUFFIX)) {
+        const sessionPath = full.slice(0, -CODEX_NO_HISTORY_SUFFIX.length);
         try {
           if (mergeStashedCodexRollout(sessionPath) !== 'none') repaired++;
         } catch {

@@ -3,11 +3,14 @@ import { listPiSessions } from '../../../effect/piSessionLive';
 import { readdir } from 'fs/promises';
 import * as path from 'path';
 import { Effect } from 'effect';
-import { CLAUDE_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath, normalizeCodexSessionId } from '@cockpit/shared-utils';
+import { FSError } from '@cockpit/effect-core';
+import { CLAUDE_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, PI_SESSIONS_DIR, GLOBAL_STATE_FILE, encodePath, normalizeCodexSessionId } from '@cockpit/shared-utils';
 import { handler } from '@cockpit/effect-runtime/server';
 import { isJsonObject, readJsonOr } from '@cockpit/effect-runtime/server/fs';
 import { TranscriptIndex } from '@cockpit/effect-services';
 import { isCodexSubagent } from '../../transcriptViews';
+import { listLogicalTranscriptFiles, readLogicalTranscript } from '../../../effect/logicalTranscript';
+import { transcriptExists } from '../../../effect/transcriptPresence';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,18 +38,18 @@ type ProjectMap = Map<string, { fullPath: string; sessionCount: number }>;
 const readJson = <T extends object>(file: string): Effect.Effect<T | null, never> =>
   readJsonOr<T | null>(file, null, isJsonObject<T>);
 
-const listDir = (dir: string): Effect.Effect<string[], never> =>
-  Effect.tryPromise(() => readdir(dir)).pipe(Effect.orElseSucceed((): string[] => []));
+const listSubdirs = (root: string): Effect.Effect<string[], FSError> =>
+  Effect.tryPromise({
+    try: () => readdir(root, { withFileTypes: true }).catch((cause: NodeJS.ErrnoException) => {
+      if (cause.code === 'ENOENT') return [];
+      throw cause;
+    }),
+    catch: (cause) => new FSError({ path: root, op: 'read', cause }),
+  }).pipe(Effect.map((entries) => entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)));
 
-const listSubdirs = (root: string): Effect.Effect<string[], never> =>
-  Effect.tryPromise(() => readdir(root, { withFileTypes: true })).pipe(
-    Effect.map((entries) => entries.filter((d) => d.isDirectory()).map((d) => d.name)),
-    Effect.orElseSucceed((): string[] => [])
-  );
-
-// .jsonl session files in a directory (exclude agent- subprocess files)
-const listSessionFiles = (dir: string): Effect.Effect<string[], never> =>
-  listDir(dir).pipe(Effect.map((files) => files.filter((f) => f.endsWith('.jsonl') && !f.startsWith('agent-'))));
+// Include a Claude session while its current file is moved aside.
+const listSessionFiles = (dir: string): Effect.Effect<string[], FSError> =>
+  listLogicalTranscriptFiles(dir, 'claude');
 
 // Read the real project path from sessions-index.json
 const getProjectPathFromIndex = (projectDir: string): Effect.Effect<string | null, never> =>
@@ -59,11 +62,14 @@ const getProjectPathFromIndex = (projectDir: string): Effect.Effect<string | nul
   );
 
 // The first cwd field among the project's transcripts, from the transcript index
-const getProjectPathFromJsonl = (projectDir: string): Effect.Effect<string | null, never, TranscriptIndex> =>
+const getProjectPathFromJsonl = (projectDir: string): Effect.Effect<string | null, FSError, TranscriptIndex> =>
   Effect.gen(function* () {
-    const index = yield* TranscriptIndex;
     for (const file of yield* listSessionFiles(projectDir)) {
-      const snap = yield* index.snapshot(path.join(projectDir, file), 'claude');
+      const snap = yield* readLogicalTranscript(path.join(projectDir, file), 'claude', (view) => view.projection).pipe(
+        Effect.catchAll((error) => transcriptExists(path.join(projectDir, file), 'claude').pipe(
+          Effect.flatMap((exists) => exists ? Effect.fail(error) : Effect.succeed(null)),
+        )),
+      );
       if (snap?.cwd) return snap.cwd;
     }
     return null;
@@ -88,7 +94,7 @@ const resolveProjectPath = (
   encodedDirName: string,
   cwdLookup: Map<string, string>,
   claudeProjectDir: string | undefined,
-): Effect.Effect<string | null, never, TranscriptIndex> =>
+): Effect.Effect<string | null, FSError, TranscriptIndex> =>
   Effect.gen(function* () {
     if (claudeProjectDir) {
       // 1. Claude's sessions-index.json
@@ -131,7 +137,7 @@ export const GET = handler(() =>
   })
 );
 
-const buildProjectsList: Effect.Effect<ProjectInfo[], never, TranscriptIndex> = Effect.gen(function* () {
+const buildProjectsList: Effect.Effect<ProjectInfo[], FSError, TranscriptIndex> = Effect.gen(function* () {
   const cwdLookup = yield* buildCwdLookupFromGlobalState;
 
   // Collect projects from all sources: Map<encodedPath, { fullPath, sessionCount }>
@@ -156,14 +162,14 @@ const buildProjectsList: Effect.Effect<ProjectInfo[], never, TranscriptIndex> = 
   }
 
   // Pi headers carry their real project cwd; no external project registration is required.
-  for (const session of yield* listPiSessions().pipe(Effect.orElseSucceed(() => []))) {
+  for (const session of yield* listPiSessions().pipe(Effect.mapError((cause) => new FSError({ path: PI_SESSIONS_DIR, op: 'read', cause })))) {
     const key = encodePath(session.cwd);
     const existing = projectMap.get(key);
     if (existing) existing.sessionCount++;
     else projectMap.set(key, { fullPath: session.cwd, sessionCount: 1 });
   }
 
-  for (const project of yield* listGrokProjects.pipe(Effect.orElseSucceed(() => []))) {
+  for (const project of yield* listGrokProjects) {
     const existing = projectMap.get(project.encodedPath);
     if (existing) existing.sessionCount += project.count;
     else projectMap.set(project.encodedPath, { fullPath: project.cwd, sessionCount: project.count });

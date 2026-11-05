@@ -1,3 +1,5 @@
+import { Readable } from 'node:stream';
+import type { TranscriptSource } from '../../server/transcriptSource';
 import { readSessionTitle, titleStore } from '../../effect/sessionTitles';
 import * as fs from 'fs';
 import * as readline from 'readline';
@@ -10,6 +12,7 @@ import { findCodexSession } from '../../effect/transcriptIndexLive';
 import { handler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import {
   AppError,
+  FSError,
   NotFoundError,
   ValidationError,
 } from '@cockpit/effect-core';
@@ -24,7 +27,7 @@ import {
   parseCodexTranscriptFile,
   parseTranscriptFile,
 } from './session/transcriptParsers';
-import { openTranscriptView } from './session/transcriptView';
+import { readLogicalTranscript } from '../../effect/logicalTranscript';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -117,11 +120,11 @@ interface WorkflowJournal {
  * the one this session was recorded with.
  */
 async function findCodexSubagentTranscript(
-  sessionPath: string,
+  sessionPath: TranscriptSource,
   toolUseId: string
 ): Promise<{ transcriptPath: string; meta: SubagentMeta } | null> {
   const rl = readline.createInterface({
-    input: fs.createReadStream(sessionPath),
+    input: typeof sessionPath === 'string' ? fs.createReadStream(sessionPath) : Readable.from([sessionPath.text]),
     crlfDelay: Infinity,
   });
 
@@ -289,7 +292,10 @@ export const POST = handler((req) =>
     }
 
     // Resolve session file across 6 engines (claude/deepseek/codex/kimi/glm/ollama)
-    const resolved = yield* Effect.promise(() => resolveSessionPath(cwd, sessionId));
+    const resolved = yield* Effect.tryPromise({
+      try: () => resolveSessionPath(cwd, sessionId),
+      catch: (cause) => cause instanceof FSError ? cause : new AppError({ message: 'Cannot resolve session storage', cause }),
+    });
     if (!resolved) {
       return yield* Effect.fail(
         new NotFoundError({ resource: 'session', id: sessionId })
@@ -322,11 +328,11 @@ export const POST = handler((req) =>
           subagent: { agentType: child.name, description: child.model } });
       }
       const sub = yield* engine === 'codex'
-        ? Effect.tryPromise({
-            try: () => findCodexSubagentTranscript(sessionPath, toolUseId),
+        ? readLogicalTranscript(sessionPath, engine, (reader) => reader.source.pipe(Effect.flatMap((source) => Effect.tryPromise({
+            try: () => findCodexSubagentTranscript(source, toolUseId),
             catch: (cause) =>
               new AppError({ message: 'findCodexSubagentTranscript failed', cause }),
-          })
+          }))))
         : Effect.sync(() => findSubagentTranscript(sessionPath, toolUseId));
       if (!sub) {
         return yield* Effect.fail(
@@ -408,30 +414,25 @@ export const POST = handler((req) =>
       return ok({ workflow, fingerprint: journalFingerprint });
     }
 
-    // Through the view, not the raw file: mid independent-task turn the file holds only
-    // that turn (see session/transcriptView.ts).
-    const view = openTranscriptView(sessionPath, engine);
     const metadata = yield* readSessionTitle(cwd, sessionId, '', titleStore(engine));
-    const fingerprint = metadata.titleRevision ? `${view.fingerprint}:title-${metadata.titleRevision}` : view.fingerprint;
-    if (ifFingerprint && ifFingerprint === fingerprint) {
-      return ok({ notModified: true, fingerprint });
-    }
-
-    const parseResult = yield* Effect.tryPromise({
-      try: async () => {
-        const source = view.source();
-        // The Codex parser has no paging of its own, so page its output the same
-        // way — otherwise every read of a long Codex session ships all of it.
-        if (engine === 'codex') {
-          const codex = await parseCodexTranscriptFile(source);
-          return { ...codex, ...pageTurns(codex.messages, { limit, beforeTurnIndex, fromTurnIndex }) };
-        }
-        // The parser reads native Pi branches or Claude transcripts by storage path.
-        return parseTranscriptFile(source, { limit, beforeTurnIndex, fromTurnIndex });
-      },
-      catch: (cause) =>
-        new AppError({ message: 'parseTranscriptFile failed', cause }),
-    });
+    const detail = yield* readLogicalTranscript(sessionPath, engine, (view) => Effect.gen(function* () {
+      const fingerprint = `${view.fingerprint}:title-${metadata.titleRevision}`;
+      if (ifFingerprint && ifFingerprint === fingerprint) return { notModified: true as const, fingerprint };
+      const source = yield* view.source;
+      const parsed = yield* Effect.tryPromise({
+        try: async () => {
+          if (engine === 'codex') {
+            const codex = await parseCodexTranscriptFile(source);
+            return { ...codex, ...pageTurns(codex.messages, { limit, beforeTurnIndex, fromTurnIndex }) };
+          }
+          return parseTranscriptFile(source, { limit, beforeTurnIndex, fromTurnIndex });
+        },
+        catch: (cause) => new AppError({ message: 'parseTranscriptFile failed', cause }),
+      });
+      return { notModified: false as const, fingerprint, parsed };
+    }));
+    if (detail.notModified) return ok({ notModified: true, fingerprint: detail.fingerprint });
+    const { parsed: parseResult, fingerprint } = detail;
 
     const { messages, title, bot, usage } = parseResult;
     // startTurnIndex: index of the first returned turn, resolved server-side.

@@ -1,13 +1,13 @@
 import { grokSessionPath } from '../../../effect/grokSessionLive';
 import { Effect } from 'effect';
 import { findPiSession } from '../../../effect/piSessionLive';
-import { access } from 'fs/promises';
 import { join } from 'path';
 import {
   CODEX_SESSIONS_DIR,
   getClaudeSessionPath,
 } from '@cockpit/shared-utils';
 import { findCodexSession } from '../../../effect/transcriptIndexLive';
+import { transcriptExists } from '../../../effect/transcriptPresence';
 
 export type SessionEngine =
   | 'claude'
@@ -28,7 +28,6 @@ export async function resolveSessionPath(
   cwd: string,
   sessionId: string
 ): Promise<SessionStore | null> {
-  const exists = (p: string) => access(p).then(() => true, () => false);
   // Probe order is the precedence order when a session id exists in more than one store.
   const probes: Array<[SessionEngine, () => Promise<string | null>]> = [
     ['grok', async () => /^[a-zA-Z0-9_-]+$/.test(sessionId) ? grokSessionPath(cwd, sessionId) : null],
@@ -37,7 +36,7 @@ export async function resolveSessionPath(
   ];
   for (const [engine, locate] of probes) {
     const sessionPath = await locate();
-    if (sessionPath && (engine === 'codex' || (await exists(sessionPath)))) return { sessionPath, engine };
+    if (sessionPath && (engine === 'codex' || await Effect.runPromise(transcriptExists(sessionPath, engine)))) return { sessionPath, engine };
   }
   const pi = await Effect.runPromise(findPiSession(cwd, sessionId));
   return pi ? { sessionPath: pi.path, engine: pi.engine } : null;

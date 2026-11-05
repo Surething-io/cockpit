@@ -4,6 +4,7 @@ import { describe, it, expect, beforeAll, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { createHash } from 'node:crypto';
 import { Effect } from 'effect';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cockpit-ti-'));
@@ -59,6 +60,21 @@ beforeAll(async () => {
 });
 
 describe('TranscriptIndex refresh', () => {
+  it('rebuilds old shards that lost the injected-message classification', async () => {
+    const p = newFile(user('Injected summary', { isCompactSummary: true }) + user('Actual prompt'));
+    const info = fs.statSync(p);
+    const shardDir = path.join(process.env.COCKPIT_HOME!, 'transcript-index');
+    fs.mkdirSync(shardDir, { recursive: true });
+    const shard = path.join(shardDir, `${createHash('sha1').update(p).digest('hex').slice(0, 24)}.json`);
+    fs.writeFileSync(shard, JSON.stringify({
+      ...live.emptyFoldState(), v: 4, path: p, format: 'claude', ino: info.ino,
+      size: info.size, offset: info.size, mtimeMs: info.mtimeMs, anchor: '', skippedLines: 0,
+      userTurns: [{ blocks: ['Injected summary'] }, { blocks: ['Actual prompt'] }],
+    }));
+    const read = await parsedBy(() => snap(p));
+    expect(read.bytes).toBe(info.size);
+    expect(views.defaultSessionTitle((await snap(p))!)).toBe('Actual prompt');
+  });
   it('parses a file once: an unchanged file costs no bytes', async () => {
     const p = newFile(line({ type: 'ai-title', aiTitle: 'T' }) + user('hello', { cwd: '/w' }));
     const first = await parsedBy(() => snap(p));
@@ -158,12 +174,11 @@ describe('claude adapter + views', () => {
     expect(views.previewMessages(s)).toEqual(['real', 'first']);
     // list: meta skipped, all text blocks joined with ' ', no tag stripping
     expect(views.listMessages(s)).toEqual(['<command-name>/x</command-name>real', ' first second']);
-    // title: every non-empty block, unfiltered
+    // title: human blocks, preserving command markup
     expect(views.titleMessages(s)).toEqual([
       '<command-name>/x</command-name>real',
       'first',
       'second',
-      'Caveat: The messages below were generated',
     ]);
   });
 
@@ -287,15 +302,15 @@ describe('round-3 review regressions', () => {
     }
   });
 
-  it('a prompt queued while a run was busy is searchable (corpus), not listed', async () => {
+  it('normalizes a queued prompt into both user turns and search corpus', async () => {
     const p = newFile(
       user('first') +
         line({ type: 'attachment', sessionId: 's1', timestamp: '2026-09-01T00:00:01Z', attachment: { type: 'queued_command', commandMode: 'prompt', prompt: 'queued-only-needle' } })
     );
     const s = (await snap(p))!;
     expect(s.corpus.map((l) => l.text)).toEqual(['first', 'queued-only-needle']);
-    expect(views.listMessages(s)).toEqual(['first']);
-    expect(views.previewMessages(s)).toEqual(['first']);
+    expect(views.listMessages(s)).toEqual(['first', 'queued-only-needle']);
+    expect(views.previewMessages(s)).toEqual(['first', 'queued-only-needle']);
   });
 });
 
@@ -337,7 +352,7 @@ describe('codex adapter + views', () => {
   const rollout = (content: unknown[]) =>
     line({ type: 'response_item', payload: { type: 'message', role: 'user', content } });
 
-  it('drops system text, keeps image-only turns for the list', async () => {
+  it('drops system text, keeps image-only turns for previews and the list', async () => {
     const p = newFile(
       line({ type: 'session_meta', payload: { id: 'x', cwd: '/w' } }) +
         rollout([{ type: 'input_text', text: '<environment_context>…' }]) +
@@ -345,7 +360,7 @@ describe('codex adapter + views', () => {
         rollout([{ type: 'input_image', image_url: 'data:image/png;base64,AAAA' }])
     );
     const s = (await snap(p, 'codex'))!;
-    expect(views.previewMessages(s)).toEqual(['fix the bug']);
+    expect(views.previewMessages(s)).toEqual(['fix the bug', '[Image]']);
     expect(views.codexTitle(s)).toBe('fix the bug');
     expect(views.listMessages(s)).toEqual(['fix the bug', '[Image]']);
   });

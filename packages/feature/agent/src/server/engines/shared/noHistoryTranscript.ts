@@ -21,28 +21,21 @@
  * subagent dir, snapshots, run registry, global state and title all stay correct, and the
  * jsonl is the only thing that moves.
  *
- * WHAT THIS COSTS
- * ---------------
- * For the duration of the turn the session has no `<sid>.jsonl`, so it drops out of the
- * session lists (they all filter on `.endsWith('.jsonl')`). The open tab is unaffected — it
- * renders from the live WS stream and does not re-read the transcript mid-turn. A crash in
- * that window would leave the only copy of the conversation in the stash, which is why
- * recoverStashedTranscripts() runs on server boot.
+ * READERS AND RECOVERY
+ * --------------------
+ * The current `<sid>.jsonl` can be absent until the CLI writes its first event.
+ * Logical transcript discovery and reads include the stash throughout this window.
+ * A crash can leave the only history copy there, so recoverStashedTranscripts()
+ * still restores or merges it on server boot.
  */
 import * as fs from 'fs';
-import { join, basename } from 'path';
+import { join } from 'path';
 import { CLAUDE_PROJECTS_DIR } from '@cockpit/shared-utils';
 import { rewriteTranscriptSync } from '../../transcriptWrite';
-
-/**
- * Stash location: inside the session's OWN directory — the same one the vendor uses for
- * `<sid>/subagents/`. Deliberately not a sibling `<sid>.jsonl.bak`: session lists scan the
- * project dir non-recursively, so both are invisible to them, but a leftover file here is
- * attributable to its session at a glance instead of loose in the project directory.
- */
-export function noHistoryStashPath(sessionPath: string): string {
-  return join(sessionPath.replace(/\.jsonl$/, ''), 'nohistory-backup.jsonl');
-}
+import { invalidateTranscript } from '../../../effect/transcriptIndexLive';
+import { noHistoryStashPath } from '../../transcriptLayout';
+import { spliceClaudeTranscript } from '../../transcriptSplice';
+export { noHistoryStashPath } from '../../transcriptLayout';
 
 function readLines(filePath: string): string[] {
   return fs
@@ -63,42 +56,11 @@ function hasOnlyCompleteJsonLines(lines: string[]): boolean {
 }
 
 function replaceWithStash(stash: string, sessionPath: string): void {
-  if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
-  fs.renameSync(stash, sessionPath);
-}
-
-/** Last uuid in the stashed history — the entry the resumed turn must chain onto. */
-function tailUuid(lines: string[]): string | null {
-  for (let i = lines.length - 1; i >= 0; i--) {
-    try {
-      const entry = JSON.parse(lines[i]);
-      if (typeof entry.uuid === 'string') return entry.uuid;
-    } catch {
-      /* corrupt line — keep looking backwards */
-    }
-  }
-  return null;
-}
-
-/**
- * Re-link the seam. The independent turn was written as a session unto itself, so its
- * opening entry carries `parentUuid: null`. Concatenated verbatim that leaves a root in the
- * middle of the file, and the next ordinary (resumed) turn walks the parent chain back from
- * the tail, stops at that root, and silently sees only the post-seam messages. Pointing the
- * root at the stashed history's last uuid makes it one continuous chain again.
- */
-function relinkAndRestamp(line: string, parentUuid: string | null, sessionId: string): string {
   try {
-    const entry = JSON.parse(line);
-    if (parentUuid && 'parentUuid' in entry && entry.parentUuid === null) {
-      entry.parentUuid = parentUuid;
-    }
-    // Defensive: the CLI already stamps our sid because we pass `sessionId`, but a mismatch
-    // here would make the merged file disagree with its own filename.
-    if (typeof entry.sessionId === 'string') entry.sessionId = sessionId;
-    return JSON.stringify(entry);
-  } catch {
-    return line; // corrupt line — pass through rather than drop conversation data
+    if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
+    fs.renameSync(stash, sessionPath);
+  } finally {
+    invalidateTranscript(sessionPath);
   }
 }
 
@@ -117,6 +79,7 @@ export function stashTranscript(sessionPath: string): boolean {
   }
   fs.mkdirSync(join(stash, '..'), { recursive: true });
   fs.renameSync(sessionPath, stash);
+  invalidateTranscript(sessionPath);
   return true;
 }
 
@@ -144,41 +107,9 @@ export function mergeStashedTranscript(sessionPath: string): 'merged' | 'restore
     return 'restored';
   }
 
-  rewriteTranscriptSync(sessionPath, spliceTurn(history, turn, sessionPath).join('\n') + '\n');
+  rewriteTranscriptSync(sessionPath, spliceClaudeTranscript(history, turn, sessionPath).join('\n') + '\n');
   fs.unlinkSync(stash);
   return 'merged';
-}
-
-/** Stashed history followed by the independent turn, seam re-linked. Shared by merge and view. */
-function spliceTurn(history: string[], turn: string[], sessionPath: string): string[] {
-  const sessionId = basename(sessionPath).replace(/\.jsonl$/, '');
-  const seam = tailUuid(history);
-  return [...history, ...turn.map((line) => relinkAndRestamp(line, seam, sessionId))];
-}
-
-/**
- * The conversation as a reader should see it while an independent turn is in flight:
- * exactly what mergeStashedTranscript will write, assembled in memory. Null when nothing
- * is stashed — the file on disk is then the whole conversation. Never writes.
- *
- * Without this, a mid-turn read sees only the in-flight turn, and a client merging that
- * into the transcript it is showing replaces the whole history with it.
- *
- * The session file is read BEFORE the stash on purpose: if the merge lands in between,
- * the stash read fails and the caller falls back to the file, which is by then complete.
- * The other order could pair the stash with the already-merged file and show the history
- * twice. A half-written trailing line passes through; the parsers skip it.
- */
-export function readStashedTranscriptView(sessionPath: string): string | null {
-  const stash = noHistoryStashPath(sessionPath);
-  if (!fs.existsSync(stash)) return null;
-  try {
-    const turn = fs.existsSync(sessionPath) ? readLines(sessionPath) : [];
-    const history = readLines(stash);
-    return spliceTurn(history, turn, sessionPath).join('\n') + '\n';
-  } catch {
-    return null;
-  }
 }
 
 /**

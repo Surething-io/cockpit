@@ -402,9 +402,10 @@ describe('session-by-path codex subagents', () => {
     expect(toolCalls[0].result).toBeUndefined();
   });
 
-  it('drills into a sub-agent transcript by the spawning call_id', async () => {
-    const sessionId = 'codex-drill-in';
-    writeCodexTranscript(sessionId, [
+  it.each([false, true])('drills into a sub-agent transcript by call_id (stashed=%s)', async (stashed) => {
+    const sessionId = `codex-drill-in-${stashed}`;
+    const parentPath = writeCodexTranscript(sessionId, [
+      { type: 'session_meta', payload: { id: sessionId, cwd: '/tmp' } },
       userLine('审查'),
       spawnCall('call_s1', 'explorer', 'go'),
       spawnOutput('call_s1', 'agent-77', 'Turing'),
@@ -427,6 +428,10 @@ describe('session-by-path codex subagents', () => {
       agentNickname: 'Turing',
     });
 
+    if (stashed) {
+      const { stashCodexRollout } = await import('../engines/shared/noHistoryRollout');
+      stashCodexRollout(parentPath);
+    }
     const body = await loadSession(sessionId, { toolUseId: 'call_s1' });
 
     expect(body.subagent).toEqual({ agentType: 'explorer', description: 'Turing' });

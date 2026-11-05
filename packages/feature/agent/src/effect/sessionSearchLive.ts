@@ -41,9 +41,9 @@ import {
 } from "@cockpit/shared-utils"
 import { encodePath } from "@cockpit/shared-utils/encodePath"
 import { buildSessionLink } from "@cockpit/shared-utils/sessionLink"
-import { generateTitle } from "../server/sessionTitle"
-import { isCodexSubagent, listMessages, titleMessages } from "../server/transcriptViews"
-import { codexSessionEntries, transcriptSnapshot } from "./transcriptIndexLive"
+import { defaultSessionTitle, isCodexSubagent } from "../server/transcriptViews"
+import { listLogicalTranscriptFiles, readLogicalTranscript } from "./logicalTranscript"
+import { codexSessionEntries } from "./transcriptIndexLive"
 
 // ─────────────────────────────────────────────────────────
 // Corpus format (pure)
@@ -220,24 +220,21 @@ const readHead = (file: string, bytes: number): Effect.Effect<string, FSError> =
     (fh) => Effect.tryPromise(() => fh.close()).pipe(Effect.ignore)
   )
 
-const listSubdirs = (root: string): Effect.Effect<string[], never> =>
+const listSubdirs = (root: string): Effect.Effect<string[], FSError> =>
   fsTry(root, "read", () => readdir(root, { withFileTypes: true })).pipe(
     Effect.map((entries) => entries.filter((d) => d.isDirectory()).map((d) => d.name)),
-    Effect.orElseSucceed(() => [] as string[])
+    Effect.catchAll((error) => (error.cause as NodeJS.ErrnoException)?.code === "ENOENT" ? Effect.succeed([] as string[]) : Effect.fail(error))
   )
 
-const listTopLevelTranscripts = (dir: string): Effect.Effect<string[], never> =>
-  fsTry(dir, "read", () => readdir(dir)).pipe(
-    Effect.map((files) => files.filter((f) => f.endsWith(".jsonl") && !f.startsWith("agent-"))),
-    Effect.orElseSucceed(() => [] as string[])
-  )
+const listTopLevelTranscripts = (dir: string, engine = "claude"): Effect.Effect<string[], FSError> =>
+  listLogicalTranscriptFiles(dir, engine)
 
-export const listCorpusSources: Effect.Effect<CorpusSource[], never> = Effect.gen(function* () {
+export const listCorpusSources: Effect.Effect<CorpusSource[], FSError> = Effect.gen(function* () {
   const out: CorpusSource[] = []
-  const fromShardedStore = (engine: string, root: string): Effect.Effect<void, never> =>
+  const fromShardedStore = (engine: string, root: string): Effect.Effect<void, FSError> =>
     Effect.gen(function* () {
       for (const encodedDir of yield* listSubdirs(root)) {
-        for (const file of yield* listTopLevelTranscripts(join(root, encodedDir))) {
+        for (const file of yield* listTopLevelTranscripts(join(root, encodedDir), engine)) {
           out.push({
             engine,
             sessionId: engine === "pi" ? file.slice(file.indexOf("_") + 1, -".jsonl".length) : file.slice(0, -".jsonl".length),
@@ -261,8 +258,10 @@ export const listCorpusSources: Effect.Effect<CorpusSource[], never> = Effect.ge
 })
 
 /** The first `cwd` field of a claude transcript, from the transcript index. */
-const firstCwdInTranscript = (file: string): Effect.Effect<string | null, never> =>
-  transcriptSnapshot(file, isPiSessionPath(file) ? "pi" : "claude").pipe(Effect.map((snap) => snap?.cwd ?? null))
+const firstCwdInTranscript = (file: string, engine = "claude"): Effect.Effect<string | null, never> =>
+  readLogicalTranscript(file, isPiSessionPath(file) ? "pi" : engine, (view) => view.projection.pipe(Effect.map((snap) => snap.cwd))).pipe(
+    Effect.catchAll((error) => Effect.logWarning("Cannot read session cwd", error).pipe(Effect.as(null)))
+  )
 
 /**
  * encodedDir → cwd, for stores whose transcripts carry no cwd. Encoding is not
@@ -297,7 +296,7 @@ const resolveCwd = (
   Effect.gen(function* () {
     if (source.cwd) return source.cwd
     if (source.engine === "claude" || source.engine === "pi" || source.engine === "grok") {
-      const fromFile = yield* firstCwdInTranscript(source.sourcePath)
+      const fromFile = yield* firstCwdInTranscript(source.sourcePath, source.engine)
       if (fromFile) {
         if (source.encodedDir) lookup.set(source.encodedDir, fromFile)
         return fromFile
@@ -307,7 +306,9 @@ const resolveCwd = (
     if (known || !source.encodedDir) return known
     // A built-in engine session in a project that also has claude sessions.
     const claudeDir = join(CLAUDE_PROJECTS_DIR, source.encodedDir)
-    for (const file of yield* listTopLevelTranscripts(claudeDir)) {
+    for (const file of yield* listTopLevelTranscripts(claudeDir).pipe(
+      Effect.catchAll((error) => Effect.logWarning("Cannot inspect fallback project cwd", error).pipe(Effect.as([] as string[])))
+    )) {
       const cwd = yield* firstCwdInTranscript(join(claudeDir, file))
       if (cwd) {
         // Reuse for the other sessions sharing this encoded directory.
@@ -327,25 +328,17 @@ const resolveCwd = (
 const extractText = (
   source: CorpusSource,
   cwd: string | null,
-  updatedAt: number,
   titles?: TitleFile
-): Effect.Effect<string | null, AppError> =>
-  Effect.gen(function* () {
-    const format = isPiSessionPath(source.sourcePath) ? "pi" : source.engine === "codex" ? "codex" : "claude"
-    const snap = yield* transcriptSnapshot(source.sourcePath, format)
-    if (!snap) {
-      return yield* Effect.fail(new AppError({ message: `failed to read transcript ${source.sourcePath}` }))
-    }
-    if (snap.corpus.length === 0) return null
-    const title =
-      format === "codex"
-        ? listMessages(snap)[0]?.slice(0, 80) || "Untitled Session"
-        : generateTitle(snap.aiTitle, snap.summary, titleMessages(snap))
+): Effect.Effect<string | null, FSError> =>
+  readLogicalTranscript(source.sourcePath, source.engine, (view) => Effect.gen(function* () {
+    const snap = yield* view.projection;
+    if (snap.corpus.length === 0) return null;
+    const title = defaultSessionTitle(snap);
     return renderCorpusText(
-      { engine: snap.engine ?? source.engine, sessionId: source.sessionId, cwd, title: titles ? titleFromProject(titles, source.sessionId, title, titleStore(source.engine), cwd).title : title, updatedAt },
+      { engine: snap.engine ?? source.engine, sessionId: source.sessionId, cwd, title: titles ? titleFromProject(titles, source.sessionId, title, titleStore(source.engine), cwd).title : title, updatedAt: view.mtimeMs },
       snap.corpus.map((line) => ({ role: line.role, content: line.text }))
-    )
-  })
+    );
+  }))
 
 // ─────────────────────────────────────────────────────────
 // Sync
@@ -356,7 +349,6 @@ interface Planned {
   readonly source: CorpusSource
   readonly fingerprint: string
   readonly corpusPath: string
-  readonly mtimeMs: number
   /** Already resolved during planning; undefined = resolve during the rebuild. */
   readonly cwd: string | null | undefined
 }
@@ -381,8 +373,11 @@ const syncImpl = (cockpitDir: string, corpusDir: string): Effect.Effect<CorpusSy
     const next: Manifest = {}
     const planned: Planned[] = []
     for (const source of sources) {
-      const st = yield* fsTry(source.sourcePath, "stat", () => stat(source.sourcePath)).pipe(Effect.option)
-      if (st._tag === "None") continue
+      const identity = yield* readLogicalTranscript(source.sourcePath, source.engine, (view) => Effect.succeed(view.fingerprint)).pipe(Effect.option)
+      if (identity._tag === "None") {
+        if (previous[source.sourcePath]) next[source.sourcePath] = previous[source.sourcePath];
+        continue;
+      }
       const titleCwd = source.cwd ?? previous[source.sourcePath]?.cwd ?? (yield* resolveCwd(source, lookup))
       const titleProject = source.encodedDir ?? (titleCwd ? encodePath(titleCwd) : null)
       let titles = titleProject ? titleFiles.get(titleProject) : undefined
@@ -391,7 +386,8 @@ const syncImpl = (cockpitDir: string, corpusDir: string): Effect.Effect<CorpusSy
         titleFiles.set(titleProject, titles)
       }
       const titleInfo = titles ? titleFromProject(titles, source.sessionId, '', titleStore(source.engine), titleCwd) : null
-      const fingerprint = `${Math.floor(st.value.mtimeMs)}-${st.value.size}:${JSON.stringify([titleInfo?.titleRevision, titleInfo?.customTitle])}`
+      // Version the projection too: title rules can change without a transcript write.
+      const fingerprint = `v6:${identity.value}:${JSON.stringify([titleInfo?.titleRevision, titleInfo?.customTitle])}`
       const corpusPath = join(corpusDir, source.engine, `${source.sessionId}.txt`)
       const prev = previous[source.sourcePath]
       const unchanged = prev !== undefined && prev.fingerprint === fingerprint
@@ -410,18 +406,18 @@ const syncImpl = (cockpitDir: string, corpusDir: string): Effect.Effect<CorpusSy
           next[source.sourcePath] = { fingerprint, corpusPath: prev.corpusPath, cwd: prevCwd }
           continue
         }
-        planned.push({ source, titles, fingerprint, corpusPath, mtimeMs: st.value.mtimeMs, cwd: resolved })
+        planned.push({ source, titles, fingerprint, corpusPath, cwd: resolved })
         continue
       }
-      planned.push({ source, titles, fingerprint, corpusPath, mtimeMs: st.value.mtimeMs, cwd: undefined })
+      planned.push({ source, titles, fingerprint, corpusPath, cwd: undefined })
     }
 
     const rebuilt = yield* Effect.forEach(
       planned,
-      ({ source, titles, fingerprint, corpusPath, mtimeMs, cwd: plannedCwd }): Effect.Effect<readonly [string, ManifestEntry | null], never> =>
+      ({ source, titles, fingerprint, corpusPath, cwd: plannedCwd }): Effect.Effect<readonly [string, ManifestEntry | null], never> =>
         Effect.gen(function* () {
           const cwd = plannedCwd !== undefined ? plannedCwd : yield* resolveCwd(source, lookup)
-          const extracted = yield* Effect.either(extractText(source, cwd, mtimeMs, titles))
+          const extracted = yield* Effect.either(extractText(source, cwd, titles))
           if (Either.isLeft(extracted)) {
             // A read failure is NOT "no searchable text": keep whatever was indexed before
             // (old corpus file, old fingerprint), so the next sync sees a mismatch and retries.

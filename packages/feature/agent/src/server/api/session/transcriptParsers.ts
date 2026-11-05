@@ -18,9 +18,12 @@ import { isPiSessionPath } from '@cockpit/shared-utils';
 import { readPiSession, piSelection } from '../../../effect/piSessionLive';
 import * as readline from 'readline';
 import { Readable } from 'stream';
+import type { TranscriptSource } from '../../transcriptSource';
+export type { TranscriptSource } from '../../transcriptSource';
 import { injectionKind, isHumanTurnStart, queuedPromptAsUserEntry } from '../../../shared/transcriptTurns';
 import { asyncLaunchTaskId, parseTaskNotification, type ToolCallTask } from '../../../shared/subagentTask';
-import { generateTitle } from '../../sessionTitle';
+import { generateCodexTitle, generateTitle } from '../../sessionTitle';
+import { codexPromptText } from '../../../shared/codexPrompt';
 import { detectBotName } from '../../../shared/botSession';
 import { appendTextPart, appendToolPart, joinAssistantText } from '../../../shared/assistantText';
 import type { MessagePart } from '../../../shared/assistantText';
@@ -28,7 +31,6 @@ import {
   CODEX_AGENT_MESSAGE_TYPE,
   CODEX_CUSTOM_TOOL_NAMES,
   CODEX_EXEC_SCRIPT_FN_NAME,
-  CODEX_IMAGE_ONLY_TEXT,
   CODEX_SPAWN_FN_NAME,
   CODEX_WAIT_FN_NAME,
   codexAgentResultText,
@@ -139,10 +141,8 @@ export interface ChatMessage {
  *
  * The in-memory form exists for "independent task" turns, where the file on disk holds
  * only the in-flight turn and the conversation has to be reassembled from the stash
- * before anyone reads it (see session/transcriptView.ts).
+ * before anyone reads it (see effect/logicalTranscript.ts).
  */
-export type TranscriptSource = string | { text: string };
-
 function openTranscriptLines(source: TranscriptSource): readline.Interface {
   const input = typeof source === 'string' ? fs.createReadStream(source) : Readable.from([source.text]);
   return readline.createInterface({ input, crlfDelay: Infinity });
@@ -621,7 +621,6 @@ export async function parseCodexTranscriptFile(
 
   const messages: ChatMessage[] = [];
   let currentAssistant: ChatMessage | null = null;
-  let title = 'Untitled Session';
   // Kept beside the title because the title is truncated and lowercase-`@name`
   // detection needs the line as written.
   let firstUserText: string | null = null;
@@ -702,7 +701,8 @@ export async function parseCodexTranscriptFile(
       if (payload.type === 'message' && payload.role === 'user') {
         const { text, images } = extractCodexUserContent(payload.content);
         // Skip system/developer messages (permissions, AGENTS.md, env context)
-        if (images.length === 0 && (!text || text.startsWith('<') || text.startsWith('#'))) continue;
+        const prompt = codexPromptText(text, images.length);
+        if (prompt === null) continue;
 
         flushAssistant();
         messages.push({
@@ -713,10 +713,7 @@ export async function parseCodexTranscriptFile(
           timestamp,
         });
         // First real user message becomes the title
-        if (title === 'Untitled Session') {
-          title = (text || CODEX_IMAGE_ONLY_TEXT).slice(0, 80);
-          firstUserText = text;
-        }
+        if (firstUserText === null) firstUserText = prompt;
       }
 
       // Assistant text message
@@ -988,5 +985,5 @@ export async function parseCodexTranscriptFile(
 
   flushAssistant();
 
-  return { messages, title, bot: detectBotName(firstUserText), usage: lastUsage };
+  return { messages, title: generateCodexTitle(firstUserText), bot: detectBotName(firstUserText), usage: lastUsage };
 }

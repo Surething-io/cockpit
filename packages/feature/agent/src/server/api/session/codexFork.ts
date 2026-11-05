@@ -1,3 +1,4 @@
+import { codexPromptText } from '../../../shared/codexPrompt';
 import {
   CODEX_CUSTOM_TOOL_NAMES,
   CODEX_EXEC_SCRIPT_FN_NAME,
@@ -59,7 +60,7 @@ function codexVisibleMessageIds(
   if (entry.type === 'response_item') {
     if (payload.type === 'message' && payload.role === 'user') {
       const { text, images } = extractCodexUserContent(payload.content);
-      if (images.length > 0 || (text && !text.startsWith('<') && !text.startsWith('#'))) {
+      if (codexPromptText(text, images.length) !== null) {
         state.assistantOpen = false;
         ids.push(`codex-user-${state.msgCounter++}`);
       }

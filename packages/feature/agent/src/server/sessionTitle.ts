@@ -16,8 +16,8 @@
  *                 content appended).
  *   4. 'Untitled Session'.
  *
- * The manual pinned-session rename is handled client-side and overrides this
- * derived title, so it stays above aiTitle without any logic here.
+ * Cockpit custom titles are applied by the session-title metadata layer after
+ * deriving this native fallback.
  */
 
 /** Filter command/system tags and extract the meaningful user text. */
@@ -73,4 +73,9 @@ export function generateTitle(aiTitle: string, summary: string, userMessages: st
   if (commandName) return commandName;
 
   return 'Untitled Session';
+}
+
+/** Codex has no native title line; its first displayed prompt names the session. */
+export function generateCodexTitle(firstPrompt: string | null | undefined): string {
+  return (firstPrompt ?? 'Untitled Session').slice(0, 80);
 }

@@ -29,7 +29,6 @@ const BASELINE = new Set([
   'packages/feature/agent/src/server/api/scheduled-tasks.ts',
   'packages/feature/agent/src/server/api/session-by-path.ts',
   'packages/feature/agent/src/server/api/session/sessionArtifacts.ts',
-  'packages/feature/agent/src/server/api/session/transcriptView.ts',
   'packages/feature/explorer/src/server/api/files/clipboard.ts',
   'src/app/api/extension/version/route.ts',
   'src/app/api/services/scripts/route.ts',

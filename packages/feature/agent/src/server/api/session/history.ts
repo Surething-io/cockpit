@@ -20,7 +20,8 @@ import {
   ValidationError,
 } from '@cockpit/effect-core';
 import { resolveSessionPath } from './sessionStore';
-import { parseTranscriptFile } from './transcriptToMessages';
+import { parseTranscriptFile, parseCodexTranscriptFile } from './transcriptParsers';
+import { readLogicalTranscript } from '../../../effect/logicalTranscript';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -45,17 +46,17 @@ export const GET = dynamicHandler<
     // where a session lives IS what it ran as, and this route is reachable for a
     // codex / deepseek / kimi / glm / ollama chat too. resolveSessionPath also
     // subsumes the existence check (null = no store holds it).
-    const store = yield* Effect.promise(() => resolveSessionPath(cwd, sessionId));
+    const store = yield* Effect.tryPromise({ try: () => resolveSessionPath(cwd, sessionId), catch: (cause) => new AppError({ message: 'Cannot resolve session history', cause }) });
     if (!store) {
       return yield* Effect.fail(
         new NotFoundError({ resource: 'session', id: sessionId })
       );
     }
-    const messages = yield* Effect.tryPromise({
-      try: () => parseTranscriptFile(store.sessionPath),
+    const parsed = yield* readLogicalTranscript(store.sessionPath, store.engine, (reader) => reader.source.pipe(Effect.flatMap((source) => Effect.tryPromise({
+      try: () => store.engine === 'codex' ? parseCodexTranscriptFile(source) : parseTranscriptFile(source),
       catch: (cause) =>
         new AppError({ message: 'parseTranscriptFile failed', cause }),
-    });
-    return ok({ messages });
+    })))).pipe(Effect.mapError((cause) => new AppError({ message: 'Cannot read session history', cause })));
+    return ok({ messages: parsed.messages });
   })
 );

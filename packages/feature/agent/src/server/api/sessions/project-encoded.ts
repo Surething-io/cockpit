@@ -1,17 +1,17 @@
 import { readProjectTitles, titleFromProject, titleStore } from '../../../effect/sessionTitles';
-import { readdir, stat } from 'fs/promises';
 import * as path from 'path';
 import { Effect } from 'effect';
-import { CLAUDE_PROJECTS_DIR, GROK_SESSIONS_DIR, COCKPIT_PROJECTS_DIR, encodePath, normalizeCodexSessionId } from '@cockpit/shared-utils';
+import { CLAUDE_PROJECTS_DIR, GROK_SESSIONS_DIR, COCKPIT_PROJECTS_DIR, PI_SESSIONS_DIR, encodePath, normalizeCodexSessionId } from '@cockpit/shared-utils';
 import { listPiSessions } from '../../../effect/piSessionLive';
 import { dynamicHandler } from '@cockpit/effect-runtime/server';
 import { isJsonObject, readJsonOr } from '@cockpit/effect-runtime/server/fs';
-import { ValidationError } from '@cockpit/effect-core';
-import { TranscriptIndex, type TranscriptFormat } from '@cockpit/effect-services';
-import { generateTitle } from '../../sessionTitle';
+import { ValidationError, FSError } from '@cockpit/effect-core';
+import { TranscriptIndex } from '@cockpit/effect-services';
 import { detectBotName } from '../../../shared/botSession';
 import type { SessionListItem } from '../../../shared/sessionDto';
-import { isCodexSubagent, listMessages } from '../../transcriptViews';
+import { defaultSessionTitle, isCodexSubagent, listMessages } from '../../transcriptViews';
+import { listLogicalTranscriptFiles, readLogicalTranscript } from '../../../effect/logicalTranscript';
+import { transcriptExists } from '../../../effect/transcriptPresence';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -37,8 +37,7 @@ function buildSessionInfo(
   sessionId: string,
   modifiedAt: Date,
   engine: SessionInfo['engine'],
-  aiTitle: string,
-  summary: string,
+  displayTitle: string,
   userMessages: string[],
 ): SessionInfo | null {
   if (userMessages.length === 0) return null;
@@ -49,7 +48,6 @@ function buildSessionInfo(
   const lastMessages = userMessages.length <= 10
     ? []
     : userMessages.slice(-5).map(m => truncateMessage(m));
-  const displayTitle = generateTitle(aiTitle, summary, userMessages);
   const bot = detectBotName(userMessages[0]);
 
   return {
@@ -70,25 +68,12 @@ function buildSessionInfo(
 interface SessionFile {
   name: string;
   path: string;
-  mtimeMs: number;
   engine?: SessionInfo['engine'];
 }
 
-// Collect .jsonl session files from a directory (exclude agent- subprocess files)
-const collectSessionFiles = (dir: string, engine?: SessionInfo['engine']): Effect.Effect<SessionFile[], never> =>
-  Effect.tryPromise(() => readdir(dir)).pipe(
-    Effect.map((files) => files.filter((file) => file.endsWith('.jsonl') && !file.startsWith('agent-'))),
-    Effect.flatMap((files) =>
-      Effect.forEach(files, (file) => {
-        const filePath = path.join(dir, file);
-        return Effect.tryPromise(() => stat(filePath)).pipe(
-          Effect.map((st): SessionFile[] => [{ name: file, path: filePath, mtimeMs: st.mtimeMs, engine }]),
-          Effect.orElseSucceed((): SessionFile[] => [])
-        );
-      }, { concurrency: 16 })
-    ),
-    Effect.map((rows) => rows.flat()),
-    Effect.orElseSucceed((): SessionFile[] => [])
+const collectSessionFiles = (dir: string, engine: string): Effect.Effect<SessionFile[], FSError> =>
+  listLogicalTranscriptFiles(dir, engine).pipe(
+    Effect.map((files) => files.map((name) => ({ name, path: path.join(dir, name), engine: engine as SessionInfo['engine'] }))),
   );
 
 // Read cockpit session.json to find codex session IDs. Codex is the only engine left
@@ -131,7 +116,6 @@ interface ListSource {
   sessionId: string;
   path: string;
   engine: SessionInfo['engine'];
-  format: TranscriptFormat;
 }
 
 /**
@@ -156,12 +140,12 @@ const loadSessions = (encodedPath: string) =>
     for (const f of stores.flat()) {
       if (seen.has(f.name)) continue;
       seen.add(f.name);
-      sources.push({ sessionId: f.name.replace(/\.jsonl$/, ''), path: f.path, engine: f.engine, format: 'claude' });
+      sources.push({ sessionId: f.name.replace(/\.jsonl$/, ''), path: f.path, engine: f.engine });
     }
 
-    for (const pi of yield* listPiSessions().pipe(Effect.orElseSucceed(() => []))) {
+    for (const pi of yield* listPiSessions().pipe(Effect.mapError((cause) => new FSError({ path: PI_SESSIONS_DIR, op: 'read', cause })))) {
       if (encodePath(pi.cwd) !== encodedPath) continue;
-      sources.push({ sessionId: pi.id, path: pi.path, engine: pi.engine, format: 'pi' });
+      sources.push({ sessionId: pi.id, path: pi.path, engine: pi.engine });
     }
 
     // Codex: current Cockpit state is the fast path, and the global index backfills
@@ -182,23 +166,27 @@ const loadSessions = (encodedPath: string) =>
     for (const [filePath, sessionId] of codexPaths) {
       // Skip if already found (e.g. session was also saved as Claude format)
       if (seen.has(`${sessionId}.jsonl`)) continue;
-      sources.push({ sessionId, path: filePath, engine: 'codex', format: 'codex' });
+      sources.push({ sessionId, path: filePath, engine: 'codex' });
     }
 
     const titles = yield* readProjectTitles(encodedPath);
-    const snaps = yield* index.snapshots(sources);
+    const views = yield* Effect.forEach(sources, (source) => readLogicalTranscript(source.path, source.engine ?? 'claude', (view) =>
+      view.projection.pipe(Effect.map((projection) => ({ projection, mtimeMs: view.mtimeMs }))),
+    ).pipe(Effect.catchAll((error) => transcriptExists(source.path, source.engine ?? 'claude').pipe(
+      Effect.flatMap((exists) => exists ? Effect.fail(error) : Effect.succeed(null)),
+    ))), { concurrency: 4 });
     const sessions: SessionInfo[] = [];
     sources.forEach((source, i) => {
-      const snap = snaps[i];
-      if (!snap) return;
+      const view = views[i];
+      if (!view) return;
+      const snap = view.projection;
       const session = buildSessionInfo(
         source.path,
         source.sessionId,
         // fs.Stats.mtime rounds mtimeMs; match it so modifiedAt is unchanged.
-        new Date(Math.round(snap.mtimeMs)),
+        new Date(Math.round(view.mtimeMs)),
         source.engine,
-        snap.aiTitle,
-        snap.summary,
+        defaultSessionTitle(snap),
         listMessages(snap),
       );
       if (session) {

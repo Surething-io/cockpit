@@ -32,6 +32,10 @@
  * index (same rationale as snapshotLive's semaphores and sessionRunHub).
  */
 import { readPiSession, piSelection } from "./piSessionLive"
+import { withTranscriptLayout } from "./transcriptPresence"
+import { CODEX_NO_HISTORY_SUFFIX, codexNoHistoryStashPath } from "../server/transcriptLayout"
+import { advanceTranscriptGeneration } from "../server/transcriptRevision"
+export { transcriptGeneration } from "../server/transcriptRevision"
 import { createHash } from "node:crypto"
 import { open, readFile, readdir, realpath, rm, stat } from "node:fs/promises"
 import { basename, dirname, join, resolve } from "node:path"
@@ -50,7 +54,8 @@ import {
 } from "@cockpit/effect-services"
 import { extractCodexUserContent } from "../server/api/session/codexTools"
 import { getOwn, setOwn } from "../server/transcriptViews"
-import { queuedPromptAsUserEntry } from "../shared/transcriptTurns"
+import { codexPromptText } from "../shared/codexPrompt"
+import { injectionKind, queuedPromptAsUserEntry } from "../shared/transcriptTurns"
 import { writeAtomically } from "@cockpit/effect-runtime/server/fs"
 
 // ─────────────────────────────────────────────────────────
@@ -58,7 +63,7 @@ import { writeAtomically } from "@cockpit/effect-runtime/server/fs"
 // ─────────────────────────────────────────────────────────
 
 /** Bump when the folded shape or a fold rule changes: every shard rebuilds once. */
-export const TRANSCRIPT_INDEX_VERSION = 4
+export const TRANSCRIPT_INDEX_VERSION = 7
 const READ_CONCURRENCY = 4
 const ANCHOR_BYTES = 64
 const CHUNK_BYTES = 1024 * 1024
@@ -186,25 +191,12 @@ export interface TranscriptRecord {
 
 /** Claude-format decoder (claude CLI + the built-in engine stores). */
 export const decodeClaudeLine = (line: string): TranscriptRecord | null => {
-  const d = parseLine(line)
-  if (!d) return null
-  // A prompt sent while a run was busy is stored as an `attachment/queued_command`; the
-  // chat view shows it as a user message via the shared normaliser, so search must see
-  // it too. Corpus only: session lists and previews have never included these.
-  const queued = queuedPromptAsUserEntry(d)
-  if (queued) {
-    const content = queued.message.content
-    const text =
-      typeof content === "string"
-        ? content
-        : content.filter(isRecord).filter((b) => b.type === "text").map((b) => str(b.text) ?? "").join("\n")
-    return {
-      type: "attachment",
-      sessionId: str(d.sessionId) || undefined,
-      timestamp: str(d.timestamp) || undefined,
-      corpusText: text.trim() ? text : undefined,
-    }
-  }
+  const parsed = parseLine(line)
+  if (!parsed) return null
+  // Queued prompts are human input, just like the user entries the detail
+  // parser normalizes them into. Preserve side-band fields from the raw row.
+  const queued = queuedPromptAsUserEntry(parsed)
+  const d = queued ? { ...parsed, ...queued } : parsed
   const type = str(d.type) ?? ""
   const message = isRecord(d.message) ? d.message : undefined
   const content = message?.content
@@ -216,7 +208,15 @@ export const decodeClaudeLine = (line: string): TranscriptRecord | null => {
       typeof content === "string"
         ? [content]
         : blocks.filter((b) => b.type === "text").map((b) => str(b.text) ?? "")
-    if (texts.length > 0) userTurn = d.isMeta === true ? { blocks: texts, isMeta: true } : { blocks: texts }
+    if (texts.length > 0) {
+      const injected = injectionKind({
+        isMeta: d.isMeta === true,
+        isCompactSummary: d.isCompactSummary === true,
+        origin: isRecord(d.origin) ? { kind: str(d.origin.kind) } : undefined,
+        sourceToolUseID: str(d.sourceToolUseID),
+      }) !== null;
+      userTurn = injected ? { blocks: texts, isMeta: true } : { blocks: texts }
+    }
   }
 
   let assistant: TranscriptRecord["assistant"]
@@ -252,8 +252,6 @@ export const decodeClaudeLine = (line: string): TranscriptRecord | null => {
     corpusText: corpusText.trim() ? corpusText : undefined,
   }
 }
-
-const isCodexSystemText = (text: string): boolean => text.startsWith("<") || text.startsWith("#")
 
 /** Codex rollout decoder: only human and assistant `response_item` messages matter. */
 export const decodeCodexLine = (line: string): TranscriptRecord | null => {
@@ -293,7 +291,7 @@ export const decodeCodexLine = (line: string): TranscriptRecord | null => {
   return {
     type: "user",
     userTurn: { blocks, listText: text, images: images.length },
-    corpusText: text && !isCodexSystemText(text) ? text : undefined,
+    corpusText: codexPromptText(text, images.length) !== null && text ? text : undefined,
   }
 }
 
@@ -477,7 +475,7 @@ interface IndexState {
   codexHeadsDirty: boolean
   codexHeadsFlushScheduled: boolean
   /** directory → its last listing, reused while the directory's mtime is unchanged. */
-  readonly codexDirs: Map<string, { mtimeMs: number; dirs: string[]; files: string[] }>
+  readonly codexDirs: Map<string, { version: 1; mtimeMs: number; dirs: string[]; files: string[] }>
   /** thread id → rollout paths; null = rebuild from codexHeads on next use. */
   codexById: Map<string, string[]> | null
   codexHeadReads: number
@@ -811,6 +809,16 @@ const markCodexHeadsDirty = (shardDir: string, s: IndexState): void => {
   Effect.runFork(Effect.sleep(FLUSH_DELAY).pipe(Effect.zipRight(flushCodexHeads(shardDir, s))))
 }
 
+/** ENOENT is absence; every other native discovery failure invalidates the inventory. */
+const discover = async <A>(path: string, op: "read" | "stat", read: () => Promise<A>): Promise<A | null> =>
+  read().catch((cause: NodeJS.ErrnoException) => {
+    if (cause.code === "ENOENT") return null
+    throw new FSError({ path, op, cause })
+  })
+
+const discoveryEffect = <A>(path: string, read: () => Promise<A>): Effect.Effect<A, FSError> =>
+  Effect.tryPromise({ try: read, catch: (cause) => cause instanceof FSError ? cause : new FSError({ path, op: "read", cause }) })
+
 /** Every rollout path; concurrent callers share one walk (single-flight). */
 const listCodexRollouts = (s: IndexState): Promise<string[]> =>
   (s.codexWalkInflight ??= walkCodexRollouts(s).finally(() => {
@@ -823,19 +831,21 @@ const walkCodexRollouts = async (s: IndexState): Promise<string[]> => {
   const stack = [CODEX_SESSIONS_DIR]
   while (stack.length > 0) {
     const dir = stack.pop()!
-    const mtimeMs = await stat(dir).then((st) => st.mtimeMs, () => null)
+    const mtimeMs = (await discover(dir, "stat", () => stat(dir)))?.mtimeMs ?? null
     if (mtimeMs === null) {
       s.codexDirs.delete(dir)
       continue
     }
     let listing = s.codexDirs.get(dir)
-    if (!listing || listing.mtimeMs !== mtimeMs) {
-      const entries = await readdir(dir, { withFileTypes: true }).catch(() => null)
-      if (!entries) continue
+    if (!listing || listing.version !== 1 || listing.mtimeMs !== mtimeMs) {
+      const entries = await discover(dir, "read", () => readdir(dir, { withFileTypes: true }))
+      if (!entries) { s.codexDirs.delete(dir); continue }
       listing = {
+        version: 1,
         mtimeMs,
         dirs: entries.filter((e) => e.isDirectory()).map((e) => join(dir, e.name)),
-        files: entries.filter((e) => e.isFile() && e.name.endsWith(".jsonl")).map((e) => join(dir, e.name)),
+        files: [...new Set(entries.filter((e) => e.isFile() && (e.name.endsWith(".jsonl") || e.name.endsWith(`.jsonl${CODEX_NO_HISTORY_SUFFIX}`)))
+          .map((e) => join(dir, e.name.endsWith(CODEX_NO_HISTORY_SUFFIX) ? e.name.slice(0, -CODEX_NO_HISTORY_SUFFIX.length) : e.name)))],
       }
       s.codexDirs.set(dir, listing)
     }
@@ -846,7 +856,7 @@ const walkCodexRollouts = async (s: IndexState): Promise<string[]> => {
 }
 
 /** The rollout's meta, reading its first line only when the cached view is not valid. */
-const codexHeadFor = async (shardDir: string, s: IndexState, path: string, ino: number): Promise<CodexMeta | null> => {
+const codexHeadFor = async (shardDir: string, s: IndexState, path: string, ino: number, sourcePath = path): Promise<CodexMeta | null> => {
   // Only a meta this catalog read itself, from this very inode, is trusted.
   const head = s.codexHeads.get(path)
   if (head?.meta && head.ino === ino) return head.meta
@@ -856,7 +866,7 @@ const codexHeadFor = async (shardDir: string, s: IndexState, path: string, ino: 
   if (inflight) return inflight
   const read = (async () => {
     s.codexHeadReads++
-    const line = await readFirstCompleteLine(path).catch(() => null)
+    const line = await discover(sourcePath, "read", () => readFirstCompleteLine(sourcePath))
     const meta = line ? await parseCodexMetaLine(line) : null
     s.codexHeads.set(path, { ino, meta })
     markCodexHeadsDirty(shardDir, s)
@@ -867,19 +877,24 @@ const codexHeadFor = async (shardDir: string, s: IndexState, path: string, ino: 
 }
 
 const codexEntry = async (shardDir: string, s: IndexState, path: string): Promise<CodexSessionEntry | null> => {
-  const st = await stat(path).catch(() => null)
-  if (!st) {
-    if (s.codexHeads.delete(path)) markCodexHeadsDirty(shardDir, s)
-    return null
-  }
-  const meta = await codexHeadFor(shardDir, s, path, st.ino)
-  return meta ? { ...meta, path, modifiedAt: st.mtimeMs, size: st.size } : null
+  const entry = await Effect.runPromise(withTranscriptLayout(path, "codex", (layout) => discoveryEffect(path, async () => {
+    const identity = layout.history ?? layout.current;
+    if (!identity) return null;
+    const source = layout.history ? codexNoHistoryStashPath(path) : path;
+    const meta = await codexHeadFor(shardDir, s, path, identity.ino, source);
+    return meta ? { ...meta, path, modifiedAt: Math.max(layout.current?.mtimeMs ?? 0, layout.history?.mtimeMs ?? 0), size: (layout.current?.size ?? 0) + (layout.history?.size ?? 0) } : null;
+  })));
+  if (!entry && s.codexHeads.delete(path)) markCodexHeadsDirty(shardDir, s);
+  return entry;
 }
 
-const codexSessionsImpl = (shardDir: string, s: IndexState): Effect.Effect<ReadonlyArray<CodexSessionEntry>, never> =>
+const codexSessionsImpl = (shardDir: string, s: IndexState): Effect.Effect<ReadonlyArray<CodexSessionEntry>, FSError> =>
   Effect.gen(function* () {
-    yield* Effect.promise(() => loadCodexHeads(shardDir, s))
-    const files = yield* Effect.promise(() => listCodexRollouts(s))
+    yield* discoveryEffect(shardDir, () => loadCodexHeads(shardDir, s))
+    const files = yield* discoveryEffect(CODEX_SESSIONS_DIR, () => listCodexRollouts(s))
+    const entries = yield* Effect.forEach(files, (path) => discoveryEffect(path, () => codexEntry(shardDir, s, path)), {
+      concurrency: CODEX_STAT_CONCURRENCY,
+    })
     const live = new Set(files)
     for (const path of s.codexHeads.keys()) {
       if (!live.has(path)) {
@@ -887,9 +902,6 @@ const codexSessionsImpl = (shardDir: string, s: IndexState): Effect.Effect<Reado
         markCodexHeadsDirty(shardDir, s)
       }
     }
-    const entries = yield* Effect.forEach(files, (path) => Effect.promise(() => codexEntry(shardDir, s, path)), {
-      concurrency: CODEX_STAT_CONCURRENCY,
-    })
     return entries.filter((e): e is CodexSessionEntry => e !== null).sort((a, b) => b.modifiedAt - a.modifiedAt)
   })
 
@@ -911,10 +923,10 @@ const resolveCodexImpl = (
   shardDir: string,
   s: IndexState,
   threadId: string
-): Effect.Effect<CodexSessionEntry | null, never> =>
+): Effect.Effect<CodexSessionEntry | null, FSError> =>
   Effect.gen(function* () {
     const id = normalizeCodexSessionId(threadId)
-    yield* Effect.promise(() => loadCodexHeads(shardDir, s))
+    yield* discoveryEffect(shardDir, () => loadCodexHeads(shardDir, s))
     const fromKnown = async (): Promise<CodexSessionEntry | null> => {
       for (const path of codexPathsById(s, id)) {
         const entry = await codexEntry(shardDir, s, path)
@@ -922,17 +934,17 @@ const resolveCodexImpl = (
       }
       return null
     }
-    const known = yield* Effect.promise(fromKnown)
+    const known = yield* discoveryEffect(CODEX_SESSIONS_DIR, fromKnown)
     if (known) return known
     // Miss: only rollouts not yet known (or whose first line was still incomplete) can
     // hold it; unchanged directories cost one stat each.
-    const files = yield* Effect.promise(() => listCodexRollouts(s))
+    const files = yield* discoveryEffect(CODEX_SESSIONS_DIR, () => listCodexRollouts(s))
     const pending = files.filter((f) => !s.codexHeads.get(f)?.meta)
-    yield* Effect.forEach(pending, (path) => Effect.promise(() => codexEntry(shardDir, s, path)), {
+    yield* Effect.forEach(pending, (path) => discoveryEffect(path, () => codexEntry(shardDir, s, path)), {
       concurrency: CODEX_STAT_CONCURRENCY,
       discard: true,
     })
-    return yield* Effect.promise(fromKnown)
+    return yield* discoveryEffect(CODEX_SESSIONS_DIR, fromKnown)
   })
 
 /**
@@ -941,6 +953,7 @@ const resolveCodexImpl = (
  * even if it lands before the new inode would have been noticed.
  */
 export const invalidateTranscript = (path: string): void => {
+  advanceTranscriptGeneration(path)
   for (const [shardDir, s] of states) {
     // Mark it probed so the (equally stale) shard is never loaded back; the flush
     // finds no entry for a dirty path and removes the shard.
@@ -984,8 +997,8 @@ export const TranscriptIndexLive = Layer.effect(
  * that call it). The Layer is cheap to provide per call: its state is the pinned
  * process-wide index, not something the Layer builds.
  */
-export const runWithTranscriptIndex = <A>(
-  f: (index: TranscriptIndex) => Effect.Effect<A, never>
+export const runWithTranscriptIndex = <A, E>(
+  f: (index: TranscriptIndex) => Effect.Effect<A, E>
 ): Promise<A> => Effect.runPromise(Effect.flatMap(TranscriptIndex, f).pipe(Effect.provide(TranscriptIndexLive)))
 
 /** Promise bridge: the rollout for a codex thread id, or null. */
@@ -997,7 +1010,7 @@ export const listCodexSessionEntries = (): Promise<ReadonlyArray<CodexSessionEnt
   runWithTranscriptIndex((index) => index.codexSessions)
 
 /** Effect form of listCodexSessionEntries for Live layers built outside AppLayer's graph. */
-export const codexSessionEntries: Effect.Effect<ReadonlyArray<CodexSessionEntry>, never> = Effect.flatMap(
+export const codexSessionEntries: Effect.Effect<ReadonlyArray<CodexSessionEntry>, FSError> = Effect.flatMap(
   TranscriptIndex,
   (index) => index.codexSessions
 ).pipe(Effect.provide(TranscriptIndexLive))

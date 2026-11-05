@@ -18,7 +18,7 @@ let live: typeof import('./transcriptIndexLive');
 let services: typeof import('@cockpit/effect-services');
 let views: typeof import('../server/transcriptViews');
 
-const run = <A>(f: (i: Index) => Effect.Effect<A, never>) =>
+const run = <A, E>(f: (i: Index) => Effect.Effect<A, E>) =>
   Effect.runPromise(Effect.flatMap(services.TranscriptIndex, f).pipe(Effect.provide(live.TranscriptIndexLive)));
 const resolve = (id: string) => run((i) => i.resolveCodex(id));
 const list = () => run((i) => i.codexSessions);

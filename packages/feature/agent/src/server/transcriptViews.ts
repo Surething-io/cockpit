@@ -11,7 +11,8 @@
  *   mergeStats      — token usage dashboard (api/claude-stats.ts)
  */
 import type { CodexSessionEntry, TranscriptSnapshot, TranscriptStats, TranscriptModelUsage } from '@cockpit/effect-services';
-import { CODEX_IMAGE_ONLY_TEXT } from './api/session/codexTools';
+import { generateCodexTitle, generateTitle } from './sessionTitle';
+import { codexPromptText } from '../shared/codexPrompt';
 
 /**
  * Dictionaries keyed by transcript content (session ids, model names, dates) must never
@@ -54,16 +55,17 @@ export function isValidUserMessage(text: string): boolean {
   return true;
 }
 
-const isCodexSystemText = (text: string): boolean => text.startsWith('<') || text.startsWith('#');
-
 /** Human turns, command tags stripped, injected context dropped. */
-export function previewMessages(snap: TranscriptSnapshot): string[] {
+export function previewMessages(snap: Pick<TranscriptSnapshot, 'format' | 'userTurns'>): string[] {
   const out: string[] = [];
   for (const turn of snap.userTurns) {
+    if (turn.isMeta) continue;
     let text: string;
     if (snap.format === 'codex') {
-      text = turn.blocks.join('');
-      if (!text || isCodexSystemText(text)) continue;
+      const prompt = codexPromptText(turn.listText ?? turn.blocks.join(''), turn.images);
+      if (prompt === null) continue;
+      out.push(prompt);
+      continue;
     } else {
       text = turn.blocks.find((b) => b) ?? '';
       if (!text) continue;
@@ -74,29 +76,36 @@ export function previewMessages(snap: TranscriptSnapshot): string[] {
   return out;
 }
 
-/** Every non-empty user text block, unfiltered — what generateTitle has always been fed. */
-export function titleMessages(snap: TranscriptSnapshot): string[] {
-  return snap.userTurns.flatMap((turn) => turn.blocks.filter((b) => b));
+/** Human text blocks for title generation, retaining command markup for generateTitle. */
+export function titleMessages(snap: Pick<TranscriptSnapshot, 'userTurns'>): string[] {
+  return snap.userTurns.filter((turn) => !turn.isMeta).flatMap((turn) => turn.blocks.filter((b) => b));
 }
 
 /** Codex has no title line: its first real prompt, clipped. */
-export function codexTitle(snap: TranscriptSnapshot): string | undefined {
+export function codexTitle(snap: Pick<TranscriptSnapshot, 'userTurns'>): string | undefined {
   for (const turn of snap.userTurns) {
-    const text = turn.blocks.join('');
-    if (!text || isCodexSystemText(text)) continue;
-    return text.slice(0, 80);
+    const text = codexPromptText(turn.listText ?? turn.blocks.join(''), turn.images);
+    if (text === null) continue;
+    return generateCodexTitle(text);
   }
   return undefined;
 }
 
+/** Native fallback shared by title metadata, session lists, previews and search. */
+export function defaultSessionTitle(snap: Pick<TranscriptSnapshot, 'format' | 'aiTitle' | 'summary' | 'userTurns'>): string {
+  return snap.format === 'codex'
+    ? codexTitle(snap) || 'Untitled Session'
+    : generateTitle(snap.aiTitle, snap.summary, titleMessages(snap));
+}
+
 /** Session-list rows: meta lines skipped, all text blocks joined, image-only codex turns kept. */
-export function listMessages(snap: TranscriptSnapshot): string[] {
+export function listMessages(snap: Pick<TranscriptSnapshot, 'format' | 'userTurns'>): string[] {
   const out: string[] = [];
   for (const turn of snap.userTurns) {
     if (snap.format === 'codex') {
-      const text = turn.listText ?? '';
-      if (!turn.images && (!text || isCodexSystemText(text))) continue;
-      out.push(text || CODEX_IMAGE_ONLY_TEXT);
+      const text = codexPromptText(turn.listText ?? '', turn.images);
+      if (text === null) continue;
+      out.push(text);
       continue;
     }
     if (turn.isMeta) continue;

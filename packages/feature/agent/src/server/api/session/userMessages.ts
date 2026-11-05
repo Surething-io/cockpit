@@ -10,12 +10,13 @@ import { Effect } from 'effect';
 import { handler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import {
   AppError,
+  FSError,
   NotFoundError,
   ValidationError,
 } from '@cockpit/effect-core';
 import { resolveSessionPath } from './sessionStore';
 import { parseUserMessageIndex } from './transcriptParsers';
-import { openTranscriptView } from './transcriptView';
+import { readLogicalTranscript } from '../../../effect/logicalTranscript';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -42,7 +43,10 @@ export const POST = handler((req) =>
     }
 
     // Same 6-engine resolution as session-by-path: the file's location is the engine.
-    const resolved = yield* Effect.promise(() => resolveSessionPath(cwd, sessionId));
+    const resolved = yield* Effect.tryPromise({
+      try: () => resolveSessionPath(cwd, sessionId),
+      catch: (cause) => cause instanceof FSError ? cause : new AppError({ message: 'Cannot resolve session storage', cause }),
+    });
     if (!resolved) {
       return yield* Effect.fail(
         new NotFoundError({ resource: 'session', id: sessionId })
@@ -50,12 +54,12 @@ export const POST = handler((req) =>
     }
     const { sessionPath, engine } = resolved;
 
-    const index = yield* Effect.tryPromise({
-      // Via the view: mid independent-task turn the file holds only that turn.
-      try: () => parseUserMessageIndex(openTranscriptView(sessionPath, engine).source(), engine),
-      catch: (cause) =>
-        new AppError({ message: 'parseUserMessageIndex failed', cause }),
-    });
+    const index = yield* readLogicalTranscript(sessionPath, engine, (view) => view.source.pipe(
+      Effect.flatMap((source) => Effect.tryPromise({
+        try: () => parseUserMessageIndex(source, engine),
+        catch: (cause) => new AppError({ message: 'parseUserMessageIndex failed', cause }),
+      })),
+    ));
 
     return ok({
       messages: index.entries,

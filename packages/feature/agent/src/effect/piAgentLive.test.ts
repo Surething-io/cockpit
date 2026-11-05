@@ -104,6 +104,31 @@ function context(id: string, prompt: string, sessionId?: string) {
 }
 
 describe('embedded Pi runtime', () => {
+  it('keeps displayed legacy IDs through the real resume writer and later excerpt', async () => {
+    const { getPiSessionsDir } = await import('@cockpit/shared-utils');
+    const id = 'legacy-resume-identity';
+    const native = SessionManager.create(home, getPiSessionsDir(home), { id });
+    native.appendModelChange('ollama', 'test-model');
+    native.appendMessage({ role: 'user', content: 'legacy original', timestamp: 1 });
+    native.appendMessage({ role: 'assistant', content: [{ type: 'text', text: 'legacy answer' }], api: 'openai-completions', provider: 'ollama', model: 'test-model', stopReason: 'stop', timestamp: 2,
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } });
+    const file = native.getSessionFile()!;
+    const legacyEntries = native.getEntries().map((entry) => Object.fromEntries(Object.entries(entry).filter(([key]) => key !== 'id' && key !== 'parentId')));
+    await writeFile(file, [{ ...native.getHeader(), version: 1 }, ...legacyEntries].map((entry) => JSON.stringify(entry)).join('\n') + '\n');
+    const before = await readFile(file);
+    const displayed = await Effect.runPromise(sessions.readPiSession(file));
+    const original = displayed.entries.find((entry) => entry.type === 'message' && entry.message.role === 'user')!;
+    expect(await readFile(file)).toEqual(before);
+    const resumed = context('unused', 'continued legacy input', id);
+    await Effect.runPromise(runPiAgent(resumed.ctx, { engine: 'ollama', baseUrl, apiKey: 'test' }));
+    expect(SessionManager.open(file).getEntry(original.id)).toBeDefined();
+    const copy = await Effect.runPromise(edits.forkPiSession(file, original.id, 'single'));
+    expect(copy).toBeDefined();
+    const child = await Effect.runPromise(sessions.findPiSession(home, copy!.newSessionId));
+    expect(JSON.stringify(SessionManager.open(child!.path).buildSessionContext().messages)).toContain('legacy original');
+    expect(JSON.stringify(SessionManager.open(file).buildSessionContext().messages)).toContain('continued legacy input');
+  });
+
   it('persists native history, switches providers in one session, and restores UI messages', async () => {
     const first = context('switch-session', 'first task');
     await Effect.runPromise(runPiAgent(first.ctx, { engine: 'ollama', baseUrl, apiKey: 'test' }));

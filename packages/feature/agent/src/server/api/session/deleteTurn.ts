@@ -49,7 +49,7 @@ export const DELETE = dynamicHandler<
     const result = yield* (store.engine === 'grok'
       ? editGrokTurn(body.cwd, sessionId, body.messageUuid, 'delete').pipe(Effect.map((result) => result ?? { targetMissed: true, deletedLineCount: 0 }))
       : isPiSessionPath(store.sessionPath)
-      ? deletePiTurn(store.sessionPath, body.messageUuid).pipe(Effect.mapError((cause) => new FSError({ path: store.sessionPath, op: 'write', cause })))
+      ? deletePiTurn(store.sessionPath, body.messageUuid).pipe(Effect.mapError((cause) => cause instanceof ValidationError ? cause : new FSError({ path: store.sessionPath, op: 'write', cause })))
       : Effect.tryPromise({
       try: () => withFileLock(store.sessionPath, async () => {
         const text = await readFile(store.sessionPath, 'utf-8');

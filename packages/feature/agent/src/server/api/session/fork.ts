@@ -2,7 +2,9 @@ import { editGrokTurn } from '../../../effect/grokNativeSessionLive';
 import { beginTranscriptEdit } from '../../sessionRunHub';
 import { isPiSessionPath } from '@cockpit/shared-utils';
 import { forkPiSession } from '../../../effect/piSessionEditLive';
-import { createReadStream } from 'fs';
+import { readFile } from 'node:fs/promises';
+import { Readable } from 'node:stream';
+import { readLogicalTranscript } from '../../../effect/logicalTranscript';
 import { createInterface } from 'readline';
 import { randomUUID } from 'crypto';
 import { Effect } from 'effect';
@@ -116,7 +118,7 @@ export const POST = dynamicHandler<
     // Probe every engine store, not just Claude's: the button is offered on deepseek /
     // kimi / ollama chats too, whose transcripts live under different roots entirely —
     // so resolveSessionPath is also what decides which store the fork gets written into.
-    const store = yield* Effect.promise(() => resolveSessionPath(cwd, originalSessionId));
+    const store = yield* Effect.tryPromise({ try: () => resolveSessionPath(cwd, originalSessionId), catch: (cause) => new FSError({ path: cwd, op: 'read', cause }) });
     if (!store) {
       return yield* Effect.fail(
         new NotFoundError({ resource: 'session', id: originalSessionId })
@@ -138,13 +140,23 @@ export const POST = dynamicHandler<
       );
     }
     if (isPiSessionPath(store.sessionPath)) {
+      const endEdit = beginTranscriptEdit(originalSessionId);
+      if (!endEdit) return yield* Effect.fail(new ValidationError({ field: 'sessionId', reason: 'session is running' }));
       const result = yield* forkPiSession(store.sessionPath, fromMessageUuid, scope).pipe(
-        Effect.mapError((cause) => new FSError({ path: store.sessionPath, op: 'write', cause }))
+        Effect.mapError((cause) => cause instanceof ValidationError ? cause : new FSError({ path: store.sessionPath, op: 'write', cause })),
+        Effect.ensuring(Effect.sync(endEdit)),
       );
       if (!result) return yield* Effect.fail(new NotFoundError({ resource: 'message', id: fromMessageUuid ?? originalSessionId }));
       return ok({ success: true, originalSessionId, ...result, artifactCount: 0 });
     }
     const originalPath = store.sessionPath;
+    // Finish the retryable read before creating or writing the fork.
+    const originalText = yield* readLogicalTranscript(originalPath, store.engine, (reader) => reader.source.pipe(
+      Effect.flatMap((source) => typeof source === 'string' ? Effect.tryPromise({
+        try: () => readFile(source, 'utf8'),
+        catch: (cause) => new FSError({ path: source, op: 'read', cause }),
+      }) : Effect.succeed(source.text)),
+    ));
 
     const result = yield* Effect.tryPromise({
       try: async () => {
@@ -153,7 +165,7 @@ export const POST = dynamicHandler<
         // scope='single' needs the whole turn as objects to re-chain, so it buffers the
         // current turn instead of emitting lines as it goes.
         let turn: Record<string, unknown>[] = [];
-        const fileStream = createReadStream(originalPath);
+        const fileStream = Readable.from([originalText]);
         const rl = createInterface({
           input: fileStream,
           crlfDelay: Infinity,

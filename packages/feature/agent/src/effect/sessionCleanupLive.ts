@@ -1,8 +1,10 @@
 // Scoped retention for native Pi sessions. Claude and Codex retain their own stores.
-import { readdir, readFile, rm, rmdir, stat } from "node:fs/promises"
+import { readdir, readFile, rm, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { Context, Effect, Layer, Schedule } from "effect"
 import { AppError, CockpitConfig } from "@cockpit/effect-core"
+import { readPiManager } from "./piSessionLive"
+import { beginTranscriptEdit } from "../server/sessionRunHub"
 
 const DAY_MS = 24 * 3600 * 1000
 
@@ -80,10 +82,7 @@ export const cleanupSessions = (
       for (const name of entries) {
         const full = join(cwdDir, name)
         if (!name.endsWith(".jsonl")) continue
-        const sessionId = yield* Effect.tryPromise({
-          try: async () => (await import("@earendil-works/pi-coding-agent")).SessionManager.open(full).getSessionId(),
-          catch: (cause) => new AppError({ message: "Cannot read Pi session header", cause }),
-        })
+        const sessionId = yield* readPiManager(full).pipe(Effect.map((manager) => manager.getSessionId()))
         sessions.set(sessionId, { ...sessions.get(sessionId), jsonl: full })
       }
       for (const name of entries) {
@@ -103,30 +102,32 @@ export const cleanupSessions = (
         ).pipe(Effect.orElseSucceed(() => Number.POSITIVE_INFINITY)) // stat fail -> keep
         if (mtime >= cutoff) continue // still fresh -> keep whole session
 
-        if (s.jsonl) {
-          yield* fsTry("rm jsonl", () => rm(s.jsonl!, { force: true })).pipe(
-            Effect.orElseSucceed(() => undefined)
+        const endEdit = yield* Effect.sync(() => beginTranscriptEdit(sessionId))
+        if (!endEdit) continue
+        yield* Effect.gen(function* () {
+          // Candidate information can be stale: recheck protection and activity
+          // after taking the same lease used by runs and transcript edits.
+          const latestPins = yield* loadPinnedIds(pinnedFile)
+          if (!latestPins.ok || latestPins.ids.has(sessionId)) return
+          const latestMtime = yield* fsTry("stat basis under lease", () => stat(basis).then((st) => st.mtimeMs)).pipe(
+            Effect.orElseSucceed(() => Number.POSITIVE_INFINITY)
           )
-        }
-        if (s.subdir) {
-          yield* fsTry("rm subdir", () =>
-            rm(s.subdir!, { recursive: true, force: true })
-          ).pipe(Effect.orElseSucceed(() => undefined))
-        }
-        yield* Effect.logInfo(
-          `session cleanup: removed session ${sessionId} from ${root} under ${cwdName} (older than ${keepDays}d)`
-        )
+          if (latestMtime >= cutoff) return
+          const remove = (path: string, recursive: boolean) => fsTry("rm session", () => rm(path, { recursive, force: true })).pipe(
+            Effect.as(true),
+            Effect.catchAll((error) => Effect.logWarning(error.message).pipe(Effect.as(false)))
+          )
+          // If the parent cannot be removed, its child history must remain too.
+          if (s.jsonl && !(yield* remove(s.jsonl, false))) return
+          if (s.subdir && !(yield* remove(s.subdir, true))) return
+          yield* Effect.logInfo(
+            `session cleanup: removed session ${sessionId} from ${root} under ${cwdName} (older than ${keepDays}d)`
+          )
+        }).pipe(Effect.uninterruptible, Effect.ensuring(Effect.sync(endEdit)))
       }
 
-      // Reclaim an emptied project directory.
-      const rest = yield* fsTry("readdir cwd (recount)", () => readdir(cwdDir)).pipe(
-        Effect.orElseSucceed(() => ["keep"] as string[])
-      )
-      if (rest.length === 0) {
-        yield* fsTry("rmdir cwd", () => rmdir(cwdDir)).pipe(
-          Effect.orElseSucceed(() => undefined)
-        )
-      }
+      // Keep the shared project directory: a new session may already have
+      // initialized its native writer here without persisting its first entry.
     }
   }).pipe(Effect.withSpan("session.cleanup"))
 

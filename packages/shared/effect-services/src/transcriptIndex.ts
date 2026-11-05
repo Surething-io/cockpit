@@ -13,6 +13,7 @@
  * Views (preview / session list / stats): packages/feature/agent/src/server/transcriptViews.ts
  */
 import { Context, Effect } from "effect"
+import type { FSError } from "@cockpit/effect-core"
 
 export type TranscriptFormat = "claude" | "codex" | "pi"
 
@@ -26,7 +27,7 @@ export interface TranscriptUserTurn {
    * kept as ''). codex: the `text` of every `input_text` block.
    */
   readonly blocks: ReadonlyArray<string>
-  /** claude `isMeta` lines (SDK-injected context). */
+  /** Claude harness-injected context, classified by shared injectionKind rules. */
   readonly isMeta?: true
   /** codex only: extractCodexUserContent().text (image markup stripped). */
   readonly listText?: string
@@ -118,10 +119,10 @@ export interface TranscriptIndex {
   readonly snapshots: (
     files: ReadonlyArray<{ readonly path: string; readonly format: TranscriptFormat }>
   ) => Effect.Effect<ReadonlyArray<TranscriptSnapshot | null>, never>
-  /** Every codex rollout under ~/.codex/sessions (sub-agents included), newest first. */
-  readonly codexSessions: Effect.Effect<ReadonlyArray<CodexSessionEntry>, never>
+  /** Complete Codex inventory, newest first; native discovery failures fail rather than omit sources. */
+  readonly codexSessions: Effect.Effect<ReadonlyArray<CodexSessionEntry>, FSError>
   /** The rollout for a codex thread id (or a rollout path / file name ending in one). */
-  readonly resolveCodex: (threadId: string) => Effect.Effect<CodexSessionEntry | null, never>
+  readonly resolveCodex: (threadId: string) => Effect.Effect<CodexSessionEntry | null, FSError>
   /** Forget a file's folded state; the next read rebuilds it from byte 0. */
   readonly invalidate: (path: string) => Effect.Effect<void, never>
   readonly counters: Effect.Effect<TranscriptIndexCounters, never>

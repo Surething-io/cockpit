@@ -10,6 +10,7 @@ import type { RunCtx } from '../server/engines/types';
 import { piRunEvents, createPiRunUsage } from '../server/engines/piEvents';
 import { makePiRunInput } from './piRunInputLive';
 import { findPiSession } from './piSessionLive';
+import { openPiSessionForWrite } from './piSessionWriteLive';
 import type { PiModelOverride } from '../server/engines/shared/piModelCapabilities';
 import { resolvePiModel } from './piModelLive';
 import { makePiSubagentExtension } from './piSubagentLive';
@@ -61,7 +62,7 @@ export const runPiAgent = (ctx: RunCtx, config: PiAgentConfig): Effect.Effect<vo
     const startedAt = Date.now();
     const { session } = yield* Effect.acquireRelease(sdk(async () => {
       const { createAgentSession, createBashToolDefinition, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } = await import('@earendil-works/pi-coding-agent');
-      const manager = existing ? SessionManager.open(existing.path) : SessionManager.create(cwd, getPiSessionsDir(cwd), { id: ctx.params.newSessionId ?? ctx.currentKey() });
+      const manager = existing ? await Effect.runPromise(openPiSessionForWrite(existing.path)) : SessionManager.create(cwd, getPiSessionsDir(cwd), { id: ctx.params.newSessionId ?? ctx.currentKey() });
       sessionManager = manager;
       const runtime = await ModelRuntime.create({ authPath: join(PI_AGENT_DIR, 'auth.json'), modelsPath: null, refreshOnCreate: false });
       const resolution = await Effect.runPromise(Effect.either(resolvePiModel(runtime, config, modelId)), { signal: ctx.signal });

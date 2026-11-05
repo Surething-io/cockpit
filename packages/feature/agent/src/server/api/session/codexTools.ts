@@ -1,6 +1,7 @@
 import type { ImageMediaType, MessageImage } from '@cockpit/shared-utils';
 
-export const CODEX_IMAGE_ONLY_TEXT = '[Image]';
+import { CODEX_IMAGE_ONLY_TEXT } from '../../../shared/codexPrompt';
+export { CODEX_IMAGE_ONLY_TEXT } from '../../../shared/codexPrompt';
 
 /**
  * Display names codex tools are normalized to. These are claude's vocabulary on

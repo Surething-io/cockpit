@@ -21,7 +21,7 @@ import type {
 export const DEFAULT_CLAUDE_MODEL: ClaudeModelId = 'claude-opus-5-5';
 export const DEFAULT_CLAUDE_EFFORT: ClaudeEffort = 'high';
 export const DEFAULT_CODEX_MODEL: CodexModelId = 'gpt-6.1-sol';
-export const DEFAULT_CODEX_REASONING_EFFORT: CodexReasoningEffort = 'low';
+export const DEFAULT_CODEX_REASONING_EFFORT: CodexReasoningEffort = 'medium';
 
 const CLAUDE_EFFORTS: ReadonlyArray<{ id: ClaudeEffort; label: string }> = [
   { id: 'low', label: 'Low' },
@@ -101,38 +101,56 @@ const CODEX_MODELS: ReadonlyArray<{
   reasoning: ReadonlyArray<CodexReasoningEffort>;
   defaultReasoning: CodexReasoningEffort;
 }> = [
-  // Labels, effort sets and defaults mirror the model catalog codex ships in
-  // its own binary, so a row here says what codex itself would say. `ultra` is
-  // per-model there and Luna does not have it.
-  {
-    id: 'gpt-6-astra',
-    label: 'GPT-6-Astra',
-    reasoning: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
-    defaultReasoning: 'low',
-  },
+  // Model order and supported efforts mirror the Codex model catalog; Cockpit
+  // defaults Sol models to high and other GPT models to medium.
+  // Luna does not support ultra.
   {
     id: 'gpt-6.1-sol',
-    label: 'GPT-6.1-Sol',
+    label: 'GPT-6.1 Sol',
     reasoning: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
-    defaultReasoning: 'low',
+    defaultReasoning: 'high',
   },
   {
-    id: 'gpt-6-sol',
-    label: 'GPT-6-Sol',
+    id: 'gpt-6-astra',
+    label: 'GPT-6 Astra',
     reasoning: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
     defaultReasoning: 'medium',
   },
   {
+    id: 'gpt-6.1-terra',
+    label: 'GPT-6.1 Terra',
+    reasoning: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    defaultReasoning: 'medium',
+  },
+  {
+    id: 'gpt-6-sol',
+    label: 'GPT-6 Sol',
+    reasoning: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    defaultReasoning: 'high',
+  },
+  {
     id: 'gpt-6-luna',
-    label: 'GPT-6-Luna',
+    label: 'GPT-6 Luna',
     reasoning: ['low', 'medium', 'high', 'xhigh', 'max'],
     defaultReasoning: 'medium',
   },
   {
     id: 'gpt-5.6-sol',
-    label: 'GPT-5.6-Sol',
+    label: 'GPT-5.6 Sol',
     reasoning: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
-    defaultReasoning: 'low',
+    defaultReasoning: 'high',
+  },
+  {
+    id: 'gpt-5.6-terra',
+    label: 'GPT-5.6 Terra',
+    reasoning: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    defaultReasoning: 'medium',
+  },
+  {
+    id: 'gpt-5.6-luna',
+    label: 'GPT-5.6 Luna',
+    reasoning: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultReasoning: 'medium',
   },
 ];
 

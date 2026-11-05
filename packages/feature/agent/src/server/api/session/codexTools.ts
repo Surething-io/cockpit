@@ -1,4 +1,5 @@
 import type { ImageMediaType, MessageImage } from '@cockpit/shared-utils';
+import { fileURLToPath } from 'node:url';
 
 import { CODEX_IMAGE_ONLY_TEXT } from '../../../shared/codexPrompt';
 export { CODEX_IMAGE_ONLY_TEXT } from '../../../shared/codexPrompt';
@@ -966,6 +967,12 @@ export function codexAgentResultText(state: CodexAgentState): string {
   return state.message || `(agent ${state.status})`;
 }
 
+/** Codex transports may spell a local file as a URI instead of a filesystem path. */
+export function codexFilePath(path: string): string {
+  if (!/^file:/i.test(path)) return path;
+  try { return fileURLToPath(path); } catch { return path; }
+}
+
 export function normalizeCodexToolInput(
   name: string,
   input: Record<string, unknown>
@@ -976,7 +983,7 @@ export function normalizeCodexToolInput(
   // reads the latter.
   if (name === CODEX_VIEW_IMAGE_FN_NAME && typeof input.path === 'string') {
     const { path: _path, ...rest } = input;
-    return { ...rest, file_path: input.path };
+    return { ...rest, file_path: codexFilePath(input.path) };
   }
   if (normalizeCodexToolName(name) !== CODEX_TOOL_NAMES.bash) return input;
   if (typeof input.command === 'string') return input;
@@ -1007,6 +1014,53 @@ function parseCodexImageUrl(imageUrl: string): MessageImage | null {
   };
 }
 
+/** Preserve explicit upload associations without guessing from filenames or image order. */
+export function extractCodexImageAttachments(content: CodexContentBlock[] | undefined): Array<{ image: MessageImage; path?: string }> {
+  const attachments: Array<{ image: MessageImage; path?: string }> = [];
+  let depth = 0;
+  let pending: { path?: string; attachment?: typeof attachments[number]; invalid: boolean } | undefined;
+  for (const block of content || []) {
+    if (!block || typeof block !== 'object') {
+      if (pending) pending.invalid = true;
+      continue;
+    }
+    if (block.type === 'input_image') {
+      const image = typeof block.image_url === 'string' ? parseCodexImageUrl(block.image_url) : null;
+      const attachment = image ? { image } : undefined;
+      if (attachment) attachments.push(attachment);
+      if (pending) {
+        if (depth !== 1 || pending.attachment || !attachment) pending.invalid = true;
+        pending.attachment = attachment;
+      }
+    } else if (block.type === 'input_text' && typeof block.text === 'string') {
+      const tags = block.text.matchAll(/<\/?image\b[^>]*>/gi);
+      let end = 0;
+      for (const tag of tags) {
+        if (pending && block.text.slice(end, tag.index).trim()) pending.invalid = true;
+        if (/^<\/image\s*>$/i.test(tag[0])) {
+          if (depth === 1 && pending && !pending.invalid && pending.path && pending.attachment) {
+            pending.attachment.path = pending.path;
+          }
+          depth = Math.max(0, depth - 1);
+          if (depth === 0) pending = undefined;
+        } else {
+          if (pending) pending.invalid = true;
+          if (depth === 0) {
+            const path = tag[0].match(/\bpath\s*=\s*(["'])(.*?)\1/i)?.[2];
+            pending = { path: path ? codexFilePath(path) : undefined, invalid: false };
+          }
+          depth++;
+        }
+        end = tag.index! + tag[0].length;
+      }
+      if (pending && block.text.slice(end).trim()) pending.invalid = true;
+    } else if (pending) {
+      pending.invalid = true;
+    }
+  }
+  return attachments;
+}
+
 export function extractCodexUserContent(content: CodexContentBlock[] | undefined): {
   text: string;
   images: MessageImage[];
@@ -1015,10 +1069,7 @@ export function extractCodexUserContent(content: CodexContentBlock[] | undefined
     ?.filter(c => c.type === 'input_text' && c.text && !CODEX_IMAGE_TAG_RE.test(c.text.trim()))
     .map(c => c.text!)
     .join('') || '').replace(CODEX_IMAGE_MARKUP_RE, '');
-  const images = content
-    ?.filter(c => c.type === 'input_image' && c.image_url)
-    .map(c => parseCodexImageUrl(c.image_url!))
-    .filter((image): image is MessageImage => image !== null) || [];
+  const images = extractCodexImageAttachments(content).map(({ image }) => image);
 
   return { text, images };
 }
@@ -1198,7 +1249,7 @@ export function codexItemBubble(item: CodexItemLike): CodexItemBubble | null {
       return {
         id,
         name: CODEX_TOOL_NAMES.read,
-        input: { file_path: item.path || '' },
+        input: { file_path: codexFilePath(item.path || '') },
         result: CODEX_IMAGE_ONLY_TEXT,
       };
 
@@ -1211,7 +1262,7 @@ export function codexItemBubble(item: CodexItemLike): CodexItemBubble | null {
       return {
         id,
         name: CODEX_TOOL_NAMES.imageGeneration,
-        input: { file_path: item.savedPath || '', ...(item.revisedPrompt ? { prompt: item.revisedPrompt } : {}) },
+        input: { file_path: codexFilePath(item.savedPath || ''), ...(item.revisedPrompt ? { prompt: item.revisedPrompt } : {}) },
         result: item.savedPath || `(${item.status || 'completed'})`,
       };
 

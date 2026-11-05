@@ -622,6 +622,7 @@
     "sendToPeerPane": "发送本条消息到另一栏",
     "imageN": "图片 {{index}}",
     "imagePreview": "图片预览",
+    "imageLoadFailed": "无法加载此图片",
     "toolCalls": "{{count}} 个工具调用",
     "collapse": "▲ 收起",
     "expand": "▼ 展开",

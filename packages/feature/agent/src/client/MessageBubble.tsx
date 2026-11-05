@@ -152,9 +152,16 @@ function ImageModal({ image, onClose }: ImageModalProps) {
 
 // Image file preview modal — serves raw bytes via <img src> pointing at
 // /api/file?raw=true (absolute path). No content is pulled into the JS heap.
-function ImageFilePreviewModal({ filePath, onClose }: { filePath: string; onClose: () => void }) {
+function ImageFilePreviewModal({ filePath, cwd, sessionId, onClose }: { filePath: string; cwd?: string; sessionId?: string | null; onClose: () => void }) {
   const { t } = useTranslation();
-  const src = `/api/file?path=${encodeURIComponent(filePath)}&raw=true`;
+  const [source, setSource] = useState<'file' | 'session'>('file');
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const fileSrc = `/api/file?path=${encodeURIComponent(filePath)}&raw=true`;
+  const sessionSrc = cwd && sessionId
+    ? `/api/session/image?${new URLSearchParams({ cwd, sessionId, path: filePath })}`
+    : null;
+  const src = source === 'session' && sessionSrc ? sessionSrc : fileSrc;
 
   const handleCopyImage = async (e: MouseEvent) => {
     e.stopPropagation();
@@ -184,6 +191,7 @@ function ImageFilePreviewModal({ filePath, onClose }: { filePath: string; onClos
           <button
             type="button"
             onClick={handleCopyImage}
+            disabled={failed}
             className="w-10 h-10 flex items-center justify-center text-white/80 hover:text-white bg-black/40 hover:bg-black/60 rounded-full transition-colors"
             title={t('chat.copyImage')}
           >
@@ -200,12 +208,26 @@ function ImageFilePreviewModal({ filePath, onClose }: { filePath: string; onClos
             </svg>
           </button>
         </div>
-        <img
+        {failed ? (
+          <div role="alert" className="flex flex-col items-center gap-3 text-white" onClick={(e) => e.stopPropagation()}>
+            <p>{t('chat.imageLoadFailed')}</p>
+            <button type="button" className="rounded bg-white/15 px-4 py-2" onClick={() => {
+              setSource('file');
+              setFailed(false);
+              setAttempt((value) => value + 1);
+            }}>{t('common.retry')}</button>
+          </div>
+        ) : <img
+          key={`${source}:${attempt}`}
           src={src}
           alt={filePath.split('/').pop()}
           className="max-w-[90vw] max-h-[90vh] object-contain"
           onClick={(e) => e.stopPropagation()}
-        />
+          onError={() => {
+            if (source === 'file' && sessionSrc) setSource('session');
+            else setFailed(true);
+          }}
+        />}
       </div>
     </Portal>
   );
@@ -1503,7 +1525,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
           with the bash SDK (i.e. previewing it runs it), csv as a parsed table,
           md via the rich preview */}
       {previewFile && isImageFile(previewFile) && (
-        <ImageFilePreviewModal filePath={previewFile} onClose={() => setPreviewFile(null)} />
+        <ImageFilePreviewModal key={`${cwd}:${sessionId}:${previewFile}`} filePath={previewFile} cwd={cwd} sessionId={sessionId} onClose={() => setPreviewFile(null)} />
       )}
       {previewFile && !isImageFile(previewFile) && previewContent !== null && (
         isHtmlFile(previewFile) ? (

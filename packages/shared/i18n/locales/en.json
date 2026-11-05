@@ -625,6 +625,7 @@
     "sendToPeerPane": "Send this message to the other pane",
     "imageN": "Image {{index}}",
     "imagePreview": "Image preview",
+    "imageLoadFailed": "Could not load this image",
     "toolCalls": "{{count}} tool calls",
     "collapse": "▲ Collapse",
     "expand": "▼ Expand",

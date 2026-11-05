@@ -43,7 +43,7 @@ afterAll(() => {
 });
 
 describe('resolveCommandPrompt', () => {
-  it.each(['qa', 'spec', 'design'])('lists and dispatches /%s as a visible builtin', async (name) => {
+  it.each(['qa', 'spec', 'design', 'pair'])('lists and dispatches /%s as a visible builtin', async (name) => {
     const { listBuiltinSkillsMeta } = await import('./builtinSkills');
     expect(listBuiltinSkillsMeta()).toContainEqual({
       name,

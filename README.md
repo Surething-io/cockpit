@@ -50,7 +50,7 @@ Cockpit is the instrument panel. It does **not** replace Claude Code; it stands 
 | Agent can't reach your browser / DB | **Smart Bubbles**: Chrome, PostgreSQL, MySQL, Redis — drivable by the agent |
 | Reading an unfamiliar repo means a 90-min file-tree scavenger hunt | **Code Map** chip view — caller / callee pins, click to walk the call graph |
 | Reviewing AI output is friction | Line-level comments on any file, send any comment back as AI context |
-| Same "do X but don't change code" prompt every day | **Slash modes** `/qa /spec /design /fx /ex /go /cg /cc /cr` + custom `SKILL.md` via the Skills sidebar |
+| Same "do X but don't change code" prompt every day | **Slash modes** `/qa /spec /design /pair /fx /ex /go /cg /cc /cr` + custom `SKILL.md` via the Skills sidebar |
 | No automation hooks | One-time / interval / cron-based **scheduled tasks** |
 | "Cloud relay" trust concerns | **Fully local**. No telemetry. API keys (DeepSeek / GLM / Kimi) stay in `~/.cockpit/<engine>/credentials.json` on your laptop. |
 
@@ -134,6 +134,7 @@ An honest snapshot as of July 2026 — each tool wins somewhere. Spotted an erro
 - `/qa` — **Clarify requirements**: produce a lean PRD with goals, scope, assumptions, and decisions; no solution design or code
 - `/spec` — **Specify**: turn agreed requirements into behavior, contracts, and acceptance criteria; no implementation
 - `/design` — **Technical design**: ground the solution in existing code, define responsibilities and tradeoffs, and plan implementation and verification; no implementation
+- `/pair` — **Programming partner**: discuss approaches and inspect code with evidence-based advice; implement and verify when explicitly asked
 - `/fx` — **Diagnose**: trace evidence to the root cause, then give blast radius, fix options, and verification steps; no code changes
 - `/ex` — **Deep analysis**: answer first, then evidence, options, and open points; no clarification pauses or code changes
 - `/go` — **Implement**: build agreed work in small verified slices, record decisions the spec did not cover, and report blockers and residuals

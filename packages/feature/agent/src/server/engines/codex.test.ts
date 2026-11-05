@@ -214,6 +214,26 @@ describe('codex mode routing', () => {
     expect(appServer.disposed).toBe(1);
   });
 
+  it.each([
+    { scenario: 'a new thread', effort: 'high', sessionId: undefined, resumeThrows: false },
+    { scenario: 'a new thread', effort: 'ultra', sessionId: undefined, resumeThrows: false },
+    { scenario: 'a resumed thread', effort: 'high', sessionId: 'sdk-thread', resumeThrows: false },
+    { scenario: 'a resumed thread', effort: 'ultra', sessionId: 'sdk-thread', resumeThrows: false },
+    { scenario: 'a failed resume', effort: 'high', sessionId: 'gone-thread', resumeThrows: true },
+    { scenario: 'a failed resume', effort: 'ultra', sessionId: 'gone-thread', resumeThrows: true },
+  ])('applies selected $effort to turn/start after $scenario', async ({ effort, sessionId, resumeThrows }) => {
+    appServer.resumeThrows = resumeThrows;
+    await codexSpec.runner.run(ctx({ sessionId, params: { codexReasoningEffort: effort } }) as never);
+
+    // Codex 0.166.0 accepts effort on turn/start, not on thread/start or thread/resume.
+    const threadRequests = appServer.requests.filter((request) => request.method.startsWith('thread/'));
+    expect(threadRequests.length).toBeGreaterThan(0);
+    for (const request of threadRequests) expect(request.params).not.toHaveProperty('effort');
+    expect(appServer.requests.find((request) => request.method === 'turn/start')?.params).toMatchObject({
+      threadId: 'sdk-thread', effort,
+    });
+  });
+
   it('an abort during startup disposes the child and never starts the turn', async () => {
     const ac = new AbortController();
     appServer.hangOn = 'thread/start';

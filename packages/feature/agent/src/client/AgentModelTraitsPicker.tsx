@@ -86,13 +86,13 @@ const CLAUDE_MODELS: ReadonlyArray<{
   { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', thinking: true },
 ];
 
-const CODEX_REASONING: ReadonlyArray<{ id: CodexReasoningEffort; label: string }> = [
+const CODEX_REASONING: ReadonlyArray<{ id: CodexReasoningEffort; label: string; description?: string }> = [
   { id: 'low', label: 'Low' },
   { id: 'medium', label: 'Medium' },
   { id: 'high', label: 'High' },
   { id: 'xhigh', label: 'Extra High' },
   { id: 'max', label: 'Max' },
-  { id: 'ultra', label: 'Ultra' },
+  { id: 'ultra', label: 'Ultra', description: 'Max reasoning with parallel agents' },
 ];
 
 const CODEX_MODELS: ReadonlyArray<{
@@ -103,6 +103,7 @@ const CODEX_MODELS: ReadonlyArray<{
 }> = [
   // Model order and supported efforts mirror the Codex model catalog; Cockpit
   // defaults Sol models to high and other GPT models to medium.
+  // Ultra enables automatic delegation and is encoded as an effort by Codex.
   // Luna does not support ultra.
   {
     id: 'gpt-6.1-sol',
@@ -167,7 +168,7 @@ export function resolveCodexReasoningEffortForModel(
   return defaultCodexReasoningEffort(model);
 }
 
-function codexReasoningOptions(model: CodexModelId): ReadonlyArray<{ id: CodexReasoningEffort; label: string }> {
+function codexReasoningOptions(model: CodexModelId): ReadonlyArray<{ id: CodexReasoningEffort; label: string; description?: string }> {
   const supported = CODEX_MODELS.find((candidate) => candidate.id === model)?.reasoning;
   if (!supported) return CODEX_REASONING;
   return supported.map((id) => CODEX_REASONING.find((option) => option.id === id) ?? { id, label: id });
@@ -239,12 +240,14 @@ function MenuRow<T extends string>({
   value,
   selected,
   label,
+  description,
   defaultValue,
   onSelect,
 }: {
   value: T;
   selected: boolean;
   label: string;
+  description?: string;
   defaultValue?: boolean;
   onSelect: (value: T) => void;
 }) {
@@ -261,7 +264,10 @@ function MenuRow<T extends string>({
       <span className="mt-0.5">
         <EngineCheck selected={selected} />
       </span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{label}</span>
+        {description && <span className="mt-0.5 block text-[10px] text-muted-foreground">{description}</span>}
+      </span>
       <span className="shrink-0">
         {defaultValue && (
           <span className="rounded bg-muted px-1.5 text-[10px] font-medium text-muted-foreground">
@@ -285,7 +291,7 @@ export function TraitSelect<T extends string>({
   title: string;
   selected: T;
   value: string;
-  items: ReadonlyArray<{ id: T; label: string; defaultValue?: boolean }>;
+  items: ReadonlyArray<{ id: T; label: string; description?: string; defaultValue?: boolean }>;
   onSelect: (value: T) => void;
   icon?: React.ReactNode;
   testId?: string;
@@ -295,6 +301,7 @@ export function TraitSelect<T extends string>({
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0 });
   const panelTarget = usePanelPortalTarget();
+  const description = items.find((item) => item.id === selected)?.description;
 
   const updatePosition = () => {
     const rect = btnRef.current?.getBoundingClientRect();
@@ -334,7 +341,7 @@ export function TraitSelect<T extends string>({
         buttonRef={btnRef}
         label={value}
         labelMaxWidth="max-w-[180px]"
-        title={`${title}: ${value}`}
+        title={`${title}: ${value}${description ? `\n${description}` : ''}`}
         onClick={toggle}
         icon={icon}
         testId={testId}
@@ -354,6 +361,7 @@ export function TraitSelect<T extends string>({
                   value={item.id}
                   selected={selected === item.id}
                   label={item.label}
+                  description={item.description}
                   defaultValue={item.defaultValue}
                   onSelect={(next) => {
                     onSelect(next);

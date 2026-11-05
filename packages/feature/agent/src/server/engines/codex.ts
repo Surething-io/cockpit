@@ -34,7 +34,7 @@ const CHILD_EXIT_TIMEOUT_MS = 5_000;
 // shapes the other engines emit.
 //
 // Spelled out rather than imported from the SDK's `ModelReasoningEffort`: the
-// SDK is gone, and this list is a Cockpit-side contract anyway — `codexParams`
+// SDK is gone, and this list is a Cockpit-side contract anyway — `turn/start`
 // forwards whatever survives `resolveCodexReasoningEffort`, so an unknown value
 // is dropped here rather than rejected by the server mid-turn.
 type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
@@ -646,10 +646,8 @@ function codexTurnInput(prompt: string, imageFiles: string[]): Array<Record<stri
  * server-to-client requests.
  */
 function codexThreadParams(ctx: RunCtx): Record<string, unknown> {
-  const effort = resolveCodexReasoningEffort(ctx.params.codexReasoningEffort);
   return {
     ...(ctx.params.model ? { model: ctx.params.model } : {}),
-    ...(effort ? { effort } : {}),
     ...(ctx.cwd ? { cwd: ctx.cwd } : {}),
     sandbox: 'danger-full-access',
     approvalPolicy: 'never',
@@ -882,9 +880,13 @@ async function runCodexAppServerWithInput(ctx: RunCtx, input: CodexRunInput): Pr
     }
 
     assertNotAborted();
+    // Effort is a turn/start override. Thread start/resume silently ignore
+    // a top-level effort field, leaving the model at its configured default.
+    const effort = resolveCodexReasoningEffort(ctx.params.codexReasoningEffort);
     const startedTurn = await client.request('turn/start', {
       threadId,
       input: codexTurnInput(ctx.prompt ?? '', imageFiles),
+      ...(effort ? { effort } : {}),
     });
     ctx.signal.removeEventListener('abort', abortStartup);
     // Needed to stop this turn by name later; see `interruptTurns`.

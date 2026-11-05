@@ -84,8 +84,11 @@ const validateTaskSourceEff = (
     return { message: "", taskFile: file }
   })
 
-export const GET = handler(() =>
+export const GET = handler((req) =>
   Effect.gen(function* () {
+    if (new URL(req.url).searchParams.get("readBoundary") === "1") {
+      return Response.json({ readBefore: Date.now() }, { headers: { "Cache-Control": "no-store" } })
+    }
     const result = yield* getTasksAndUnreadEff
     return ok(result)
   })

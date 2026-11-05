@@ -334,6 +334,7 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
           (event.source as Window).postMessage({
             type: 'PROJECT_NUMBER',
             projectNumber: projectIndex + 1,
+            visible: projectIndex === activeIndex,
           }, '*');
         }
         return;

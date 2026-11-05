@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { publishTopic } from '@cockpit/effect-react';
 import { Topics } from '@cockpit/effect-services';
 import { Effect } from 'effect';
@@ -101,11 +101,14 @@ export function useScheduledTasks() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
+  const reloadSequence = useRef(0);
   const reload = useCallback(() => {
+    const sequence = ++reloadSequence.current;
     BrowserRuntime.runPromise(
       loadScheduledTasks<ScheduledTask>().pipe(
         Effect.match({
           onSuccess: (data) => {
+            if (sequence !== reloadSequence.current) return;
             setTasks((data.tasks ?? []) as ScheduledTask[]);
             setUnreadCount(data.unreadCount ?? 0);
           },

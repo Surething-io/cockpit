@@ -181,10 +181,11 @@ export const markReadEff = (
   )
 
 export const markReadBySessionIdEff = (
-  sessionId: string
+  sessionId: string,
+  options: { cwd?: string; engine?: string; readBefore?: number } = {}
 ): Effect.Effect<void, AppError> =>
   Effect.tryPromise({
-    try: () => scheduledTaskManager.markReadBySessionId(sessionId),
+    try: () => scheduledTaskManager.markReadBySessionId(sessionId, options),
     catch: (cause) =>
       new AppError({ message: "scheduler.markReadBySessionId failed", cause }),
   })
@@ -285,7 +286,16 @@ export const dispatchPatchEff = (
         })
       )
     }
-    return markReadBySessionIdEff(fields.sessionId).pipe(
+    if ((fields.cwd !== undefined && typeof fields.cwd !== "string")
+      || (fields.engine !== undefined && typeof fields.engine !== "string")
+      || (fields.readBefore !== undefined && (typeof fields.readBefore !== "number" || !Number.isFinite(fields.readBefore)))) {
+      return Effect.fail(new ValidationError({ field: "fields", reason: "invalid read boundary" }))
+    }
+    return markReadBySessionIdEff(fields.sessionId, {
+      cwd: fields.cwd as string | undefined,
+      engine: fields.engine as string | undefined,
+      readBefore: fields.readBefore as number | undefined,
+    }).pipe(
       Effect.as({ task: null, simpleSuccess: true })
     )
   }

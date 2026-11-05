@@ -9,6 +9,7 @@ import {
   withFileLock,
   getSessionFilePath,
   encodePath,
+  normalizeCodexSessionId,
 } from '@cockpit/shared-utils';
 import { detectBotName } from '../../shared/botSession';
 import type { GlobalSessionInfo, GlobalSessionRecord, SessionStatus } from '../../shared/sessionDto';
@@ -202,17 +203,28 @@ export async function updateGlobalSessionStatus(
   cwd: string,
   sessionId: string,
   status: SessionStatus,
+  read?: { readBefore: number; engine?: string },
 ): Promise<void> {
   if (!existsSync(cwd)) return;
 
   return withFileLock(GLOBAL_STATE_FILE, async () => {
     const state = await readJsonFile<GlobalState>(GLOBAL_STATE_FILE, { sessions: [] });
     migrateLegacyStatuses(state.sessions);
-    const existing = state.sessions.find(
-      (session) => session.cwd === cwd && session.sessionId === sessionId
-    );
-    if (!existing || existing.status === status) return;
-    existing.status = status;
+    let changed = false;
+    const candidates = state.sessions.filter((session) => session.cwd === cwd);
+    const resolved = read ? await attachEngines(candidates) : candidates;
+    for (const [index, session] of candidates.entries()) {
+      const engine = resolved[index].engine;
+      if (read?.engine && engine && engine !== read.engine) continue;
+      const matches = session.sessionId === sessionId || (read && engine === 'codex'
+        && normalizeCodexSessionId(session.sessionId) === normalizeCodexSessionId(sessionId));
+      if (!matches || session.status === status) continue;
+      // A delayed visit must not acknowledge a later result or clear a running indicator.
+      if (read && (session.lastActive > read.readBefore || isRunActive(session.sessionId))) continue;
+      session.status = status;
+      changed = true;
+    }
+    if (!changed) return;
     await writeJsonFile(GLOBAL_STATE_FILE, state);
   });
 }

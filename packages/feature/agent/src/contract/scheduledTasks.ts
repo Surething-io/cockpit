@@ -44,7 +44,7 @@ export interface TaskScopedPatchRequest {
 /** Clear unread on every task belonging to one chat session. */
 export interface MarkReadBySessionIdRequest {
   action: "markReadBySessionId"
-  fields: { sessionId: string }
+  fields: { sessionId: string; cwd?: string; engine?: string; readBefore?: number }
 }
 
 /** Clear unread on every task. */

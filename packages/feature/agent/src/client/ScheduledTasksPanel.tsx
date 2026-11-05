@@ -32,7 +32,6 @@ interface ScheduledTasksPanelProps {
   onResume: (id: string) => void;
   onTrigger: (id: string) => void;
   onDelete: (id: string) => void;
-  onMarkRead: (id: string) => void;
   onUpdateTask: (id: string, fields: Partial<Pick<ScheduledTask, 'message' | 'taskFile' | 'type' | 'delayMinutes' | 'intervalMinutes' | 'activeFrom' | 'activeTo' | 'startAt' | 'cron'>>) => void;
 }
 
@@ -181,7 +180,6 @@ export function ScheduledTasksPanel({
   onResume,
   onTrigger,
   onDelete,
-  onMarkRead,
   onUpdateTask,
 }: ScheduledTasksPanelProps) {
   const { t } = useTranslation();
@@ -362,9 +360,8 @@ export function ScheduledTasksPanel({
    */
   const openSession = useCallback((task: ScheduledTask) => {
     onSwitchProject(task.cwd, task.sessionId);
-    if (task.unread) onMarkRead(task.id);
     closeBoard();
-  }, [onSwitchProject, onMarkRead, closeBoard]);
+  }, [onSwitchProject, closeBoard]);
 
   const renderActions = (task: ScheduledTask) => (
     confirmDeleteId === task.id ? (

@@ -4,7 +4,7 @@ import { existsSync } from 'fs';
 import {
   SCHEDULED_TASKS_FILE, readJsonFile, readJsonFileForUpdate, writeJsonFile, mutateJsonFile, withFileLock,
   getSessionFilePath,
-  getClaudeSessionPath, isPiEngine,
+  getClaudeSessionPath, isPiEngine, normalizeCodexSessionId,
 } from '@cockpit/shared-utils';
 import { updateGlobalState } from './state/globalState';
 import { findCodexSession } from '../effect/transcriptIndexLive';
@@ -802,9 +802,16 @@ class ScheduledTaskManager {
   /**
    * Mark tasks as read by sessionId (called when user views a tab).
    */
-  async markReadBySessionId(sessionId: string): Promise<void> {
+  async markReadBySessionId(sessionId: string, options: { cwd?: string; engine?: string; readBefore?: number } = {}): Promise<void> {
     await this.ensureInit();
-    await this.store.updateAll((t) => (t.sessionId === sessionId && t.unread ? { unread: false } : null));
+    await this.store.updateAll((t) => {
+      if (!t.unread || (options.cwd && t.cwd !== options.cwd)
+        || (options.engine && (t.engine ?? 'claude') !== options.engine)
+        || (options.readBefore !== undefined && (t.lastFiredAt ?? t.createdAt) > options.readBefore)) return null;
+      const matches = t.sessionId === sessionId || (t.engine === 'codex'
+        && normalizeCodexSessionId(t.sessionId) === normalizeCodexSessionId(sessionId));
+      return matches ? { unread: false } : null;
+    });
   }
 
   /**

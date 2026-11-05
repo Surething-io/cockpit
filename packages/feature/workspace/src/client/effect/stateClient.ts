@@ -14,6 +14,8 @@
 import { Effect } from "effect"
 import { AppError } from "@cockpit/effect-core"
 import type { MarkReadBySessionIdRequest } from "@cockpit/feature-agent"
+import { publishTopic } from "@cockpit/effect-react"
+import { Topics } from "@cockpit/effect-services"
 
 // ─────────────────────────────────────────────────────────
 // project-state
@@ -117,14 +119,15 @@ export const saveProjectState = (
 export const updateSessionStatus = (
   cwd: string,
   sessionId: string,
-  status: string
+  status: string,
+  read?: { readBefore: number; engine?: string }
 ): Effect.Effect<void, AppError> =>
   Effect.tryPromise({
     try: async () => {
       const res = await fetch("/api/global-state", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd, sessionId, status, action: "status" }),
+        body: JSON.stringify({ cwd, sessionId, status, action: "status", ...read }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
     },
@@ -154,7 +157,8 @@ export const touchRecentSession = (
 // ─────────────────────────────────────────────────────────
 
 export const markScheduledTasksReadBySession = (
-  sessionId: string
+  sessionId: string,
+  options: Omit<MarkReadBySessionIdRequest["fields"], "sessionId"> = {}
 ): Effect.Effect<void, AppError> =>
   Effect.tryPromise({
     try: async () => {
@@ -163,11 +167,43 @@ export const markScheduledTasksReadBySession = (
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "markReadBySessionId",
-          fields: { sessionId },
+          fields: { sessionId, ...options },
         } satisfies MarkReadBySessionIdRequest),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
     },
     catch: (cause) =>
       new AppError({ message: "markScheduledTasksReadBySession failed", cause }),
-  })
+  }).pipe(Effect.tap(() => Effect.sync(() => publishTopic(Topics.ScheduledTasksChanged, {}))))
+
+/** Capture each side's boundary on the server, then recheck visibility before writing. */
+const readBoundary = (url: string): Effect.Effect<number, AppError> => Effect.tryPromise({
+  try: async () => {
+    const response = await fetch(`${url}?readBoundary=1`, { cache: "no-store" })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const { readBefore } = await response.json() as { readBefore?: number }
+    if (typeof readBefore !== "number" || !Number.isFinite(readBefore)) throw new Error("Invalid read boundary")
+    return readBefore
+  },
+  catch: (cause) => new AppError({ message: "Read boundary request failed", cause }),
+})
+
+/** Both stores are independent: a failure on one side must not skip the other. */
+export const markSessionRead = (
+  cwd: string, sessionId: string, engine: string | undefined,
+  stillVisible: () => boolean,
+): Effect.Effect<number | null> => Effect.suspend(() => {
+  if (!stillVisible()) return Effect.succeed(null)
+  const acknowledge = (url: string, write: (readBefore: number) => Effect.Effect<void, AppError>) =>
+    readBoundary(url).pipe(Effect.flatMap((readBefore) => Effect.suspend(() => stillVisible()
+      ? write(readBefore).pipe(Effect.as(readBefore)) : Effect.succeed(null))))
+  return Effect.all([
+    Effect.either(acknowledge("/api/global-state", (readBefore) =>
+      updateSessionStatus(cwd, sessionId, "normal", { readBefore, engine }))),
+    Effect.either(acknowledge("/api/scheduled-tasks", (readBefore) =>
+      markScheduledTasksReadBySession(sessionId, { cwd, readBefore, engine }))),
+  ], { concurrency: "unbounded" }).pipe(Effect.flatMap(([session, tasks]) =>
+    Effect.forEach([session, tasks], (result) => result._tag === "Left"
+      ? Effect.logWarning("Session read failed").pipe(Effect.annotateLogs({ sessionId, cause: result.left }))
+      : Effect.void).pipe(Effect.as(session._tag === "Right" ? session.right : null))))
+})

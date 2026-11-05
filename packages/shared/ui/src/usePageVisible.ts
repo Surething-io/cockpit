@@ -9,22 +9,25 @@ import { useState, useEffect } from 'react';
  * 2. VISIBILITY message from parent window (iframe hidden via CSS)
  */
 export function usePageVisible(): boolean {
-  const [visible, setVisible] = useState(() => {
+  const [documentVisible, setDocumentVisible] = useState(() => {
     if (typeof document === 'undefined') return true;
     return document.visibilityState === 'visible';
   });
 
+  const [frameVisible, setFrameVisible] = useState(() => typeof window === 'undefined' || window.parent === window);
+
   useEffect(() => {
     // Browser tab visibility change
     const handleVisibility = () => {
-      setVisible(document.visibilityState === 'visible');
+      setDocumentVisible(document.visibilityState === 'visible');
     };
     document.addEventListener('visibilitychange', handleVisibility);
 
     // Parent window notifies iframe of visibility change
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'IFRAME_VISIBILITY') {
-        setVisible(!!event.data.visible);
+      if ((event.data?.type === 'IFRAME_VISIBILITY' || event.data?.type === 'PROJECT_NUMBER')
+        && typeof event.data.visible === 'boolean') {
+        setFrameVisible(event.data.visible);
       }
     };
     window.addEventListener('message', handleMessage);
@@ -35,5 +38,5 @@ export function usePageVisible(): boolean {
     };
   }, []);
 
-  return visible;
+  return documentVisible && frameVisible;
 }

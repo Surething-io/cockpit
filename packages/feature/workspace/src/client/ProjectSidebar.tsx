@@ -302,7 +302,7 @@ export function ProjectSidebar({
     beginUpdate();
   }, [beginUpdate]);
   const { pinnedSessions, unpinSession, reorder } = usePinnedSessions();
-  const { tasks: scheduledTasks, unreadCount: scheduledUnread, reload: reloadScheduled, pauseTask, resumeTask, triggerTask, deleteTask: deleteScheduledTask, updateTask: updateScheduledTask, markRead: markScheduledRead } = useScheduledTasks();
+  const { tasks: scheduledTasks, unreadCount: scheduledUnread, reload: reloadScheduled, pauseTask, resumeTask, triggerTask, deleteTask: deleteScheduledTask, updateTask: updateScheduledTask } = useScheduledTasks();
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [sessions, setSessions] = useState<GlobalSession[]>([]);
@@ -551,7 +551,6 @@ export function ProjectSidebar({
           onResume={resumeTask}
           onTrigger={triggerTask}
           onDelete={deleteScheduledTask}
-          onMarkRead={markScheduledRead}
           onUpdateTask={updateScheduledTask}
         />
         {/* Running terminals (all projects) */}

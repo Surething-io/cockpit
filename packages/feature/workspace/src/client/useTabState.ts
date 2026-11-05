@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { usePageVisible, useWebSocket } from '@cockpit/shared-ui';
 import type { ChatEngine, DeepseekModel, EngineModelId, ClaudeModelId, ClaudeEffort, CodexModelId, CodexReasoningEffort } from '@cockpit/feature-agent';
 import { publishTopic } from '@cockpit/effect-react';
@@ -10,8 +10,7 @@ import { BrowserRuntime } from '@cockpit/effect-runtime';
 import {
   loadProjectState,
   saveProjectState,
-  updateSessionStatus as updateSessionStatusEff,
-  markScheduledTasksReadBySession,
+  markSessionRead,
 } from './effect/stateClient';
 import { loadActiveTabTarget, saveActiveTabTarget, type ActiveTabTarget } from './effect/activeTabStorage';
 import { loadOllamaDefaultModel } from '@cockpit/feature-agent';
@@ -64,6 +63,7 @@ interface GlobalSessionStatusSnapshot {
   sessionId: string;
   status?: string;
   engine?: string;
+  lastActive?: number;
 }
 
 /**
@@ -112,6 +112,14 @@ const CODEX_THREAD_ID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 function normalizeCodexSessionId(sessionId: string): string {
   const match = sessionId.match(CODEX_THREAD_ID_RE);
   return match?.[1] ?? sessionId;
+}
+
+function matchesReadSession(a: { sessionId: string; engine?: string }, b: { sessionId: string; engine?: string }): boolean {
+  if (a.engine && b.engine && a.engine !== b.engine) return false;
+  if (a.sessionId === b.sessionId) return true;
+  const engine = a.engine ?? b.engine;
+  return (engine === 'codex' || (!engine && /rollout-/.test(a.sessionId + b.sessionId)))
+    && normalizeCodexSessionId(a.sessionId) === normalizeCodexSessionId(b.sessionId);
 }
 
 // ============================================
@@ -195,11 +203,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     isInitializingRef.current = false;
     setInitDone(true);
   }, []);
-  const activeViewRef = useRef(activeView);
-  useEffect(() => { activeViewRef.current = activeView; }, [activeView]);
   const pageVisible = usePageVisible();
-  const pageVisibleRef = useRef(pageVisible);
-  useEffect(() => { pageVisibleRef.current = pageVisible; }, [pageVisible]);
 
   // Initialize tabs (first create a temporary tab, later overwritten by server data).
   // Seed it with initialSessionId (from the URL) so that a project with no state.json yet
@@ -278,15 +282,37 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
   // closedSessionIds so the server removes them from the shared union (the only removal path).
   const pendingClosedRef = useRef<Set<string>>(new Set());
 
-  // Update session status in state.json (notify Workspace layer)
-  const updateSessionStatus = useCallback((sessionId: string, status: string) => {
-    if (!initialCwd || !sessionId) return;
-    BrowserRuntime.runFork(
-      updateSessionStatusEff(initialCwd, sessionId, status).pipe(
-        Effect.catchAll(() => Effect.void)
-      )
-    );
-  }, [initialCwd]);
+  const activeReadTab = tabs.find((tab) => tab.id === activeTabId);
+  const visibleReadTarget = useRef<TabInfo | undefined>(undefined);
+  useLayoutEffect(() => {
+    visibleReadTarget.current = initDone && pageVisible && (!activeView || activeView === 'agent') ? activeReadTab : undefined;
+    return () => { visibleReadTarget.current = undefined; };
+  }, [initDone, pageVisible, activeView, activeReadTab]);
+
+  const readRunner = useMemo(() => createLatestTaskRunner<TabInfo>(async (tab) => {
+    const stillVisible = () => !!tab.sessionId && visibleReadTarget.current?.id === tab.id
+      && visibleReadTarget.current.sessionId === tab.sessionId && visibleReadTarget.current.engine === tab.engine
+      && document.visibilityState === 'visible';
+    if (!initialCwd || !tab.sessionId || !stillVisible()) return;
+    const readBefore = await BrowserRuntime.runPromise(markSessionRead(initialCwd, tab.sessionId, tab.engine, stillVisible));
+    if (readBefore === null || !stillVisible() || visibleReadTarget.current?.isLoading) return;
+    const matches = globalSessionsRef.current.filter((row) => row.cwd === initialCwd && matchesReadSession(row, { sessionId: tab.sessionId!, engine: tab.engine }));
+    if (matches.some((row) => row.status === 'loading' || (row.lastActive ?? 0) > readBefore)) return;
+    for (const row of matches) row.status = 'normal';
+    setUnreadTabs((current) => {
+      if (!current.has(tab.id)) return current;
+      const next = new Set(current); next.delete(tab.id); return next;
+    });
+  }), [initialCwd]);
+
+  const requestSessionRead = useCallback((sessionId?: string, engine?: string) => {
+    const tab = visibleReadTarget.current;
+    if (tab?.sessionId && (!sessionId || matchesReadSession({ sessionId: tab.sessionId, engine: tab.engine }, { sessionId, engine }))) {
+      readRunner.enqueue(tab);
+    }
+  }, [readRunner]);
+
+  useEffect(() => { requestSessionRead(); }, [requestSessionRead, initDone, pageVisible, activeView, activeTabId, activeReadTab?.sessionId, activeReadTab?.engine, activeReadTab?.isLoading]);
 
   const syncTabStatusesFromGlobalState = useCallback((sessions: GlobalSessionStatusSnapshot[]) => {
     if (!initialCwd) return;
@@ -721,6 +747,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
       type?: string;
       cwd?: string;
       closedSessionIds?: string[];
+      sessionId?: string;
       data?: { sessions?: GlobalSessionStatusSnapshot[] };
     };
 
@@ -728,8 +755,15 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
       globalSessionsRef.current = message.data.sessions;
       if (!isInitializingRef.current) {
         syncTabStatusesFromGlobalState(message.data.sessions);
+        for (const session of message.data.sessions) {
+          if (session.cwd === initialCwd && session.status === 'unread') requestSessionRead(session.sessionId, session.engine);
+        }
       }
       return;
+    }
+
+    if (message.type === 'task-fired' && message.cwd === initialCwd && message.sessionId) {
+      requestSessionRead(message.sessionId);
     }
 
     if (
@@ -739,7 +773,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     ) {
       reconcileTabs(message.closedSessionIds ?? []);
     }
-  }, [initialCwd, reconcileTabs, syncTabStatusesFromGlobalState]);
+  }, [initialCwd, reconcileTabs, syncTabStatusesFromGlobalState, requestSessionRead]);
 
   useWebSocket({
     url: '/ws/global-state',
@@ -872,6 +906,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     const existingTab = tabs.find((t) => t.sessionId === sid);
     if (existingTab) {
       setActiveTabId(existingTab.id);
+      requestSessionRead(sid);
       return;
     }
     if (!initialCwd) {
@@ -886,6 +921,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
       const already = tabsRef.current.find((t) => t.sessionId === sid);
       if (already) {
         setActiveTabId(already.id);
+        requestSessionRead(sid);
         return;
       }
       addTab(initialCwd, sid, title, {
@@ -908,7 +944,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
         appendToEnd: true,
       });
     });
-  }, [tabs, initialCwd, addTab]);
+  }, [tabs, initialCwd, addTab, requestSessionRead]);
 
   // Create new blank tab (Claude Code, appended to end)
   const handleNewTab = useCallback(() => {
@@ -1132,56 +1168,15 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     });
   }, [initialCwd, addTab]);
 
-  // Update tab state (loading, sessionId)
+  // Keep state updaters pure; completion and entry share the same read path.
   const updateTabState = useCallback((tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string; bot?: string }) => {
-    setTabs((prev) => {
-      const oldTab = prev.find(t => t.id === tabId);
-      if (oldTab?.isLoading && updates.isLoading === false) {
-        // User "is watching" requires all 3 conditions:
-        // 1. Is the current active tab
-        // 2. On the agent screen (not explorer/console)
-        // 3. iframe is visible to user (is the current active project)
-        const isOnAgent = !activeViewRef.current || activeViewRef.current === 'agent';
-        const isUserWatching = tabId === activeTabId && isOnAgent && pageVisibleRef.current;
-        if (!isUserWatching) {
-          setUnreadTabs(u => new Set(u).add(tabId));
-          // state.json already set to 'unread' by /api/chat, no need to write
-        } else {
-          // User is watching → correct state.json to 'normal' (/api/chat defaults to 'unread')
-          const sid = oldTab.sessionId || updates.sessionId;
-          if (sid) updateSessionStatus(sid, 'normal');
-        }
-      }
-      return prev.map((tab) =>
-        tab.id === tabId ? { ...tab, ...updates } : tab
-      );
-    });
-  }, [activeTabId, updateSessionStatus]);
-
-  // Clear unread for current active tab when switching back to agent screen / switching tab / iframe becomes visible
-  // Must satisfy both: on agent screen + iframe visible
-  useEffect(() => {
-    const isOnAgent = !activeView || activeView === 'agent';
-    if (isOnAgent && pageVisible) {
-      setUnreadTabs(u => {
-        if (!u.has(activeTabId)) return u;
-        const next = new Set(u);
-        next.delete(activeTabId);
-        // Sync write state.json
-        const tab = tabsRef.current.find(t => t.id === activeTabId);
-        if (tab?.sessionId) {
-          updateSessionStatus(tab.sessionId, 'normal');
-          // Clear scheduled task unread for this session
-          BrowserRuntime.runFork(
-            markScheduledTasksReadBySession(tab.sessionId).pipe(
-              Effect.catchAll(() => Effect.void)
-            )
-          );
-        }
-        return next;
-      });
+    const oldTab = tabsRef.current.find((tab) => tab.id === tabId);
+    if (oldTab?.isLoading && updates.isLoading === false) {
+      if (visibleReadTarget.current?.id === tabId) requestSessionRead(updates.sessionId || oldTab.sessionId);
+      else setUnreadTabs((current) => new Set(current).add(tabId));
     }
-  }, [activeView, activeTabId, pageVisible, updateSessionStatus]);
+    setTabs((prev) => prev.map((tab) => tab.id === tabId ? { ...tab, ...updates } : tab));
+  }, [requestSessionRead]);
 
   // Switch tab and clear unread
   // One toggle for the whole panel.
@@ -1228,24 +1223,9 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
 
   const switchTab = useCallback((tabId: string) => {
     setActiveTabId(tabId);
-    setUnreadTabs(u => {
-      if (!u.has(tabId)) return u;
-      const next = new Set(u);
-      next.delete(tabId);
-      // Sync write to state.json
-      const tab = tabsRef.current.find(t => t.id === tabId);
-      if (tab?.sessionId) {
-        updateSessionStatus(tab.sessionId, 'normal');
-        // Clear scheduled task unread for this session
-        BrowserRuntime.runFork(
-          markScheduledTasksReadBySession(tab.sessionId).pipe(
-            Effect.catchAll(() => Effect.void)
-          )
-        );
-      }
-      return next;
-    });
-  }, [updateSessionStatus]);
+    const sessionId = tabsRef.current.find((tab) => tab.id === tabId)?.sessionId;
+    if (sessionId) requestSessionRead(sessionId);
+  }, [setActiveTabId, requestSessionRead]);
 
   // Tab drag-to-reorder
   const handleTabDragStart = useCallback((index: number) => {

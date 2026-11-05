@@ -33,7 +33,6 @@ import {
   saveProjectSettings,
   loadGitWorktrees,
 } from './effect/workspaceClient';
-import { updateSessionStatus, markScheduledTasksReadBySession } from './effect/stateClient';
 
 interface TabManagerProps {
   initialCwd?: string;
@@ -523,28 +522,13 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
           if (switchToAgent) {
             handleViewChange('agent');
           }
-          // User viewed this session → write state.json as normal (skip sessions still loading to avoid clearing the unread indicator prematurely)
           const targetTab = tabs.find(t => t.sessionId === sessionId);
           // Existing tab (possibly already active → no rising edge): force Chat to
           // re-fetch the latest messages from disk. New tabs load history in full anyway.
           if (targetTab) {
             setSessionRefresh(prev => ({ sessionId, nonce: (prev?.nonce ?? 0) + 1 }));
           }
-          if (initialCwd && !targetTab?.isLoading) {
-            BrowserRuntime.runFork(
-              updateSessionStatus(initialCwd, sessionId, 'normal').pipe(
-                Effect.orElse(() => Effect.void)
-              )
-            );
-            // Also clear scheduled-task unread for this session: jumping in via
-            // SWITCH_SESSION (recent/pinned sessions) otherwise never decrements
-            // the scheduled-task unread badge — only the scheduled-tasks panel did.
-            BrowserRuntime.runFork(
-              markScheduledTasksReadBySession(sessionId).pipe(
-                Effect.orElse(() => Effect.void)
-              )
-            );
-          }
+
         }
       }
       // Reveal a file in the Explorer — the Bots panel opening a BOT.md in a

@@ -22,8 +22,11 @@ interface GlobalState {
   sessions: GlobalSessionInfo[]
 }
 
-export const GET = handler(() =>
+export const GET = handler((req) =>
   Effect.gen(function* () {
+    if (new URL(req.url).searchParams.get("readBoundary") === "1") {
+      return Response.json({ readBefore: Date.now() }, { headers: { "Cache-Control": "no-store" } })
+    }
     const state = yield* Effect.tryPromise({
       try: () =>
         readJsonFile<GlobalState>(GLOBAL_STATE_FILE, { sessions: [] }),
@@ -89,6 +92,8 @@ export const POST = handler((req) =>
       status?: SessionStatus
       title?: string
       action?: "activity" | "status" | "touch"
+      readBefore?: number
+      engine?: string
     }
     if (!body.cwd || !body.sessionId) {
       return yield* Effect.fail(
@@ -99,11 +104,16 @@ export const POST = handler((req) =>
       )
     }
     const { cwd, sessionId, status, title, action = "activity" } = body
+    if ((body.readBefore !== undefined && (typeof body.readBefore !== "number" || !Number.isFinite(body.readBefore)))
+      || (body.engine !== undefined && typeof body.engine !== "string")) {
+      return yield* Effect.fail(new ValidationError({ field: "readBefore|engine", reason: "invalid read boundary" }))
+    }
     yield* Effect.tryPromise({
       try: () => {
         if (action === "touch") return touchGlobalSession(cwd, sessionId)
         if (action === "status") {
-          return updateGlobalSessionStatus(cwd, sessionId, status || "normal")
+          return updateGlobalSessionStatus(cwd, sessionId, status || "normal",
+            body.readBefore === undefined ? undefined : { readBefore: body.readBefore, engine: body.engine })
         }
         return updateGlobalState(cwd, sessionId, status || "normal", title)
       },

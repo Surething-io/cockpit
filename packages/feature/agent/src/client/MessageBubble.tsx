@@ -14,12 +14,13 @@ import { isMutatingToolName } from '../shared/toolMutation';
 //   - FileContextMenu: chat-adjacent code that hasn't migrated yet.
 //   - MarkdownRenderer: a generic markdown renderer; candidate for shared-ui.
 // Allowed by MODULES.md as transitional reverse imports.
-import { HtmlPreviewModal, CsvPreviewModal, isMarkdownFile, isHtmlFile, isImageFile, isCsvFile, resolveRelativePath, fetchFileStat } from '@cockpit/feature-explorer';
+import { HtmlPreviewModal, CsvPreviewModal, isMarkdownFile, isPlainTextFile, isHtmlFile, isImageFile, isCsvFile, resolveRelativePath, fetchFileStat } from '@cockpit/feature-explorer';
 import { parseSessionLink, splitSessionLinks } from '@cockpit/shared-utils/sessionLink';
 import { openSessionLink } from './openSessionLink';
 import { MarkdownRenderer, SessionLinkChip } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { MdPreviewModal } from './MdPreviewModal';
+import { TextPreviewModal } from './TextPreviewModal';
 import { readFileForPreview } from './effect/agentClient';
 import { useTranslation } from 'react-i18next';
 import { relativeToRoot } from '@cockpit/shared-utils/pathWithin';
@@ -417,7 +418,7 @@ const TextPartRow = memo(function TextPartRow({
      * been cwd-bound, and it's the same modal the tool-call doc chips open, so
      * a linked file and a touched file preview identically.
      *
-     * Gated to the extensions that stack actually renders (markdown, images,
+     * Gated to the extensions that stack actually renders (markdown, txt, images,
      * and csv/tsv as a parsed table). `.html` is excluded
      * even though HtmlPreviewModal would display it: `/apps/local` injects
      * `window.cockpit` (full shell access) into an un-sandboxed iframe, so
@@ -427,7 +428,7 @@ const TextPartRow = memo(function TextPartRow({
      * on a file the user chose.
      */
     const openOutsideProject = (abs: string) => {
-      if (!onPreviewFile || !(isMarkdownFile(abs) || isImageFile(abs) || isCsvFile(abs))) {
+      if (!onPreviewFile || !(isMarkdownFile(abs) || isPlainTextFile(abs) || isImageFile(abs) || isCsvFile(abs))) {
         toast(t('toast.fileOutsideProject'), 'error');
         return;
       }
@@ -842,7 +843,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     [message.toolCalls]
   );
 
-  // Extract deduplicated previewable paths (.md / .html / .htm / .csv / .tsv /
+  // Extract deduplicated previewable paths (.md / .txt / .html / .htm / .csv / .tsv /
   // images) from
   // Read/Edit/Write tool calls. Single-click opens an in-modal preview.
   const docFiles = useMemo(() => {
@@ -852,7 +853,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     for (const tc of message.toolCalls) {
       if (tc.name === 'Read' || tc.name === 'Edit' || tc.name === 'Write') {
         const fp = (tc.input as { file_path?: string }).file_path;
-        if (fp && (isMarkdownFile(fp) || isHtmlFile(fp) || isImageFile(fp) || isCsvFile(fp)) && !seen.has(fp)) {
+        if (fp && (isMarkdownFile(fp) || isPlainTextFile(fp) || isHtmlFile(fp) || isImageFile(fp) || isCsvFile(fp)) && !seen.has(fp)) {
           seen.add(fp);
           result.push(fp);
         }
@@ -883,7 +884,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   const [previewFile, setPreviewFile] = useState<string | null>(null);
   const [previewContent, setPreviewContent] = useState<string | null>(null);
 
-  // Fetch content when a doc file (md / html) is selected. Images are served
+  // Fetch content when a text document is selected. Images are served
   // as raw bytes via <img src>, so they skip this text-content fetch.
   useEffect(() => {
     if (!previewFile || isImageFile(previewFile)) { queueMicrotask(() => setPreviewContent(null)); return; }
@@ -1234,7 +1235,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             </div>
           )}
 
-          {/* Previewable doc list (md / html) */}
+          {/* Previewable document list */}
           {docFiles.length > 0 && (
             <div className={`${message.content || hasImages || lastTodoWrite ? 'mt-2' : ''}`}>
               <div className="border border-border rounded-lg overflow-hidden px-3 py-2 space-y-0.5">
@@ -1265,7 +1266,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                       </svg>
                     ) : (
-                      // Markdown — document glyph
+                      // Markdown / plain text — document glyph
                       <svg className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
@@ -1523,7 +1524,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
 
       {/* File preview — image via raw <img src>, html in a same-origin iframe
           with the bash SDK (i.e. previewing it runs it), csv as a parsed table,
-          md via the rich preview */}
+          txt as literal text, md via the rich preview */}
       {previewFile && isImageFile(previewFile) && (
         <ImageFilePreviewModal key={`${cwd}:${sessionId}:${previewFile}`} filePath={previewFile} cwd={cwd} sessionId={sessionId} onClose={() => setPreviewFile(null)} />
       )}
@@ -1538,6 +1539,12 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
           />
         ) : isCsvFile(previewFile) ? (
           <CsvPreviewModal
+            filePath={previewFile}
+            content={previewContent}
+            onClose={() => setPreviewFile(null)}
+          />
+        ) : isPlainTextFile(previewFile) ? (
+          <TextPreviewModal
             filePath={previewFile}
             content={previewContent}
             onClose={() => setPreviewFile(null)}

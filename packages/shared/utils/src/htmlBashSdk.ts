@@ -808,6 +808,13 @@ export const LOCAL_APP_PREFIX = "/apps/local/"
 /** Address space for apps shipped in the package's `apps/` directory. */
 export const BUILTIN_APP_PREFIX = "/apps/builtin/"
 
+/** Older preview titles put an LRM before the path. It survives clipboard
+ *  copies and trim(), making an absolute path look relative. Keep any marks
+ *  inside the filename intact. */
+function trimPreviewPath(filePath: string): string {
+  return filePath.trim().replace(/^\u200e+/, "").trim()
+}
+
 /**
  * Map a local file path to its `/apps/local/<encoded-abs-path>` URL (static-site
  * style: relative siblings, images, and CDN refs all resolve). Relative
@@ -815,7 +822,7 @@ export const BUILTIN_APP_PREFIX = "/apps/builtin/"
  * the console browser bubble and the HTML preview.
  */
 export function toLocalAppUrl(filePath: string, projectRoot?: string): string {
-  const trimmed = filePath.trim()
+  const trimmed = trimPreviewPath(filePath)
   // `~/x` is rooted, not relative: it keeps its tilde here and the /apps route
   // expands it against the server's home directory.
   //
@@ -930,7 +937,7 @@ export function resolveLocalMediaUrl(
  * markdown (CockpitMarkdown + TocSidebar), images (themed, centered, fit/100%
  * toggle), pdf (CockpitPdf, Explorer's themed viewer), json (readable widget
  * with a raw-source toggle), csv/tsv (CockpitCsv table with a raw-source
- * toggle).
+ * toggle), txt (literal text).
  *
  * `chip` is the label the Console empty-state guide shows for the group. It
  * lives here rather than in ConsoleView on purpose: the two used to be written
@@ -940,6 +947,7 @@ export function resolveLocalMediaUrl(
  */
 const FILE_VIEWER_EXT_GROUPS = [
   { chip: "*.md", exts: ["md"] },
+  { chip: "*.txt", exts: ["txt"] },
   { chip: "*.png/jpg/gif/webp/svg", exts: ["png", "jpg", "jpeg", "gif", "webp", "svg"] },
   { chip: "*.pdf", exts: ["pdf"] },
   { chip: "*.json", exts: ["json"] },
@@ -975,7 +983,7 @@ export function isFileViewerPath(filePath: string): boolean {
  * high and 404s.
  */
 export function toFileViewerUrl(filePath: string, projectRoot?: string): string {
-  const trimmed = filePath.trim()
+  const trimmed = trimPreviewPath(filePath)
   // `~/x` is rooted, not relative: it keeps its tilde here and the /apps route
   // expands it against the server's home directory.
   //

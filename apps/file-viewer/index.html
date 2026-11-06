@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>File Viewer</title>
 <meta name="cockpit-name" content="file-viewer">
-<meta name="description" content="Preview local files: markdown (with TOC), json, csv, images, pdf">
+<meta name="description" content="Preview local files: markdown (with TOC), txt, json, csv, images, pdf">
 <meta name="cockpit-icon" content="📄">
 <!-- Opt into the SDK's theme handling: follows the Cockpit host, falls back to
      the OS outside it, and mounts the top-right light/dark toggle. -->
@@ -16,6 +16,13 @@
      its own scroll container ---- */
   .md-view { position: fixed; inset: 0; }
   .md-view .cockpit-md { padding: 1.5rem; }
+  /* ---- Plain text: preserve whitespace and display markup literally ---- */
+  .text-view {
+    position: fixed; inset: 0; overflow: auto; margin: 0;
+    padding: 1rem 1.5rem;
+    font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
   /* ---- JSON readable view (CockpitJson): pre-like themed container ---- */
   .json-view {
     position: fixed; inset: 0; overflow: auto;

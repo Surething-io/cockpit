@@ -49,7 +49,7 @@ export function CsvPreviewModal({ filePath, content, onClose, zClassName = 'z-50
                 toast(t('common.copiedPath'));
               }}
             >
-              {'‎'}{filePath}
+              <bdi dir="ltr">{filePath}</bdi>
             </span>
             <div className="flex items-center gap-1 bg-accent rounded p-0.5 flex-shrink-0">
               {(['table', 'raw'] as const).map((m) => (

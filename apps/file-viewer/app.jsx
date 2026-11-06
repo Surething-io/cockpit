@@ -1,5 +1,5 @@
 /**
- * file-viewer — preview a local file (markdown / json / csv / image / pdf).
+ * file-viewer — preview a local file (markdown / txt / json / csv / image / pdf).
  *
  * Built-in, but written against the PUBLIC contract only, so it doubles as the
  * reference app (see ~/.cockpit/skills/html/SKILL.md):
@@ -233,6 +233,14 @@ function MarkdownView({ file }) {
   const failure = error || mountError;
   if (failure) return <Status kind="error">{'file-viewer: ' + file + '\n\n' + failure}</Status>;
   return <div className="md-view" ref={ref} />;
+}
+
+/** Plain text is rendered literally, without interpreting markup or links. */
+function TextView({ file }) {
+  const { loading, data, error } = useAsync(() => readText(file), [file]);
+  if (loading) return <Status kind="loading">loading…</Status>;
+  if (error) return <Status kind="error">{'file-viewer: ' + file + '\n\n' + error}</Status>;
+  return <pre className="text-view">{data}</pre>;
 }
 
 /**
@@ -476,6 +484,7 @@ function App() {
   }
   const ext = extOf(file);
   if (ext === 'md') return <MarkdownView file={file} />;
+  if (ext === 'txt') return <TextView file={file} />;
   if (ext === 'json') return <JsonView file={file} />;
   if (ext === 'pdf') return <PdfView file={file} />;
   if (ext === 'csv' || ext === 'tsv') return <CsvView file={file} />;

@@ -16,7 +16,7 @@ import { MarkdownRenderer } from '@cockpit/shared-ui';
 import { resolveBashCwd } from '@cockpit/shared-utils';
 import { rehypeSourceLines } from '@cockpit/shared-ui';
 import { scrollToHeadingAnchor } from '@cockpit/shared-ui';
-import { isBotFile, isMarkdownFile, isSkillFile, resolveRelativePath } from './toolCallUtils';
+import { isBotFile, isMarkdownFile, isPlainTextFile, isSkillFile, resolveRelativePath } from './toolCallUtils';
 import { useAddSkill } from './registry/useAddSkill';
 import { useAddBot } from './registry/useAddBot';
 import type { CodeComment } from '@cockpit/feature-comments';
@@ -35,16 +35,16 @@ interface InteractiveMarkdownPreviewProps {
   filePath: string;      // File path (comment data binding + AI reference)
   cwd: string;           // useComments + fetchAllCommentsWithCode
   onClose?: () => void;
-  /** Project-relative path, used to resolve relative .md links. Derived from filePath + cwd if not provided */
+  /** Project-relative path, used to resolve relative file links. Derived from filePath + cwd if not provided */
   sourceFile?: string;
   /** Embedded (in-place) mode: hides the header (filePath + close X)
    *  and makes ESC a no-op for closing — the host owns the on/off control. Defaults to false
    *  so the modal call sites (agent chat, diff view) keep their current behavior. */
   embedded?: boolean;
-  /** Explorer-only: open a local .md link target in-place. Receives the resolved
+  /** Explorer-only: open a local .md or .txt link target in-place. Receives the resolved
    *  cwd-relative path and an optional `#anchor`. Omitted in agent chat / diff,
    *  where local links keep their default browser behavior. */
-  onLocalMdLink?: (targetRel: string, anchor: string | null) => void;
+  onLocalFileLink?: (targetRel: string, anchor: string | null) => void;
   /** Explorer-only: after a cross-file link navigation, scroll to this heading
    *  anchor once the new content has rendered. One-shot; cleared by the host. */
   scrollToAnchor?: string | null;
@@ -95,7 +95,7 @@ export function InteractiveMarkdownPreview({
   onClose,
   sourceFile: sourceFileProp,
   embedded = false,
-  onLocalMdLink,
+  onLocalFileLink,
   scrollToAnchor,
   tocDefaultCollapsed = false,
 }: InteractiveMarkdownPreviewProps) {
@@ -135,30 +135,30 @@ export function InteractiveMarkdownPreview({
     if (containerRef.current !== containerEl) setContainerEl(containerRef.current);
   });
 
-  // Intercept markdown links → open local .md targets in-place (explorer only).
+  // Intercept markdown links → open local .md / .txt targets in-place (explorer only).
   // Returns true when consumed so MarkdownRenderer prevents browser navigation.
   //
-  // Identity-stable: `onLocalMdLink` from the caller (FileBrowserModal) churns on
+  // Identity-stable: `onLocalFileLink` from the caller (FileBrowserModal) churns on
   // every render (its useCallback depends on the file-tree hook object), which
   // would break MarkdownRenderer's memo and re-parse the *entire* previewed
   // document on every unrelated re-render (e.g. a chat-tab session switch — a
   // multi-second freeze on large docs). A ref indirection keeps this callback's
-  // identity constant while still calling the latest onLocalMdLink / sourceFile.
-  const linkClickDepsRef = useRef({ onLocalMdLink, sourceFile });
-  linkClickDepsRef.current = { onLocalMdLink, sourceFile };
+  // identity constant while still calling the latest onLocalFileLink / sourceFile.
+  const linkClickDepsRef = useRef({ onLocalFileLink, sourceFile });
+  linkClickDepsRef.current = { onLocalFileLink, sourceFile };
   const handleLinkClick = useRef((href: string): boolean => {
-    const { onLocalMdLink: onLink, sourceFile: src } = linkClickDepsRef.current;
+    const { onLocalFileLink: onLink, sourceFile: src } = linkClickDepsRef.current;
     if (!onLink) return false;
-    // External schemes (http(s):, mailto:, tel:, ...) → leave to the browser.
-    if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return false;
+    // External schemes and network-path references → leave to the browser.
+    if (href.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(href)) return false;
     const hashIdx = href.indexOf('#');
     const pathPart = hashIdx >= 0 ? href.slice(0, hashIdx) : href;
     const anchor = hashIdx >= 0 ? href.slice(hashIdx + 1) : null;
     if (!pathPart) return false; // pure #anchor — handled inside MarkdownRenderer
     let decoded = pathPart;
     try { decoded = decodeURIComponent(pathPart); } catch { /* keep raw */ }
-    if (!isMarkdownFile(decoded)) return false; // only .md is in scope
-    onLink(resolveRelativePath(src, decoded), anchor);
+    if (!isMarkdownFile(decoded) && !isPlainTextFile(decoded)) return false;
+    onLink(resolveRelativePath(src, decoded), isMarkdownFile(decoded) ? anchor : null);
     return true;
   }).current;
 
@@ -416,7 +416,7 @@ export function InteractiveMarkdownPreview({
               toast(t('common.copiedPath'));
             }}
           >
-            {'\u200E'}{filePath}
+            <bdi dir="ltr">{filePath}</bdi>
           </span>
           <div className="flex items-center gap-3">
             {/* Register this SKILL.md (skills.json) or BOT.md (bot.json) — the

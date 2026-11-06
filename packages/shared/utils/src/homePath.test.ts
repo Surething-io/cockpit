@@ -108,3 +108,24 @@ describe("console-typed relative paths", () => {
     )
   })
 })
+
+describe("paths copied from preview titles", () => {
+  it("keeps an absolute TXT path absolute despite the title's leading LRM", () => {
+    const file = "/Users/me/.cockpit/artifacts/review-instruction.txt"
+    const url = toFileViewerUrl("\u200e" + file, PROJECT)
+    expect(new URL(url, "http://localhost").searchParams.get("file")).toBe(file)
+  })
+
+  it("handles whitespace around a copied path for either preview runtime", () => {
+    const file = "/Users/me/report.html"
+    expect(fromLocalAppUrl(toLocalAppUrl(" \u200e" + file + "\n", PROJECT))).toBe(file)
+    const url = toFileViewerUrl(" \u200e~/notes.txt\n", PROJECT)
+    expect(new URL(url, "http://localhost").searchParams.get("file")).toBe("~/notes.txt")
+  })
+
+  it("preserves LRM inside a filename", () => {
+    const file = "/Users/me/report\u200e.txt"
+    const url = toFileViewerUrl(file, PROJECT)
+    expect(new URL(url, "http://localhost").searchParams.get("file")).toBe(file)
+  })
+})

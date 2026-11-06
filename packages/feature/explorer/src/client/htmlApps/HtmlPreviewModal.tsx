@@ -34,8 +34,8 @@ export function HtmlPreviewModal({ filePath, content, cwd, onClose, onContentSea
       <div className="bg-card shadow-lv3 w-full h-full rounded-none md:max-w-[90%] md:h-[90vh] md:rounded-lg flex flex-col relative overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-border flex-shrink-0">
           {/* Full absolute path. `direction: rtl` keeps the tail (file name)
-              visible when the path is too long — the leading LRM mark pins
-              the LTR text run so path segments don't reorder. Hover shows
+              visible when the path is too long — bdi pins the LTR text run
+              without inserting a character into copied paths. Hover shows
               the full path; click copies it. */}
           <span
             className="text-sm text-muted-foreground truncate min-w-0 flex-1 cursor-pointer hover:text-foreground transition-colors"
@@ -46,7 +46,7 @@ export function HtmlPreviewModal({ filePath, content, cwd, onClose, onContentSea
               toast(t('common.copiedPath'));
             }}
           >
-            {'‎'}{filePath}
+            <bdi dir="ltr">{filePath}</bdi>
           </span>
           {/* Preview / source toggle — mirrors Explorer's single-button pattern
               (previewing → "Exit preview"; source → "Preview"). Default preview. */}

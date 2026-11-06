@@ -55,7 +55,7 @@ registerBubble({
     const t = input.trim().toLowerCase();
     if (t.startsWith('http://') || t.startsWith('https://')) return true;
     // Local HTML file path → rendered in the bubble iframe via /apps/local;
-    // local md/json/csv/image/pdf path → rendered by the built-in file-viewer app
+    // local md/txt/json/csv/image/pdf path → rendered by the built-in file-viewer app
     // (same bubble, BrowserBubble routes it via toFileViewerUrl)
     return t.endsWith('.html') || t.endsWith('.htm') || isFileViewerPath(t);
   },

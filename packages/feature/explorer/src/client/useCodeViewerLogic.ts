@@ -346,7 +346,7 @@ export function useCodeViewerLogic({
         setIsSearchVisible(true);
         setTimeout(() => searchInputRef.current?.focus(), 0);
       }
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !e.defaultPrevented) {
         if (isSearchVisible) {
           setIsSearchVisible(false);
           setSearchQuery('');
@@ -358,7 +358,12 @@ export function useCodeViewerLogic({
           clearToolbar();
         } else if (viewingComment) {
           setViewingComment(null);
+        } else {
+          return;
         }
+        // A child UI was dismissed; leave the surrounding preview open.
+        e.preventDefault();
+        e.stopPropagation();
       }
     };
 

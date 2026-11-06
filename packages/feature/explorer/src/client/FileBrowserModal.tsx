@@ -1100,9 +1100,9 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
   // One-shot anchor to scroll to after a markdown-link cross-file navigation.
   const [mdLinkAnchor, setMdLinkAnchor] = useState<string | null>(null);
 
-  // Open a local .md link target in-place: load + preview it, highlight it in
-  // the file tree, and (if the link had a #anchor) scroll there after render.
-  const handleOpenMarkdownLink = useCallback((targetRel: string, anchor: string | null) => {
+  // Open a local document in-place and highlight it in the tree. Markdown
+  // uses the rich preview and optional heading anchor; TXT falls through to CodeViewer.
+  const handleOpenLocalFileLink = useCallback((targetRel: string, anchor: string | null) => {
     fileTree.setPreviewMarkdown(true);     // defensive — ensure in-place preview
     locateInTree(targetRel);               // load + select + expand + scroll → tree highlight
     setMdLinkAnchor(anchor);
@@ -2317,7 +2317,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                               filePath={fileTree.selectedPath}
                               cwd={cwd}
                               embedded
-                              onLocalMdLink={handleOpenMarkdownLink}
+                              onLocalFileLink={handleOpenLocalFileLink}
                               scrollToAnchor={mdLinkAnchor}
                             />
                           </div>

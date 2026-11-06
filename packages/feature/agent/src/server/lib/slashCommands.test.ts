@@ -63,7 +63,8 @@ describe('resolveCommandPrompt', () => {
       `- ${name}: ${skillFile}`,
     ].join('\n'));
     expect(fs.readFileSync(skillFile, 'utf-8')).toBe(
-      fs.readFileSync(path.join(process.cwd(), 'skills', name, 'SKILL.md'), 'utf-8'),
+      fs.readFileSync(path.join(process.cwd(), 'skills', name, 'SKILL.md'), 'utf-8')
+        .replaceAll('{{COCKPIT_DIR}}', cockpitHome),
     );
   });
 
@@ -94,15 +95,15 @@ describe('resolveCommandPrompt', () => {
   // missing rule, and nothing else in the system would notice.
   it('copies a builtin\'s reference files next to its resolved SKILL.md, substituted', () => {
     resolveCommandPrompt('@product hi');
+    resolveCommandPrompt('/pair take a look');
     const read = (skill: string, file: string) =>
       fs.readFileSync(path.join(cockpitHome, 'skills', skill, file), 'utf-8');
-    // Enumerated from the source directory rather than a hardcoded list: both
-    // @bot builtins defer their bulk to sibling files, and a new one added to
-    // either must be covered without anyone remembering to extend this test.
+    // Enumerated from the source directory: these builtins defer guidance to
+    // sibling files, so newly added references must be copied automatically.
     const extras = (skill: string) =>
       fs.readdirSync(path.join(process.env.COCKPIT_ROOT!, 'skills', skill))
         .filter((f) => f.endsWith('.md') && f !== 'SKILL.md');
-    for (const skill of ['bot-turn', 'bot-run']) {
+    for (const skill of ['bot-turn', 'bot-run', 'pair']) {
       expect(extras(skill).length).toBeGreaterThan(0);
       // Deliberately a blanket check rather than a list of known names: a typo'd
       // `{{COCKPIT_DIRR}}` is invisible otherwise, and it reaches the model as
@@ -123,6 +124,7 @@ describe('resolveCommandPrompt', () => {
     // skill spells the rest of the path with `/`, so on Windows the result is
     // mixed-separator and equals no path.join() output.
     expect(read('bot-run', 'SKILL.md')).toContain(`${cockpitHome}/skills/bot-run/wait.md`);
+    expect(read('pair', 'SKILL.md')).toContain(`${cockpitHome}/skills/pair/planning.md`);
   });
 
   // The Skills table names a registered skill rather than pointing at a file, so

@@ -1,4 +1,4 @@
-**Skills** are short prompts you trigger with `/` in any Agent tab — each one rewires how the AI works on a single reply. OpenCockpit ships **16 visible built-in Skills** (the `/qa /spec /design /pair /fx /ex /go /cg /cc /cr` modes, plus `/html /new-branch /skillify /ss /dl /bot`); you can also write your own as `SKILL.md` files and install them the same way. Both flavours live in the same `/` menu.
+**Skills** are reusable work instructions you load with `/` in any Agent tab. The AI uses them together with the current request and conversation context; follow-up turns can build on the goals, constraints, and authorizations already discussed. OpenCockpit ships **16 visible built-in Skills** (`/qa /spec /design /pair /fx /ex /go /cg /cc /cr`, plus `/html /new-branch /skillify /ss /dl /bot`); you can also write your own as `SKILL.md` files and install them the same way. Both flavours live in the same `/` menu.
 
 > Don't confuse these with the slash menu inside **Notes** (the project-notes editor), which is a formatter palette for headings, lists, tables and so on. The chat input only recognises Skills — typing `/` there opens a menu listing the built-ins plus any installed `/skill-name`.
 
@@ -9,7 +9,7 @@
 | **`/qa`** | Lean PRD: goals, scope, assumptions, and decisions | For open decisions | ❌ No |
 | **`/spec`** | Implementation-ready specification | ✅ For material decisions | ❌ No |
 | **`/design`** | Code-grounded technical design and implementation plan | For material decisions | ❌ No |
-| **`/pair`** | Programming partner for code and design judgement | If material ambiguity remains | When explicitly asked to modify |
+| **`/pair`** | Contextual programming partner for exploration, planning, design, coding, review, verification, and explanation | If material ambiguity remains | When explicitly asked to modify |
 | **`/fx`** | Root-cause evidence, fix options, and verification | For fix decisions | ❌ |
 | **`/ex`** | Evidence-backed deep analysis | ❌ | ❌ |
 | **`/go`** | Implement agreed work, verify slices, and log decisions | For blockers or costly choices | ✅ Yes |
@@ -23,7 +23,7 @@
 | **`/dl`** | Delegate to a new session; return immediately or wait with `--wait` | If required task details are missing | The child performs the task |
 | **`/bot`** | Create and register a Bot with long-term context | Confirms role, name, and directory first | Writes Bot files |
 
-The first ten are *modes* — they change how the AI works for one reply — and each gets a section below. The remaining six are task commands; their SKILL.md carries the full instructions, so there is nothing to configure. `/ss` and `/dl` also get short sections below, since they work across sessions.
+The first ten guide programming collaboration and each gets a section below. The remaining six cover specific tasks; their SKILL.md carries the full instructions, so there is nothing to configure. All are Skills loaded through the same mechanism. `/ss` and `/dl` also get short sections below, since they work across sessions.
 
 ## `/qa` — Clarify before changing anything
 
@@ -63,9 +63,9 @@ The AI traces relevant code and contracts, explains responsibilities and materia
 
 This mode does not implement the feature. Output stays in the conversation unless you request a saved document; answering decisions does not authorize implementation.
 
-## `/pair` — Think through code together
+## `/pair` — Work through programming questions together
 
-Use whenever you want to discuss an approach, inspect an implementation, trace a bug, or understand tangled structure. The current conversation supplies the target and constraints; there is no required preceding mode or document.
+Use for programming collaboration grounded in the current conversation and code: exploring a project, planning work, designing responsibilities and interfaces, writing code, reviewing changes, verifying behavior, or explaining decisions. The AI selects relevant guidance for the question as the conversation develops; you do not need to choose separate modes or follow a fixed sequence. There is no required preceding Skill or document.
 
 ```text
 /pair Take a look at whether this session-state model is appropriate
@@ -193,11 +193,11 @@ Later, ask "how did that delegated task go?". The AI finds the receipt — in th
 
 Endpoints: `POST /api/sessions/delegate`, `GET /api/sessions/status`.
 
-## Pattern: chain modes
+## Pattern: combine Skills as needed
 
-For a feature, use `/qa` → `/spec` → `/design` → `/go` as needed; simple changes can skip stages that add no useful information. Use `/pair` at any point for code and design judgement; it is not a required stage in this sequence.
+For a feature, use `/qa` → `/spec` → `/design` → `/go` as needed; simple changes can skip stages that add no useful information. Use `/pair` at any point for contextual programming collaboration, including design, coding, review, and verification; it is not a required stage in this sequence.
 
-A typical investigation task chains modes:
+A typical investigation task combines Skills:
 
 ```text
 /qa we want to cache the heavy endpoint        ← clarify
@@ -215,7 +215,7 @@ The right entry point depends on what you have:
 - If you want analysis without interruption → `/ex`
 - If requirements need behavior, contracts, and acceptance criteria → `/spec`
 - If behavior is clear but the technical approach and steps need design → `/design`
-- If you want to discuss an approach or inspect code together → `/pair`
+- If you want a programming partner for exploration, design, coding, review, or verification → `/pair`
 - If the plan is ready → `/go`
 - If a change is done and needs review → `/cr`
 - If you need an earlier conversation back → `/ss`

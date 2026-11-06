@@ -26,7 +26,7 @@
 
 ---
 
-> **OpenCockpit 是开源的 Claude Code 图形界面，接任意大模型** —— 贴合研发全流程的 IDE 式工作台。多项目 Claude 会话开箱即用；想用 **Codex、DeepSeek、GLM、Kimi 或本地 Ollama**？直接新开一个 tab 并排跑，不用改环境变量。内置终端、Chrome 自动化、PostgreSQL / MySQL / Redis 气泡、代码评审与斜杠模式 —— 全部本地。Web client-server 架构：**自托管到共享开发机，全队一起飞。**
+> **OpenCockpit 是开源的 Claude Code 图形界面，接任意大模型** —— 贴合研发全流程的 IDE 式工作台。多项目 Claude 会话开箱即用；想用 **Codex、DeepSeek、GLM、Kimi 或本地 Ollama**？直接新开一个 tab 并排跑，不用改环境变量。内置终端、Chrome 自动化、PostgreSQL / MySQL / Redis 气泡、代码评审与 Skills —— 全部本地。Web client-server 架构：**自托管到共享开发机，全队一起飞。**
 
 https://github.com/user-attachments/assets/18f1a5dc-64f3-4ff6-b9fc-9cd08181fbb8
 
@@ -50,7 +50,7 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 | Agent 够不到浏览器 / 数据库 | **智能气泡**：Chrome、PostgreSQL、MySQL、Redis —— Agent 可驱动 |
 | 读陌生仓库就是 90 分钟"找地鼠" | **代码地图（Code Map）** chip 视图 —— caller / callee pin 一点即跳 |
 | AI 输出审阅低效 | 任意文件行级评论，任意评论可回喂给 AI |
-| 每天写一遍"做 X 但不要动代码" | **斜杠模式** `/qa /spec /design /pair /fx /ex /go /cg /cc /cr` + 通过 Skills 侧边栏自定义 `SKILL.md` |
+| 每天写一遍"做 X 但不要动代码" | **内置 Skills** `/qa /spec /design /pair /fx /ex /go /cg /cc /cr` + 通过 Skills 侧边栏自定义 `SKILL.md` |
 | 没有自动化触发器 | 一次性 / 间隔 / **Cron** **定时任务** |
 | 担心"云端中转" | **完全本地**。无遥测，DeepSeek / GLM / Kimi 的 API Key 仅存在本机 `~/.cockpit/<引擎>/credentials.json` |
 
@@ -128,12 +128,12 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 - 任意文件行级评论
 - **任意评论可发给 AI** 作为上下文，自动修复
 
-### 斜杠模式 —— 切换 Agent 姿态
+### 内置 Skills —— 指导 Agent 如何工作
 
 - `/qa` —— **需求澄清**：产出精简 PRD，明确目标、范围、假设和待决策项，不设计方案、不写代码
 - `/spec` —— **规格设计**：把已确认需求转成行为规则、接口契约和验收标准，不执行实现
 - `/design` —— **技术设计**：结合现有代码明确职责、方案取舍、实施步骤和验证路径，不执行实现
-- `/pair` —— **编程伙伴**：结合上下文与代码讨论方案、检查实现并给出有依据的建议；明确要求修改时实施并验证
+- `/pair` —— **编程伙伴**：结合当前对话与代码上下文，按需参与探索、规划、设计、编码、评审、验证和讲解；“看看”默认给有依据的建议，明确要求修改时在约定范围内实施并验证
 - `/fx` —— **故障分析**：用证据链追到根因，给出影响范围、修复选项和验证方法，不修改代码
 - `/ex` —— **深度分析**：结论先行，附证据、选项和待确认项，不因反问中断，不修改代码
 - `/go` —— **实现**：分小步落地已确认的工作，运行验证，记录规格未覆盖的决策，汇报阻塞和遗留项

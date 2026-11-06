@@ -842,9 +842,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     }
   };
 
-  // Excerpt this single turn (this message's question + answer) into a new session,
-  // dropping everything before it. Works from either bubble of the turn — the server
-  // rewinds an assistant uuid back to the user message that opened it.
+  // Excerpt the complete edit unit, including all steering inputs in a Codex task.
   const handleExcerpt = () => {
     if (canFork) {
       setForkMenuOpen(false);
@@ -855,7 +853,9 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   const handleDeleteTurn = async () => {
     if (!canDeleteTurn || isLoading || deletingTurn) return;
     const confirmed = await confirmDialog(
-      t('chat.deleteTurnConfirm', { defaultValue: 'Delete this question, answer, and its tool records? This cannot be undone.' }),
+      (message.turnUserCount ?? 0) > 1
+        ? t('chat.deleteTaskConfirm', { count: message.turnUserCount })
+        : t('chat.deleteTurnConfirm', { defaultValue: 'Delete this question, answer, and its tool records? This cannot be undone.' }),
       {
         title: t('chat.deleteTurn', { defaultValue: 'Delete turn' }),
         confirmText: t('chat.deleteTurnConfirmAction', { defaultValue: 'Delete turn' }),
@@ -1390,7 +1390,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                       <MessageSquareQuote className="mt-0.5 h-4 w-4 shrink-0" />
                       <span>
                         <span className="block text-xs font-medium">{t('chat.onlyThisTurn')}</span>
-                        <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">{t('chat.onlyThisTurnDesc')}</span>
+                        <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">{(message.turnUserCount ?? 0) > 1 ? t('chat.onlyThisTaskDesc', { count: message.turnUserCount }) : t('chat.onlyThisTurnDesc')}</span>
                       </span>
                     </button>
                   </div>

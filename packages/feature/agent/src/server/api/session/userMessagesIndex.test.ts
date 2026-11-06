@@ -5,7 +5,7 @@
 // agree — an index that counts turns differently from the paginator hands the UI
 // a cursor that lands next to the message instead of on it, and the jump quietly
 // scrolls to the wrong place rather than failing.
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import { join } from 'path';
@@ -13,6 +13,7 @@ import { parseTranscriptFile, parseUserMessageIndex } from './transcriptParsers'
 
 const dirs: string[] = [];
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -49,6 +50,27 @@ const conversation = () => [
 ];
 
 describe('parseUserMessageIndex', () => {
+  it.each([false, true])('keeps every legacy input distinct with repeated IDs (explicit UUID: %s)', async (explicitUuid) => {
+    vi.spyOn(Date, 'now').mockReturnValue(1234);
+    const file = writeTranscript([
+      user('duplicate', 'First', { uuid: explicitUuid ? 'duplicate' : undefined }),
+      assistant('a1', 'First answer'),
+      user('duplicate', 'Second', {
+        uuid: explicitUuid ? 'duplicate' : undefined,
+        message: { role: 'user', content: [{ type: 'text', text: 'Second' }] },
+      }),
+      assistant('a2', 'Second answer'),
+    ]);
+    const index = await parseUserMessageIndex(file, 'claude');
+    expect(index.totalTurns).toBe(2);
+    expect(index.entries.map((entry) => [entry.content, entry.turnIndex])).toEqual([['First', 0], ['Second', 1]]);
+    if (!explicitUuid) expect(new Set(index.entries.map((entry) => entry.id)).size).toBe(2);
+    expect((await parseUserMessageIndex(file, 'claude')).entries).toEqual(index.entries);
+    const page = await parseTranscriptFile(file, { limit: 1 });
+    expect(page.messages.map((message) => message.content)).toEqual(['Second', 'Second answer']);
+    expect(page).toMatchObject({ startTurnIndex: 1, hasMore: true });
+  });
+
   it('lists every user message with the turn index that loads it', async () => {
     const file = writeTranscript(conversation());
     const index = await parseUserMessageIndex(file, 'claude');

@@ -2,7 +2,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Effect } from 'effect';
 import { FSError } from '@cockpit/effect-core';
-import type { TranscriptSnapshot } from '@cockpit/effect-services';
+import type { TranscriptSnapshot, TranscriptCachePolicy } from '@cockpit/effect-services';
 import type { TranscriptSource } from '../server/transcriptSource';
 import { transcriptFormat, transcriptStashPath } from '../server/transcriptLayout';
 import { spliceClaudeTranscript, spliceCodexTranscript } from '../server/transcriptSplice';
@@ -55,13 +55,14 @@ export const listLogicalTranscriptFiles = (dir: string, engine: string): Effect.
 /** One read transaction over the logical conversation. Retries topology changes, never ordinary appends. */
 export const readLogicalTranscript = <A, E, R>(
   path: string, engine: string, read: (reader: LogicalTranscriptReader) => Effect.Effect<A, E, R>,
+  cache: TranscriptCachePolicy = 'retain',
 ): Effect.Effect<A, E | FSError, R> => withTranscriptLayout(path, engine, (before) => Effect.gen(function* () {
     const format = transcriptFormat(engine);
     const stash = transcriptStashPath(path, engine);
     const unavailable = () => new FSError({ path, op: 'read', cause: new Error('Logical transcript changed during read') });
     if (!before.current && !before.history) return yield* Effect.fail(new FSError({ path, op: 'read', cause: new Error('Transcript not found') }));
     const snapshot = (file: string, expected: FileIdentity | null) => expected
-      ? transcriptSnapshot(file, format).pipe(Effect.flatMap((value) => value ? Effect.succeed(value) : Effect.fail(unavailable())))
+      ? transcriptSnapshot(file, format, cache).pipe(Effect.flatMap((value) => value ? Effect.succeed(value) : Effect.fail(unavailable())))
       : Effect.succeed(null);
     const projection = Effect.gen(function* () {
       const current = yield* snapshot(path, before.current);

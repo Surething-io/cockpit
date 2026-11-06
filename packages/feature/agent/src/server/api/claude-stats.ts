@@ -45,7 +45,9 @@ export const GET = handler(() =>
       Effect.catchAll(() => Effect.fail(new NotFoundError({ resource: 'projectsDir', id: CLAUDE_PROJECTS_DIR })))
     );
     const index = yield* TranscriptIndex;
-    const snaps = yield* index.snapshots(files.map((path) => ({ path, format: 'claude' as const })));
-    return ok(mergeStats(snaps.flatMap((s) => (s ? [s.stats] : []))));
+    const stats = yield* Effect.forEach(files, (path) => index.snapshot(path, 'claude', 'scan').pipe(
+      Effect.map((snap) => snap?.stats),
+    ), { concurrency: 4 });
+    return ok(mergeStats(stats.filter((s) => s !== undefined)));
   })
 );

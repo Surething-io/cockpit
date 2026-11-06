@@ -67,6 +67,66 @@ const searchRun = <A, E>(f: (s: import('@cockpit/effect-services').SessionSearch
   Effect.runPromise(Effect.flatMap(services.SessionSearchService, f).pipe(Effect.provide(searchLive.SessionSearchServiceLive)));
 
 describe('logical session end-to-end', () => {
+  it('reads initial titles in one batch, reads metadata once, and isolates a failed transcript', async () => {
+    const project = join(root, 'batch-title-project');
+    mkdirSync(project, { recursive: true });
+    const ids = ['batch-title-a', 'batch-title-b', 'batch-title-bad'];
+    const files = ids.map((id) => paths.getClaudeSessionPath(project, id));
+    mkdirSync(dirname(files[0]), { recursive: true });
+    for (const [i, file] of files.entries()) writeFileSync(file, line({ type: 'user', cwd: project, sessionId: ids[i], message: { role: 'user', content: `Native title ${i}` } }));
+    await titles.POST(request({ cwd: project, sessionId: ids[0], customTitle: 'Custom batch title' }));
+    let metadataReads = 0;
+    hooks.fault = (op, file) => {
+      if (op === 'readFile' && file.endsWith('session-titles.json')) metadataReads++;
+      if (op === 'open' && file === files[2]) throw Object.assign(new Error('Cannot read fixture'), { code: 'EIO' });
+    };
+    try {
+      const response = await titles.POST(request({ cwd: project, sessionIds: [...ids, ids[0], 'missing-batch-title'] }));
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.titles.map((info: { title: string }) => info.title)).toEqual(['Custom batch title', 'Native title 1']);
+      expect(body.titles[0]).toMatchObject({ defaultTitle: 'Native title 0', customTitle: 'Custom batch title', titleRevision: 1 });
+      expect(metadataReads).toBe(1);
+    } finally { hooks.fault = undefined; }
+    expect((await titles.POST(request({ cwd: project, sessionIds: ids, customTitle: 'Invalid batch edit' }))).status).toBe(400);
+    expect((await titles.POST(request({ cwd: project, sessionId: ids[0] }))).status).toBe(200);
+  });
+
+  it('keeps cold history and initial title scans out of the cache while retaining ordinary recent previews', async () => {
+    const project = join(root, 'cache-policy-project');
+    mkdirSync(project, { recursive: true });
+    const sessionId = 'cache-policy-session';
+    const file = paths.getClaudeSessionPath(project, sessionId);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, line({ type: 'user', cwd: project, sessionId, message: { role: 'user', content: 'CachePolicyNeedle' } }));
+    const { runWithTranscriptIndex } = await import('./transcriptIndexLive');
+    const usage = () => runWithTranscriptIndex((index) => index.counters);
+    const before = (await usage()).cachedFiles;
+    const list = await projects.GET(new Request('http://localhost/api/sessions/project'), {
+      params: Promise.resolve({ encodedPath: paths.encodePath(project) }),
+    });
+    expect(list.status).toBe(200);
+    expect((await list.json()).find((row: { sessionId: string }) => row.sessionId === sessionId)?.title).toBe('CachePolicyNeedle');
+    const registry = await projectRegistry.GET(new Request('http://localhost/api/sessions/projects'));
+    expect(registry.status).toBe(200);
+    const stats = await import('../server/api/claude-stats');
+    expect((await stats.GET(new Request('http://localhost/api/claude-stats'))).status).toBe(200);
+    await searchRun((service) => service.sync);
+    expect((await searchRun((service) => service.search({ terms: ['CachePolicyNeedle'], limit: 10 }))).some((hit) => hit.sessionId === sessionId)).toBe(true);
+    const preview = await recent.getSessionPreview(project, sessionId, { includeSearchText: true });
+    expect(preview.searchText).toContain('cachepolicyneedle');
+    expect((await usage()).cachedFiles).toBe(before);
+    const beforeBatch = await usage();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const batch = await titles.POST(request({ cwd: project, sessionIds: [sessionId] }));
+      expect(batch.status).toBe(200);
+      expect((await batch.json()).titles).toMatchObject([{ sessionId, title: 'CachePolicyNeedle' }]);
+      expect(await usage()).toMatchObject({ cachedFiles: before, bytesParsed: beforeBatch.bytesParsed });
+    }
+    expect((await recent.getSessionPreview(project, sessionId)).title).toBe('CachePolicyNeedle');
+    expect((await usage()).cachedFiles).toBe(before + 1);
+  });
+
   it('reads registered Codex sessions from project state even when the native cwd differs', async () => {
     const sessionId = '12345678-1111-4111-8111-111111111111';
     const alias = join(root, 'registered-project');

@@ -178,6 +178,7 @@ function RowSchedulePopover({ anchor, onClose, onCreate }: { anchor: { top: numb
 
 interface TabBarProps {
   tabs: TabInfo[];
+  titlesLoading?: boolean;
   /** Which tab the list highlights. In side-by-side this is the FOCUSED pane's
    *  tab, not the primary one — the highlight answers "which session am I
    *  looking at", and with two panes open that moves with focus. */
@@ -235,6 +236,7 @@ const LIST_WIDTH_MAX = LIST_WIDTH_MIN * 1.5;
  */
 export function TabBar({
   tabs,
+  titlesLoading = false,
   selectedTabId,
   visibleTabIds,
   unreadTabs,
@@ -365,7 +367,7 @@ export function TabBar({
 
       {/* Open sessions */}
       <div className="flex-1 min-h-0 overflow-y-auto p-1.5 space-y-0.5">
-        {tabs.map((tab, index) => {
+        {titlesLoading ? <div role="status" className="px-2 py-3 text-sm text-muted-foreground">{t('sessions.loadingSessions')}</div> : tabs.map((tab, index) => {
           const isActive = tab.id === selectedTabId;
           const isVisible = !isActive && (visibleTabIds?.includes(tab.id) ?? false);
           const pinned = isPinned?.(tab.id) ?? false;
@@ -405,7 +407,7 @@ export function TabBar({
                   bot={tab.bot}
                 />
               </div>
-              <span className="flex flex-1 items-center gap-1 min-w-0"><SessionTitle cwd={tab.cwd || ''} sessionId={tab.sessionId || ''} title={tab.title} /></span>
+              <span className="flex flex-1 items-center gap-1 min-w-0"><SessionTitle cwd={tab.cwd || ''} sessionId={tab.sessionId || ''} title={tab.title} initialTitleReady={tab.titleReady} /></span>
               {/* Hover actions (they used to sit in the composer toolbar): they act
                   on a session, so they live on its row. The scheduler stays shown
                   while its popover is open. */}

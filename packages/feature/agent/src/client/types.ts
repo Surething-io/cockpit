@@ -42,6 +42,11 @@ export interface ChatMessage {
   toolCalls?: ToolCallInfo[];
   isStreaming?: boolean;
   timestamp?: string;  // Message creation time (ISO format)
+  /** Persisted history notices can precede the user message of their turn. */
+  turnUserId?: string;
+  /** Persisted Codex task ownership and the number of human inputs it contains. */
+  turnId?: string;
+  turnUserCount?: number;
   // Set on role:'system' rows — a harness event rendered as a muted one-line bar
   // (not a conversation bubble). `task-notification` shows the <summary> line;
   // `meta` covers skill image annotations / compact-summary notices.

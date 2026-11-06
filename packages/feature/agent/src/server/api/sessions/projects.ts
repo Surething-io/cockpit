@@ -65,7 +65,7 @@ const getProjectPathFromIndex = (projectDir: string): Effect.Effect<string | nul
 const getProjectPathFromJsonl = (projectDir: string): Effect.Effect<string | null, FSError, TranscriptIndex> =>
   Effect.gen(function* () {
     for (const file of yield* listSessionFiles(projectDir)) {
-      const snap = yield* readLogicalTranscript(path.join(projectDir, file), 'claude', (view) => view.projection).pipe(
+      const snap = yield* readLogicalTranscript(path.join(projectDir, file), 'claude', (view) => view.projection, 'scan').pipe(
         Effect.catchAll((error) => transcriptExists(path.join(projectDir, file), 'claude').pipe(
           Effect.flatMap((exists) => exists ? Effect.fail(error) : Effect.succeed(null)),
         )),

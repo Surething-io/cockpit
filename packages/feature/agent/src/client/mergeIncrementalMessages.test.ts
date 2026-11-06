@@ -7,13 +7,75 @@
 //   2. externally appended messages (scheduled-task runs) must show up;
 //   3. unchanged data must keep object identity (React skip).
 import { describe, it, expect } from 'vitest';
-import { mergeIncrementalMessages, mergeJumpWindow } from './mergeIncrementalMessages';
+import { getHistoryStartTurnIndex, mergeIncrementalMessages, mergeJumpWindow } from './mergeIncrementalMessages';
 import type { ChatMessage } from './types';
 
 const msg = (id: string, content = `content-${id}`): ChatMessage =>
   ({ id, role: 'assistant', content } as ChatMessage);
 
+describe('history pagination after window merges', () => {
+  const task = (n: number, userCount = 1): ChatMessage[] => [
+    ...Array.from({ length: userCount }, (_, input) => ({
+      id: `user-${n}-${input}`, role: 'user' as const, content: `Q${n}-${input}`, turnId: `task-${n}`,
+    })),
+    { ...msg(`answer-${n}`), turnId: `task-${n}` },
+  ];
+
+  it.each([0, 1, 2])('keeps the server cursor for a first page containing %s inputs per task', (userCount) => {
+    const page = [task(10, userCount), task(11, userCount)].flat();
+    expect(getHistoryStartTurnIndex(page, { firstMessageId: page[0].id, startTurnIndex: 10 })).toBe(10);
+  });
+
+  it('keeps the earlier visible boundary when an incremental suffix retains a prefix', () => {
+    const prev = [task(5, 0), task(6, 2), task(7), task(8), task(9), task(10)].flat();
+    const suffix = [task(10), task(11, 2)].flat();
+    const merged = mergeIncrementalMessages(prev, suffix);
+    expect(getHistoryStartTurnIndex(merged, { firstMessageId: suffix[0].id, startTurnIndex: 10 })).toBe(5);
+  });
+
+  it('adopts the suffix boundary when a non-overlapping window replaces the messages', () => {
+    const suffix = task(20, 2);
+    const merged = mergeIncrementalMessages(task(5), suffix);
+    expect(getHistoryStartTurnIndex(merged, { firstMessageId: suffix[0].id, startTurnIndex: 20 })).toBe(20);
+  });
+
+  it('keeps zero as the boundary after all older history was loaded', () => {
+    const all = Array.from({ length: 20 }, (_, n) => task(n, n === 3 ? 0 : 2)).flat();
+    const suffix = [task(19, 2), task(20)].flat();
+    const merged = mergeIncrementalMessages(all, suffix);
+    expect(getHistoryStartTurnIndex(merged, { firstMessageId: suffix[0].id, startTurnIndex: 19 })).toBe(0);
+  });
+
+  it('does not count live messages after the page anchor as earlier history', () => {
+    const disk = task(10);
+    const messages = [...disk, { ...msg('live-user'), role: 'user' as const }, msg('live-answer')];
+    expect(getHistoryStartTurnIndex(messages, { firstMessageId: disk[0].id, startTurnIndex: 10 })).toBe(10);
+  });
+
+  it('uses the same duplicate-ID alignment as the incremental merge', () => {
+    const messages = [task(5), task(6), task(7)].flat();
+    messages[2].id = 'duplicate';
+    messages[4].id = 'duplicate';
+    const suffix = [{ ...messages[4] }, messages[5]];
+    const merged = mergeIncrementalMessages(messages, suffix);
+    expect(getHistoryStartTurnIndex(merged, { firstMessageId: 'duplicate', startTurnIndex: 7 })).toBe(5);
+  });
+
+  it('handles empty history and unavailable anchors without inventing a cursor', () => {
+    expect(getHistoryStartTurnIndex([], { startTurnIndex: 0 })).toBe(0);
+    expect(getHistoryStartTurnIndex(task(1), undefined)).toBeUndefined();
+    expect(getHistoryStartTurnIndex(task(1), { firstMessageId: 'missing', startTurnIndex: 1 })).toBeUndefined();
+  });
+});
+
 describe('mergeIncrementalMessages', () => {
+  it('refreshes task membership and the input count when steering arrives', () => {
+    const prev = [{ ...msg('a'), turnId: 'task-1', turnUserCount: 1 }];
+    const window = [{ ...msg('a'), turnId: 'task-1', turnUserCount: 2 }, msg('steer')];
+    expect(mergeIncrementalMessages(prev, window)).toEqual(window);
+    expect(mergeIncrementalMessages(prev, [{ ...msg('a'), turnId: 'task-2', turnUserCount: 1 }])[0].turnId).toBe('task-2');
+  });
+
   it('keeps object identity when the aligned window is unchanged', () => {
     const prev = [msg('a'), msg('b'), msg('c'), msg('d')];
     const window = [msg('c'), msg('d')]; // last-N window, identical

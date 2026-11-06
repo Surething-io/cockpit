@@ -171,29 +171,24 @@ const loadSessions = (encodedPath: string) =>
 
     const titles = yield* readProjectTitles(encodedPath);
     const views = yield* Effect.forEach(sources, (source) => readLogicalTranscript(source.path, source.engine ?? 'claude', (view) =>
-      view.projection.pipe(Effect.map((projection) => ({ projection, mtimeMs: view.mtimeMs }))),
-    ).pipe(Effect.catchAll((error) => transcriptExists(source.path, source.engine ?? 'claude').pipe(
+      view.projection.pipe(Effect.map((snap) => {
+        const session = buildSessionInfo(
+          source.path,
+          source.sessionId,
+          // fs.Stats.mtime rounds mtimeMs; match it so modifiedAt is unchanged.
+          new Date(Math.round(view.mtimeMs)),
+          source.engine,
+          defaultSessionTitle(snap),
+          listMessages(snap),
+        );
+        if (!session) return null;
+        const metadata = titleFromProject(titles, source.sessionId, session.title, titleStore(source.engine), snap.cwd);
+        return { ...session, ...metadata, searchText: session.searchText };
+      })),
+    'scan').pipe(Effect.catchAll((error) => transcriptExists(source.path, source.engine ?? 'claude').pipe(
       Effect.flatMap((exists) => exists ? Effect.fail(error) : Effect.succeed(null)),
     ))), { concurrency: 4 });
-    const sessions: SessionInfo[] = [];
-    sources.forEach((source, i) => {
-      const view = views[i];
-      if (!view) return;
-      const snap = view.projection;
-      const session = buildSessionInfo(
-        source.path,
-        source.sessionId,
-        // fs.Stats.mtime rounds mtimeMs; match it so modifiedAt is unchanged.
-        new Date(Math.round(view.mtimeMs)),
-        source.engine,
-        defaultSessionTitle(snap),
-        listMessages(snap),
-      );
-      if (session) {
-        const metadata = titleFromProject(titles, source.sessionId, session.title, titleStore(source.engine), snap.cwd);
-        sessions.push({ ...session, ...metadata, searchText: session.searchText });
-      }
-    });
+    const sessions = views.filter((session) => session !== null);
 
     // Sort all sessions by modification time descending
     sessions.sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());

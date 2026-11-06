@@ -11,10 +11,21 @@ export const titleSnapshot = () => snapshot;
 export const serverTitleSnapshot = () => empty;
 export const subscribeTitles = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 export function acceptSessionTitle(change: SessionTitleChange): void {
-  const key = titleKey(change.cwd, change.sessionId);
-  const prev = snapshot.get(key);
-  if (prev && (prev.titleRevision > change.titleRevision || JSON.stringify(prev) === JSON.stringify(change))) return;
-  snapshot = new Map(snapshot).set(key, change);
+  acceptSessionTitles([change]);
+}
+/** Bootstrap cannot roll back a same-revision native title received during its request. */
+export function acceptSessionTitles(changes: readonly SessionTitleChange[], baseline?: ReadonlyMap<string, SessionTitleChange>): void {
+  let next: Map<string, SessionTitleChange> | undefined;
+  for (const change of changes) {
+    const key = titleKey(change.cwd, change.sessionId);
+    const prev = (next ?? snapshot).get(key);
+    if (prev && (prev.titleRevision > change.titleRevision || JSON.stringify(prev) === JSON.stringify(change)
+      || baseline && prev !== baseline.get(key) && prev.titleRevision === change.titleRevision)) continue;
+    next ??= new Map(snapshot);
+    next.set(key, change);
+  }
+  if (!next) return;
+  snapshot = next;
   listeners.forEach((listener) => listener());
 }
 export function effectiveTitle(

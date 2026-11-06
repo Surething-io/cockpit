@@ -2,6 +2,7 @@
 
 import { acceptSessionTitle, effectiveTitle, titleSnapshot } from './sessionTitleState';
 import type { SessionTitleChange } from '../shared/sessionTitle';
+import { removeMessageTurn, splitTurns } from '../shared/chatTurns';
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { ClipboardList, MessageSquareOff } from 'lucide-react';
@@ -710,7 +711,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
 
     const visibleTurns = Math.max(
       HISTORY_RECONCILE_TURNS,
-      messages.filter((message) => message.role === 'user').length,
+      splitTurns(messages).length,
     );
     const exit = await BrowserRuntime.runPromiseExit(
       deleteSessionTurn(deleteSid, { cwd: initialCwd, messageUuid: messageId })
@@ -718,16 +719,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     if (exit._tag === 'Success') {
       // Remove immediately so an empty one-turn transcript also renders correctly; the disk
       // reload then supplies canonical ids and pagination metadata for every engine.
-      setMessages((current) => {
-        const target = current.findIndex((message) => message.id === messageId);
-        if (target < 0) return current;
-        let start = target;
-        while (start >= 0 && current[start].role !== 'user') start -= 1;
-        if (start < 0) return current;
-        let end = start + 1;
-        while (end < current.length && current[end].role !== 'user') end += 1;
-        return [...current.slice(0, start), ...current.slice(end)];
-      });
+      setMessages((current) => removeMessageTurn(current, messageId));
       await loadHistoryByCwdAndSessionId(initialCwd, deleteSid, false, visibleTurns, undefined, true);
       toast(t('toast.turnDeleted', { defaultValue: 'Turn deleted' }), 'success');
     } else {

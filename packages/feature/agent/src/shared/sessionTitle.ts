@@ -11,6 +11,10 @@ export interface SessionTitleChange extends SessionTitleInfo {
   sessionId: string;
 }
 
+export interface SessionTitlesResponse {
+  titles: SessionTitleChange[];
+}
+
 export function normalizeSessionTitle(title: string): string {
   return title.replace(/[\r\n]+/g, ' ').trim();
 }

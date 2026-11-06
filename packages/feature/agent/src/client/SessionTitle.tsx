@@ -37,8 +37,8 @@ export function SessionTitlesBridge() {
   return null;
 }
 
-export function SessionTitle({ cwd, sessionId, title, titleRevision, editable = true }: {
-  cwd: string; sessionId: string; title: string; titleRevision?: number; editable?: boolean;
+export function SessionTitle({ cwd, sessionId, title, titleRevision, initialTitleReady = false, editable = true }: {
+  cwd: string; sessionId: string; title: string; titleRevision?: number; initialTitleReady?: boolean; editable?: boolean;
 }) {
   const { t } = useTranslation();
   const titles = useSessionTitleOverrides();
@@ -55,12 +55,12 @@ export function SessionTitle({ cwd, sessionId, title, titleRevision, editable = 
     if (!cwd || !sessionId) return;
     const untrack = trackTitle(cwd, sessionId);
     let active = true;
-    BrowserRuntime.runFork(requestSessionTitle(cwd, sessionId).pipe(
+    if (!initialTitleReady) BrowserRuntime.runFork(requestSessionTitle(cwd, sessionId).pipe(
       Effect.tap((info) => Effect.sync(() => { if (active) acceptSessionTitle(info); })),
       Effect.catchAll((cause) => Effect.logWarning('Cannot read session title', cause)),
     ));
     return () => { active = false; untrack(); };
-  }, [cwd, sessionId]);
+  }, [cwd, sessionId, initialTitleReady]);
   useEffect(() => {
     if (!open) return;
     let active = true;

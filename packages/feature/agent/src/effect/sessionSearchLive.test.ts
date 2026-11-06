@@ -201,6 +201,54 @@ describe('SessionSearchServiceLive', () => {
     expect((await sync()).removed).toBe(1);
     expect(await search(['快照'])).toHaveLength(0);
   });
+
+  it.each(['legacy', 'previous-index'] as const)('rebuilds a %s corpus after classification changes without a transcript or title write', async (version) => {
+    const sid = '77777777-7777-4777-8777-777777777777';
+    const dir = path.join(home, '.codex', 'sessions', '2026', '11', '06');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(projA, { recursive: true });
+    const file = path.join(dir, `rollout-2026-11-06T00-00-00-${sid}.jsonl`);
+    fs.writeFileSync(file,
+      line({ type: 'session_meta', payload: { id: sid, cwd: projA } }) +
+      line({ type: 'response_item', payload: { type: 'message', role: 'user',
+        content: [{ type: 'input_text', text: '<recommended_plugins>StalePluginOnlyToken</recommended_plugins>' }, { type: 'input_text', text: 'Human corpus question' }],
+        internal_chat_message_metadata_passthrough: { content_item_kinds: ['plugins.recommendations', 'user.text'] },
+      } }));
+    try {
+      const titles = await import('./sessionTitles');
+      const custom = await Effect.runPromise(titles.writeSessionTitle(projA, sid, 'codex', 'PinnedCodexSearchTitle'));
+      await sync();
+      const before = fs.statSync(file);
+      const corpusDir = path.join(cockpitHome, 'search-corpus');
+      const corpusPath = path.join(corpusDir, 'codex', `${sid}.txt`);
+      const { readLogicalTranscript } = await import('./logicalTranscript');
+      const identity = await Effect.runPromise(readLogicalTranscript(file, 'codex', (view) => Effect.succeed(view.fingerprint)));
+      const manifestFile = path.join(corpusDir, 'manifest.v2.json');
+      const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8')) as Record<string, { fingerprint: string }>;
+      const { TRANSCRIPT_INDEX_VERSION } = await import('./transcriptIndexLive');
+      const prefix = version === 'legacy' ? 'v6' : `v7:index-${TRANSCRIPT_INDEX_VERSION - 1}`;
+      manifest[file].fingerprint = `${prefix}:${identity}:${JSON.stringify([custom.revision, custom.customTitle])}`;
+      fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+      fs.writeFileSync(corpusPath, live.renderCorpusText({ engine: 'codex', sessionId: sid, cwd: projA,
+        title: 'PinnedCodexSearchTitle', updatedAt: before.mtimeMs,
+      }, [{ role: 'user', content: 'StalePluginOnlyToken' }, { role: 'user', content: 'Human corpus question' }]));
+
+      expect((await search(['StalePluginOnlyToken'])).map((hit) => hit.sessionId)).toEqual([sid]);
+      expect((await sync()).rebuilt).toBe(1);
+      expect(await search(['StalePluginOnlyToken'])).toEqual([]);
+      expect((await search(['Human corpus question'])).map((hit) => hit.sessionId)).toEqual([sid]);
+      expect((await search(['PinnedCodexSearchTitle'])).map((hit) => hit.sessionId)).toEqual([sid]);
+      expect(fs.statSync(file).mtimeMs).toBe(before.mtimeMs);
+      expect(fs.statSync(file).size).toBe(before.size);
+      const afterTitles = await Effect.runPromise(titles.readProjectTitles(encodePath(projA)));
+      expect(titles.titleFromProject(afterTitles, sid, 'Human corpus question', 'codex', projA))
+        .toMatchObject({ customTitle: custom.customTitle, titleRevision: custom.revision });
+      expect((await sync()).rebuilt).toBe(0);
+    } finally {
+      fs.rmSync(file, { force: true });
+      await sync();
+    }
+  });
 });
 
 describe('writeAtomically', () => {

@@ -5,7 +5,7 @@ import { usePageVisible, useWebSocket } from '@cockpit/shared-ui';
 import type { ChatEngine, DeepseekModel, EngineModelId, ClaudeModelId, ClaudeEffort, CodexModelId, CodexReasoningEffort } from '@cockpit/feature-agent';
 import { publishTopic } from '@cockpit/effect-react';
 import { Topics } from '@cockpit/effect-services';
-import { Effect } from 'effect';
+import { Effect, Fiber } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import {
   loadProjectState,
@@ -13,7 +13,7 @@ import {
   markSessionRead,
 } from './effect/stateClient';
 import { loadActiveTabTarget, saveActiveTabTarget, type ActiveTabTarget } from './effect/activeTabStorage';
-import { loadOllamaDefaultModel } from '@cockpit/feature-agent';
+import { loadOllamaDefaultModel, loadSessionTitles } from '@cockpit/feature-agent';
 import { createLatestTaskRunner, type LatestTaskRunner } from './latestTaskRunner';
 
 // ============================================
@@ -33,6 +33,8 @@ export interface TabInfo {
   cwd?: string;
   sessionId?: string;
   title: string;
+  /** This tab's initial title was supplied by the project bootstrap batch. */
+  titleReady?: boolean;
   isLoading?: boolean;
   engine?: ChatEngine;
   /** Bot that dispatched this session, without the `@` — set by the transcript load
@@ -199,6 +201,8 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
   // repair is computed and then silently dropped — nothing else touches `tabs` afterwards.
   const isInitializingRef = useRef(true);
   const [initDone, setInitDone] = useState(false);
+  const [initialTitleIds, setInitialTitleIds] = useState<string[] | null>(null);
+  const [titlesLoading, setTitlesLoading] = useState(!!initialCwd);
   const finishInitializing = useCallback(() => {
     isInitializingRef.current = false;
     setInitDone(true);
@@ -395,6 +399,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
         if (storedSessionId && !allSessions.includes(storedSessionId)) {
           allSessions = [storedSessionId, ...allSessions];
         }
+        setInitialTitleIds(allSessions);
 
         if (allSessions.length > 0) {
           // This load is async, so a tab may already have resolved its own engine/mode from
@@ -408,7 +413,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
               id: `tab-${Date.now()}-${index}`,
               cwd: initialCwd,
               sessionId,
-              title: placeholderTitle(sessionId),
+              title: prev?.title || placeholderTitle(sessionId),
               engine: (savedEngines[sessionId] as ChatEngine) || prev?.engine || undefined,
               ollamaModel: savedOllamaModels[sessionId] || prev?.ollamaModel || undefined,
               deepseekModel: (savedDeepseekModels[sessionId] as DeepseekModel) || prev?.deepseekModel || undefined,
@@ -491,12 +496,33 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
         }
       } else {
         // loadProjectState failed: don't block init, keep the default tab list
+        setInitialTitleIds(initialSessionId ? [initialSessionId] : []);
         finishInitializing();
       }
     };
 
     loadSessions();
   }, [initialCwd, initialSessionId, initialBlank, finishInitializing]);
+
+  // Restore chat/layout immediately; only the sidebar rows wait for their titles.
+  useEffect(() => {
+    if (!initialCwd || initialTitleIds === null) return;
+    if (initialTitleIds.length === 0) { setTitlesLoading(false); return; }
+    let active = true;
+    const fiber = BrowserRuntime.runFork(loadSessionTitles(initialCwd, initialTitleIds).pipe(
+      Effect.tap((titles) => Effect.sync(() => {
+        if (!active) return;
+        const byId = new Map(titles.map((info) => [info.sessionId, info]));
+        setTabs((current) => current.map((tab) => {
+          const info = tab.sessionId && (tab.cwd || initialCwd) === initialCwd ? byId.get(tab.sessionId) : undefined;
+          return info ? { ...tab, title: info.title, titleReady: true } : tab;
+        }));
+      })),
+      Effect.catchAll((error) => Effect.logWarning('Cannot load initial project titles', error)),
+      Effect.ensuring(Effect.sync(() => { if (active) setTitlesLoading(false); })),
+    ));
+    return () => { active = false; BrowserRuntime.runFork(Fiber.interrupt(fiber)); };
+  }, [initialCwd, initialTitleIds]);
 
   // Save to server when tabs or activeTabId changes — and once more the moment
   // initialization ends, to flush anything resolved while saving was suppressed.
@@ -1175,7 +1201,10 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
       if (visibleReadTarget.current?.id === tabId) requestSessionRead(updates.sessionId || oldTab.sessionId);
       else setUnreadTabs((current) => new Set(current).add(tabId));
     }
-    setTabs((prev) => prev.map((tab) => tab.id === tabId ? { ...tab, ...updates } : tab));
+    setTabs((prev) => prev.map((tab) => tab.id === tabId ? {
+      ...tab, ...updates,
+      titleReady: updates.sessionId !== undefined && updates.sessionId !== tab.sessionId ? undefined : tab.titleReady,
+    } : tab));
   }, [requestSessionRead]);
 
   // Switch tab and clear unread
@@ -1262,6 +1291,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
   return {
     // State
     tabs,
+    titlesLoading,
     activeTabId,
     activeTab,
     paneTabIds,

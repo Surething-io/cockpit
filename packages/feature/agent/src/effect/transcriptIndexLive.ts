@@ -34,7 +34,7 @@
 import { readPiSession, piSelection } from "./piSessionLive"
 import { withTranscriptLayout } from "./transcriptPresence"
 import { CODEX_NO_HISTORY_SUFFIX, codexNoHistoryStashPath } from "../server/transcriptLayout"
-import { advanceTranscriptGeneration } from "../server/transcriptRevision"
+import { advanceTranscriptGeneration, transcriptGeneration } from "../server/transcriptRevision"
 export { transcriptGeneration } from "../server/transcriptRevision"
 import { createHash } from "node:crypto"
 import { open, readFile, readdir, realpath, rm, stat } from "node:fs/promises"
@@ -46,6 +46,7 @@ import {
   TranscriptIndex,
   type CodexSessionEntry,
   type TranscriptFormat,
+  type TranscriptCachePolicy,
   type TranscriptIndexCounters,
   type TranscriptSnapshot,
   type TranscriptCorpusLine,
@@ -54,7 +55,7 @@ import {
 } from "@cockpit/effect-services"
 import { extractCodexUserContent } from "../server/api/session/codexTools"
 import { getOwn, setOwn } from "../server/transcriptViews"
-import { codexPromptText } from "../shared/codexPrompt"
+import { codexPromptText, projectCodexUserMessage } from "../shared/codexPrompt"
 import { injectionKind, queuedPromptAsUserEntry } from "../shared/transcriptTurns"
 import { writeAtomically } from "@cockpit/effect-runtime/server/fs"
 
@@ -63,11 +64,13 @@ import { writeAtomically } from "@cockpit/effect-runtime/server/fs"
 // ─────────────────────────────────────────────────────────
 
 /** Bump when the folded shape or a fold rule changes: every shard rebuilds once. */
-export const TRANSCRIPT_INDEX_VERSION = 7
+export const TRANSCRIPT_INDEX_VERSION = 11
 const READ_CONCURRENCY = 4
 const ANCHOR_BYTES = 64
 const CHUNK_BYTES = 1024 * 1024
 const FLUSH_DELAY = "3 seconds"
+const CACHE_MAX_FILES = 64
+const CACHE_MAX_BYTES = 16 * 1024 * 1024
 
 // ─────────────────────────────────────────────────────────
 // Folded state (pure)
@@ -269,7 +272,13 @@ export const decodeCodexLine = (line: string): TranscriptRecord | null => {
   if (payload.type !== "message" || !Array.isArray(payload.content)) return null
   // Field types are checked per block kind before anything else reads them:
   // extractCodexUserContent assumes the strings codex writes.
-  const content = payload.content.filter(isRecord).filter((c) => {
+  const source = payload.role === "user"
+    ? projectCodexUserMessage({
+        content: payload.content,
+        internal_chat_message_metadata_passthrough: payload.internal_chat_message_metadata_passthrough,
+      }).flatMap((event) => event.kind === "prompt" ? event.blocks : [])
+    : payload.content
+  const content = source.filter(isRecord).filter((c) => {
     if (c.type === "input_text" || c.type === "output_text") return typeof c.text === "string"
     if (c.type === "input_image") return typeof c.image_url === "string"
     return true
@@ -285,13 +294,13 @@ export const decodeCodexLine = (line: string): TranscriptRecord | null => {
   if (payload.role !== "user") return null
   const blocks = content.filter((c) => c.type === "input_text" && str(c.text)).map((c) => c.text as string)
   const { text, images } = extractCodexUserContent(content as Parameters<typeof extractCodexUserContent>[0])
-  if (blocks.length === 0 && images.length === 0 && !text) return null
+  if (codexPromptText(text, images.length) === null) return null
   // Searchable text is the prompt as the chat shows it: image tags/markup stripped
   // (the raw blocks of an image prompt start with `<image …>`), system text dropped.
   return {
     type: "user",
     userTurn: { blocks, listText: text, images: images.length },
-    corpusText: codexPromptText(text, images.length) !== null && text ? text : undefined,
+    corpusText: text || undefined,
   }
 }
 
@@ -461,11 +470,14 @@ const readAnchor = async (fh: FileHandle, offset: number): Promise<string> => {
 
 interface IndexState {
   readonly entries: Map<string, Entry>
-  /** Paths whose shard has been looked up on disk this process (hit or miss). */
-  readonly probed: Set<string>
-  readonly dirty: Set<string>
-  flushScheduled: boolean
+  /** Explicitly invalidated shards, blocked from reload until replaced or removed. */
+  readonly blockedShards: Set<string>
+  readonly pendingRemovals: Set<string>
+  removalsScheduled: boolean
   readonly pathLocks: Map<string, Effect.Semaphore>
+  /** Coordination must follow the shared locks and entries across module copies. */
+  readonly lockUsers: WeakMap<Effect.Semaphore, number>
+  readonly unpersistedEntries: WeakSet<Entry>
   readonly readSem: Effect.Semaphore
   bytesParsed: number
   rebuilds: number
@@ -493,10 +505,12 @@ const stateFor = (shardDir: string): IndexState => {
   if (!s) {
     s = {
       entries: new Map(),
-      probed: new Set(),
-      dirty: new Set(),
-      flushScheduled: false,
+      blockedShards: new Set(),
+      pendingRemovals: new Set(),
+      removalsScheduled: false,
       pathLocks: new Map(),
+      lockUsers: new WeakMap(),
+      unpersistedEntries: new WeakSet(),
       readSem: Effect.unsafeMakeSemaphore(READ_CONCURRENCY),
       bytesParsed: 0,
       rebuilds: 0,
@@ -518,14 +532,53 @@ const stateFor = (shardDir: string): IndexState => {
 const shardPath = (shardDir: string, path: string): string =>
   join(shardDir, `${createHash("sha1").update(path).digest("hex").slice(0, 24)}.json`)
 
-const withPathLock = <A, E>(s: IndexState, path: string, eff: Effect.Effect<A, E>): Effect.Effect<A, E> => {
+// Entries are immutable after publication, so estimating them once avoids walking
+// long conversations on unchanged reads. Weak keys do not retain evicted entries.
+const entrySizes = new WeakMap<Entry, number>()
+const entryBytes = (e: Entry): number => {
+  const known = entrySizes.get(e)
+  if (known !== undefined) return known
+  let bytes = 512 + 2 * (e.path.length + (e.cwd?.length ?? 0) + e.aiTitle.length + e.summary.length + e.anchor.length + JSON.stringify(e.stats).length)
+  for (const turn of e.userTurns) {
+    bytes += 96 + 2 * (turn.listText?.length ?? 0)
+    for (const text of turn.blocks) bytes += 16 + 2 * text.length
+  }
+  for (const line of e.corpus) bytes += 64 + 2 * line.text.length
+  entrySizes.set(e, bytes)
+  return bytes
+}
+const cacheBytes = (s: IndexState): number => [...s.entries.values()].reduce((sum, entry) => sum + entryBytes(entry), 0)
+
+const retainEntry = (s: IndexState, entry: Entry, cache: TranscriptCachePolicy): void => {
+  if (cache === "scan" && !s.entries.has(entry.path)) return
+  if (entryBytes(entry) > CACHE_MAX_BYTES) {
+    s.entries.delete(entry.path)
+    return
+  }
+  if (cache === "retain") s.entries.delete(entry.path)
+  s.entries.set(entry.path, entry)
+  let bytes = cacheBytes(s)
+  while (s.entries.size > CACHE_MAX_FILES || bytes > CACHE_MAX_BYTES) {
+    const [path, oldest] = s.entries.entries().next().value!
+    s.entries.delete(path)
+    bytes -= entryBytes(oldest)
+  }
+}
+
+const withPathLock = <A, E>(s: IndexState, path: string, eff: Effect.Effect<A, E>): Effect.Effect<A, E> => Effect.suspend(() => {
   let sem = s.pathLocks.get(path)
   if (!sem) {
     sem = Effect.unsafeMakeSemaphore(1)
     s.pathLocks.set(path, sem)
   }
-  return sem.withPermits(1)(eff)
-}
+  const lock = sem
+  s.lockUsers.set(lock, (s.lockUsers.get(lock) ?? 0) + 1)
+  return lock.withPermits(1)(eff).pipe(Effect.ensuring(Effect.sync(() => {
+    const remaining = s.lockUsers.get(lock)! - 1
+    s.lockUsers.set(lock, remaining)
+    if (remaining === 0 && s.pathLocks.get(path) === lock) s.pathLocks.delete(path)
+  })))
+})
 
 // ─────────────────────────────────────────────────────────
 // Persistence (Memento shards)
@@ -540,37 +593,38 @@ const loadShard = async (shardDir: string, path: string): Promise<Entry | null> 
   }
 }
 
-const flush = (shardDir: string, s: IndexState): Effect.Effect<void, never> =>
+const flushRemovals = (shardDir: string, s: IndexState): Effect.Effect<void, never> =>
   Effect.gen(function* () {
-    s.flushScheduled = false
-    const paths = [...s.dirty]
-    s.dirty.clear()
+    s.removalsScheduled = false
+    const paths = [...s.pendingRemovals]
+    s.pendingRemovals.clear()
     yield* Effect.forEach(
       paths,
-      (p) => {
+      (p) => withPathLock(s, p, Effect.suspend(() => {
+        if (!s.blockedShards.has(p)) return Effect.void
         const file = shardPath(shardDir, p)
-        const e = s.entries.get(p)
         return Effect.tryPromise({
-          try: () => (e ? writeAtomically(file, JSON.stringify(e)) : rm(file, { force: true })),
-          catch: (cause) => new FSError({ path: file, op: e ? "write" : "rm", cause }),
+          try: () => rm(file, { force: true }),
+          catch: (cause) => new FSError({ path: file, op: "rm", cause }),
         }).pipe(
-          // Keep it dirty: the next flush retries.
+          Effect.tap(() => Effect.sync(() => s.blockedShards.delete(p))),
+          // Keep it pending: the next cleanup retries.
           Effect.catchAll((err) =>
-            Effect.sync(() => s.dirty.add(p)).pipe(
-              Effect.zipRight(Effect.logWarning("transcript index: shard write failed").pipe(Effect.annotateLogs({ path: err.path })))
+            Effect.sync(() => s.pendingRemovals.add(p)).pipe(
+              Effect.zipRight(Effect.logWarning("transcript index: shard removal failed").pipe(Effect.annotateLogs({ path: err.path })))
             )
           )
         )
-      },
+      })),
       { concurrency: 4, discard: true }
     )
   })
 
-const markDirty = (shardDir: string, s: IndexState, path: string): void => {
-  s.dirty.add(path)
-  if (s.flushScheduled) return
-  s.flushScheduled = true
-  Effect.runFork(Effect.sleep(FLUSH_DELAY).pipe(Effect.zipRight(flush(shardDir, s))))
+const scheduleShardRemoval = (shardDir: string, s: IndexState, path: string): void => {
+  s.pendingRemovals.add(path)
+  if (s.removalsScheduled) return
+  s.removalsScheduled = true
+  Effect.runFork(Effect.sleep(FLUSH_DELAY).pipe(Effect.zipRight(flushRemovals(shardDir, s))))
 }
 
 // ─────────────────────────────────────────────────────────
@@ -582,27 +636,25 @@ const refreshFile = async (
   s: IndexState,
   path: string,
   format: TranscriptFormat
-): Promise<Entry | null> => {
+): Promise<{ entry: Entry; changed: boolean; generation: number } | null> => {
+  const generation = transcriptGeneration(path)
   let st: Awaited<ReturnType<typeof stat>>
   try {
     st = await stat(path)
   } catch {
-    if (s.entries.delete(path)) markDirty(shardDir, s, path)
+    if (s.entries.delete(path)) {
+      s.blockedShards.add(path)
+      scheduleShardRemoval(shardDir, s, path)
+    }
     return null
   }
 
-  if (!s.entries.has(path) && !s.probed.has(path)) {
-    s.probed.add(path)
-    const persisted = await loadShard(shardDir, path)
-    if (persisted) s.entries.set(path, persisted)
-  }
-
-  const found = s.entries.get(path)
+  const found = s.entries.get(path) ?? (!s.blockedShards.has(path) ? await loadShard(shardDir, path) : null)
   const prev =
     found && found.format === format && found.v === TRANSCRIPT_INDEX_VERSION && found.ino === st.ino
       ? found
       : undefined
-  if (prev && prev.size === st.size && prev.mtimeMs === st.mtimeMs) return prev
+  if (prev && prev.size === st.size && prev.mtimeMs === st.mtimeMs) return { entry: prev, changed: false, generation }
 
   const fh = await open(path, "r")
   try {
@@ -620,9 +672,7 @@ const refreshFile = async (
     next.size = st.size
     next.mtimeMs = st.mtimeMs
     next.anchor = await readAnchor(fh, next.offset)
-    s.entries.set(path, next)
-    markDirty(shardDir, s, path)
-    return next
+    return { entry: next, changed: true, generation }
   } finally {
     await fh.close()
   }
@@ -644,19 +694,43 @@ const snapshotImpl = (
   shardDir: string,
   s: IndexState,
   path: string,
-  format: TranscriptFormat
+  format: TranscriptFormat,
+  cache: TranscriptCachePolicy = "retain"
 ): Effect.Effect<TranscriptSnapshot | null, never> =>
   format === "pi" ? piSnapshot(path) : withPathLock(
     s,
     path,
     s.readSem.withPermits(1)(
-      Effect.tryPromise({
-        try: () => refreshFile(shardDir, s, path, format),
-        catch: (cause) => new FSError({ path, op: "read", cause }),
+      Effect.gen(function* () {
+        const result = yield* Effect.tryPromise({
+          try: () => refreshFile(shardDir, s, path, format),
+          catch: (cause) => new FSError({ path, op: "read", cause }),
+        })
+        if (!result) return null
+        const { entry, changed, generation } = result
+        // Persist before releasing a cold/evicted entry. Cache eviction must not
+        // delete a shard or require replaying the original transcript next time.
+        if (changed || s.unpersistedEntries.has(entry)) {
+          const file = shardPath(shardDir, path)
+          yield* Effect.tryPromise({
+            try: () => writeAtomically(file, JSON.stringify(entry)),
+            catch: (cause) => new FSError({ path: file, op: "write", cause }),
+          }).pipe(
+            Effect.tap(() => Effect.sync(() => {
+              s.unpersistedEntries.delete(entry)
+              if (generation === transcriptGeneration(path)) s.blockedShards.delete(path)
+            })),
+            Effect.catchAll((err) => Effect.sync(() => s.unpersistedEntries.add(entry)).pipe(
+              Effect.zipRight(Effect.logWarning("transcript index: shard write failed", err)),
+            )),
+          )
+        }
+        if (generation !== transcriptGeneration(path)) return null
+        retainEntry(s, entry, cache)
+        return toSnapshot(entry)
       })
     )
   ).pipe(
-    Effect.map((e) => (e ? toSnapshot(e) : null)),
     Effect.catchAll((err) =>
       Effect.logWarning("transcript index: unreadable transcript").pipe(
         Effect.annotateLogs({ path: err.path }),
@@ -955,11 +1029,11 @@ const resolveCodexImpl = (
 export const invalidateTranscript = (path: string): void => {
   advanceTranscriptGeneration(path)
   for (const [shardDir, s] of states) {
-    // Mark it probed so the (equally stale) shard is never loaded back; the flush
-    // finds no entry for a dirty path and removes the shard.
-    s.probed.add(path)
+    // Block the stale shard immediately; deletion uses the same lock as refresh,
+    // and skips a shard already replaced by a successful refresh.
+    s.blockedShards.add(path)
     s.entries.delete(path)
-    markDirty(shardDir, s, path)
+    scheduleShardRemoval(shardDir, s, path)
     if (s.codexHeads.delete(path)) markCodexHeadsDirty(shardDir, s)
   }
 }
@@ -975,10 +1049,10 @@ export const TranscriptIndexLive = Layer.effect(
     const shardDir = join(cfg.cockpitDir, "transcript-index")
     const s = stateFor(shardDir)
     return TranscriptIndex.of({
-      snapshot: (path, format) =>
-        snapshotImpl(shardDir, s, path, format).pipe(Effect.withSpan("transcriptIndex.snapshot")),
+      snapshot: (path, format, cache) =>
+        snapshotImpl(shardDir, s, path, format, cache).pipe(Effect.withSpan("transcriptIndex.snapshot")),
       snapshots: (files) =>
-        Effect.forEach(files, (f) => snapshotImpl(shardDir, s, f.path, f.format), {
+        Effect.forEach(files, (f) => snapshotImpl(shardDir, s, f.path, f.format, "scan"), {
           concurrency: READ_CONCURRENCY * 2,
         }).pipe(Effect.withSpan("transcriptIndex.snapshots")),
       codexSessions: codexSessionsImpl(shardDir, s).pipe(Effect.withSpan("transcriptIndex.codexSessions")),
@@ -986,7 +1060,13 @@ export const TranscriptIndexLive = Layer.effect(
         resolveCodexImpl(shardDir, s, threadId).pipe(Effect.withSpan("transcriptIndex.resolveCodex")),
       invalidate: (path) => Effect.sync(() => invalidateTranscript(path)),
       counters: Effect.sync(
-        (): TranscriptIndexCounters => ({ bytesParsed: s.bytesParsed, rebuilds: s.rebuilds, codexHeadReads: s.codexHeadReads })
+        (): TranscriptIndexCounters => ({
+          bytesParsed: s.bytesParsed,
+          rebuilds: s.rebuilds,
+          codexHeadReads: s.codexHeadReads,
+          cachedFiles: s.entries.size,
+          estimatedCacheBytes: cacheBytes(s),
+        })
       ),
     })
   })
@@ -1018,6 +1098,7 @@ export const codexSessionEntries: Effect.Effect<ReadonlyArray<CodexSessionEntry>
 /** Effect form of `snapshot` for Live layers built outside AppLayer's graph. */
 export const transcriptSnapshot = (
   path: string,
-  format: TranscriptFormat
+  format: TranscriptFormat,
+  cache?: TranscriptCachePolicy
 ): Effect.Effect<TranscriptSnapshot | null, never> =>
-  Effect.flatMap(TranscriptIndex, (index) => index.snapshot(path, format)).pipe(Effect.provide(TranscriptIndexLive))
+  Effect.flatMap(TranscriptIndex, (index) => index.snapshot(path, format, cache)).pipe(Effect.provide(TranscriptIndexLive))

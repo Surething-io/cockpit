@@ -1,4 +1,4 @@
-import { codexPromptText } from '../../../shared/codexPrompt';
+import { codexPromptText, projectCodexUserMessage, type CodexUserMessage } from '../../../shared/codexPrompt';
 import {
   CODEX_CUSTOM_TOOL_NAMES,
   CODEX_EXEC_SCRIPT_FN_NAME,
@@ -44,13 +44,12 @@ function codexVisibleMessageIds(
   entry: Record<string, unknown>,
   state: CodexForkState
 ): string[] {
-  const payload = entry.payload as {
+  const payload = entry.payload as CodexUserMessage & {
     type?: string;
     role?: string;
     name?: string;
     call_id?: string;
     input?: string;
-    content?: Array<{ type?: string; text?: string; image_url?: string }>;
     error?: { message?: string };
     item?: CodexItemLike;
   } | undefined;
@@ -59,10 +58,17 @@ function codexVisibleMessageIds(
   const ids: string[] = [];
   if (entry.type === 'response_item') {
     if (payload.type === 'message' && payload.role === 'user') {
-      const { text, images } = extractCodexUserContent(payload.content);
-      if (codexPromptText(text, images.length) !== null) {
-        state.assistantOpen = false;
-        ids.push(`codex-user-${state.msgCounter++}`);
+      for (const event of projectCodexUserMessage(payload)) {
+        if (event.kind !== 'prompt') {
+          state.assistantOpen = false;
+          ids.push(`codex-system-${state.msgCounter++}`);
+        } else {
+          const { text, images } = extractCodexUserContent(event.blocks);
+          if (codexPromptText(text, images.length) !== null) {
+            state.assistantOpen = false;
+            ids.push(`codex-user-${state.msgCounter++}`);
+          }
+        }
       }
     }
 
@@ -240,9 +246,12 @@ function partitionCodexTurns(
     if (entry.type === 'session_meta') continue;
 
     // Completed background items can arrive AFTER task_complete. Keep them with
-    // their task until the next task starts, and preserve the parser's assistant
-    // state: only a visible user message or response_completed closes a bubble.
-    if (isCodexTaskStarted(entry) && currentTurn.length > 0) finishTurn();
+    // their task until the next task starts. Close the assistant bubble at that
+    // same boundary, matching the parser even for tasks without a visible user.
+    if (isCodexTaskStarted(entry)) {
+      finishTurn();
+      state.assistantOpen = false;
+    }
     currentTurn.push(line);
 
     const ids = codexVisibleMessageIds(entry, state);

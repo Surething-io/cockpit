@@ -3,9 +3,10 @@
 import { acceptSessionTitle, effectiveTitle, titleSnapshot } from './sessionTitleState';
 import type { SessionTitleInfo } from '../shared/sessionTitle';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { ChatMessage, TokenUsage, ChatEngine } from './types';
-import { mergeIncrementalMessages, mergeJumpWindow } from './mergeIncrementalMessages';
+import { getHistoryStartTurnIndex, mergeIncrementalMessages, mergeJumpWindow, type HistoryPageAnchor } from './mergeIncrementalMessages';
+import { splitTurns } from '../shared/chatTurns';
 import { Effect } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { AppError } from '@cockpit/effect-core';
@@ -146,9 +147,13 @@ export function useChatHistory(
 ): UseChatHistoryReturn {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMoreHistory, setHasMoreHistory] = useState(false);
-  const [currentTurnIndex, setCurrentTurnIndex] = useState<number | undefined>(undefined);
+  const [pageHasMore, setPageHasMore] = useState(false);
+  const [pageAnchor, setPageAnchor] = useState<HistoryPageAnchor>();
   const [totalTurns, setTotalTurns] = useState(0);
+  // Derive the visible boundary from a known server page, including older turns
+  // retained by incremental merges. This also keeps hasMore tied to that window.
+  const currentTurnIndex = useMemo(() => getHistoryStartTurnIndex(messages, pageAnchor), [messages, pageAnchor]);
+  const hasMoreHistory = pageHasMore && (currentTurnIndex === undefined || currentTurnIndex > 0);
   // sessionId of the file whose contents currently populate `messages`.
   // Updated whenever a load successfully returns messages.
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(null);
@@ -205,11 +210,19 @@ export function useChatHistory(
         if (data.totalTurns !== undefined) {
           setTotalTurns(data.totalTurns);
         }
-        if (data.hasMore !== undefined) {
-          setHasMoreHistory(data.hasMore);
-        }
-
-        if (data.messages && data.messages.length > 0) {
+        if (data.messages) {
+          const appliesWindow = viaIncremental ? data.messages.length > 0 : !liveRunningRef?.current;
+          if (appliesWindow) {
+            const pageEnd = beforeTurnIndex ?? data.totalTurns;
+            const startTurnIndex = data.startTurnIndex ?? (pageEnd === undefined
+              ? undefined
+              : Math.max(0, pageEnd - splitTurns(data.messages).length));
+            setPageAnchor(startTurnIndex === undefined ? undefined : {
+              firstMessageId: data.messages[0]?.id,
+              startTurnIndex,
+            });
+            if (data.hasMore !== undefined) setPageHasMore(data.hasMore);
+          }
           if (viaIncremental) {
             // Incremental update mode: only update changed messages. The response may
             // be a suffix WINDOW (limit=N turns) of the session — mergeIncrementalMessages
@@ -298,7 +311,7 @@ export function useChatHistory(
         applyPage(data, incremental);
 
         // Refresh the first-page cache (LRU: re-insert, evict oldest over cap)
-        if (cacheable && data.fingerprint && data.messages && data.messages.length > 0) {
+        if (cacheable && data.fingerprint && data.messages) {
           firstPageCache.delete(cacheKey);
           firstPageCache.set(cacheKey, { data, fingerprint: data.fingerprint });
           if (firstPageCache.size > FIRST_PAGE_CACHE_MAX) {
@@ -320,18 +333,19 @@ export function useChatHistory(
   const loadMoreHistory = useCallback(async () => {
     if (!cwd || !sessionId || isLoadingMore || !hasMoreHistory) return;
 
+    const beforeIndex = currentTurnIndex ?? Math.max(0, totalTurns - splitTurns(messages).length);
+    if (beforeIndex <= 0) {
+      setPageHasMore(false);
+      return;
+    }
     setIsLoadingMore(true);
     try {
-      const beforeIndex = currentTurnIndex !== undefined
-        ? currentTurnIndex
-        : totalTurns - Math.ceil(messages.filter(m => m.role === 'user').length);
-
       const exit = await BrowserRuntime.runPromiseExit(
         postSessionByPath({
           cwd,
           sessionId,
           limit: TURNS_PER_PAGE,
-          beforeTurnIndex: beforeIndex > 0 ? beforeIndex : undefined,
+          beforeTurnIndex: beforeIndex,
         })
       );
 
@@ -345,18 +359,16 @@ export function useChatHistory(
         if (data.messages && data.messages.length > 0) {
           // Prepend new messages to existing messages
           setMessages(prev => [...data.messages!, ...prev]);
-          // Update current turn index. The server resolves the window's first turn
-          // itself; only fall back to counting user bubbles for a response that
-          // predates that field, since the count drifts by one whenever turn 0 is a
-          // leading assistant/system prefix rather than a user message.
-          const loadedTurns = data.messages.filter((m: ChatMessage) => m.role === 'user').length;
-          setCurrentTurnIndex(data.startTurnIndex ?? beforeIndex - loadedTurns);
+          setPageAnchor({
+            firstMessageId: data.messages[0].id,
+            startTurnIndex: data.startTurnIndex ?? Math.max(0, beforeIndex - splitTurns(data.messages).length),
+          });
           // Older turns were pulled from the same file the rest of the
           // view already represents — keep loadedSessionId in sync.
           setLoadedSessionId(sessionId);
         }
         if (data.hasMore !== undefined) {
-          setHasMoreHistory(data.hasMore);
+          setPageHasMore(data.hasMore);
         }
         // Save fingerprint
         if (data.fingerprint) {
@@ -402,11 +414,11 @@ export function useChatHistory(
       if (data.messages && data.messages.length > 0) {
         const disk = data.messages;
         setMessages((prev) => mergeJumpWindow(prev, disk));
-        setCurrentTurnIndex(data.startTurnIndex ?? turnIndex);
+        setPageAnchor({ firstMessageId: disk[0].id, startTurnIndex: data.startTurnIndex ?? turnIndex });
         setLoadedSessionId(sid);
       }
       if (data.totalTurns !== undefined) setTotalTurns(data.totalTurns);
-      if (data.hasMore !== undefined) setHasMoreHistory(data.hasMore);
+      if (data.hasMore !== undefined) setPageHasMore(data.hasMore);
       if (data.fingerprint) fingerprintRef.current = data.fingerprint;
     } finally {
       setIsLoadingMore(false);
@@ -430,8 +442,11 @@ export function useChatHistory(
       catch: (cause) => new AppError({ message: 'load session history failed', cause }),
     });
     const exit = await BrowserRuntime.runPromiseExit(historyEff);
-    if (exit._tag === 'Success' && exit.value?.messages && exit.value.messages.length > 0) {
+    if (exit._tag === 'Success' && exit.value?.messages) {
       setMessages(exit.value.messages);
+      setPageAnchor({ firstMessageId: exit.value.messages[0]?.id, startTurnIndex: 0 });
+      setPageHasMore(false);
+      setTotalTurns(splitTurns(exit.value.messages).length);
       setLoadedSessionId(sid);
     } else if (exit._tag === 'Failure') {
       console.error('Failed to load history:', exit.cause);

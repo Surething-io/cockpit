@@ -16,6 +16,8 @@ import { Context, Effect } from "effect"
 import type { FSError } from "@cockpit/effect-core"
 
 export type TranscriptFormat = "claude" | "codex" | "pi"
+/** Scans reuse resident entries without admitting cold files or promoting their recency. */
+export type TranscriptCachePolicy = "retain" | "scan"
 
 /**
  * One human turn, kept raw enough that every view can apply its own filtering
@@ -24,12 +26,12 @@ export type TranscriptFormat = "claude" | "codex" | "pi"
 export interface TranscriptUserTurn {
   /**
    * claude: the content string, or the `text` of every `text` block (empty ones
-   * kept as ''). codex: the `text` of every `input_text` block.
+   * kept as ''). codex: human `input_text` blocks after source classification.
    */
   readonly blocks: ReadonlyArray<string>
   /** Claude harness-injected context, classified by shared injectionKind rules. */
   readonly isMeta?: true
-  /** codex only: extractCodexUserContent().text (image markup stripped). */
+  /** codex only: classified human text, with image markup stripped. */
   readonly listText?: string
   /** codex only: number of attached images. */
   readonly images?: number
@@ -98,12 +100,15 @@ export interface CodexSessionEntry {
   readonly agentNickname?: string
 }
 
-/** Bytes parsed by refreshes since process start — the cost metric tests pin. */
+/** Process-wide parsing costs and current retained-cache usage. */
 export interface TranscriptIndexCounters {
   readonly bytesParsed: number
   readonly rebuilds: number
   /** codex rollout first-line reads (the catalog's only per-file read). */
   readonly codexHeadReads: number
+  readonly cachedFiles: number
+  /** Conservative retained-data estimate, not a measurement of process heap usage. */
+  readonly estimatedCacheBytes: number
 }
 
 export interface TranscriptIndex {
@@ -113,9 +118,10 @@ export interface TranscriptIndex {
    */
   readonly snapshot: (
     path: string,
-    format: TranscriptFormat
+    format: TranscriptFormat,
+    cache?: TranscriptCachePolicy
   ) => Effect.Effect<TranscriptSnapshot | null, never>
-  /** Same as `snapshot` for many files, with bounded read concurrency. */
+  /** Batch scan with bounded read concurrency; cold entries are not retained. */
   readonly snapshots: (
     files: ReadonlyArray<{ readonly path: string; readonly format: TranscriptFormat }>
   ) => Effect.Effect<ReadonlyArray<TranscriptSnapshot | null>, never>

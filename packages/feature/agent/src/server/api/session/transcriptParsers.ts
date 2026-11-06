@@ -23,7 +23,9 @@ export type { TranscriptSource } from '../../transcriptSource';
 import { injectionKind, isHumanTurnStart, queuedPromptAsUserEntry } from '../../../shared/transcriptTurns';
 import { asyncLaunchTaskId, parseTaskNotification, type ToolCallTask } from '../../../shared/subagentTask';
 import { generateCodexTitle, generateTitle } from '../../sessionTitle';
-import { codexPromptText } from '../../../shared/codexPrompt';
+import { codexPromptText, projectCodexUserMessage, type CodexUserMessage, type CodexSubagentNotice } from '../../../shared/codexPrompt';
+import { splitTurns } from '../../../shared/chatTurns';
+export { splitTurns } from '../../../shared/chatTurns';
 import { detectBotName } from '../../../shared/botSession';
 import { appendTextPart, appendToolPart, joinAssistantText } from '../../../shared/assistantText';
 import type { MessagePart } from '../../../shared/assistantText';
@@ -118,6 +120,11 @@ export interface ChatMessage {
   content: string;
   images?: MessageImage[];
   timestamp?: string;
+  /** A Codex notice preceding the user block in the same raw message belongs to that user's turn. */
+  turnUserId?: string;
+  /** Codex tasks are atomic pagination, fork and deletion units. */
+  turnId?: string;
+  turnUserCount?: number;
   // Set on role:'system' rows — a harness event rendered as a muted one-line bar
   // (not a conversation bubble). `task-notification` shows the <summary> line.
   systemEvent?: { kind: 'task-notification' | 'meta'; status?: string; detail?: string };
@@ -297,30 +304,6 @@ export function pageTurns(
   };
 }
 
-/**
- * Split a converted message list into turns: a turn opens at every `role:'user'`
- * message and swallows everything that follows it, so a leading assistant/system
- * prefix (a resumed session that starts mid-reply) forms turn 0 on its own.
- *
- * This IS the unit `beforeTurnIndex` pages in. Any caller that needs a turn index
- * must get it from here rather than counting rendered user bubbles: `role:'system'`
- * rows and folded-away injected user lines make the two counts drift.
- */
-export function splitTurns(allMessages: ChatMessage[]): ChatMessage[][] {
-  const turns: ChatMessage[][] = [];
-  let currentTurn: ChatMessage[] = [];
-  for (const msg of allMessages) {
-    if (msg.role === 'user') {
-      if (currentTurn.length > 0) turns.push(currentTurn);
-      currentTurn = [msg];
-    } else {
-      currentTurn.push(msg);
-    }
-  }
-  if (currentTurn.length > 0) turns.push(currentTurn);
-  return turns;
-}
-
 /** One row of the user-message index: enough to render, search and jump. */
 export interface UserMessageIndexEntry {
   /** The rendered bubble's `data-message-id`, so a jump can find it in the DOM. */
@@ -355,15 +338,11 @@ export async function parseUserMessageIndex(
   const turns = splitTurns(parsed.messages);
   const entries: UserMessageIndexEntry[] = [];
   turns.forEach((turn, turnIndex) => {
-    // A turn holds at most one user message, and always at its head (splitTurns).
-    const head = turn[0];
-    if (head?.role !== 'user') return;
-    entries.push({
-      id: head.id,
-      turnIndex,
-      timestamp: head.timestamp,
-      content: head.content,
-    });
+    // Steering inputs remain individually searchable within their shared task.
+    for (const message of turn) {
+      if (message.role !== 'user') continue;
+      entries.push({ id: message.id, turnIndex, timestamp: message.timestamp, content: message.content });
+    }
   });
   return { entries, totalTurns: turns.length, title: parsed.title };
 }
@@ -446,8 +425,8 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
     }
   }
 
-  // Second pass: build the message list
-  for (const msg of rawMessages) {
+  // Second pass: source positions keep legacy inputs without UUIDs distinct and stable.
+  for (const [sourceIndex, msg] of rawMessages.entries()) {
     // Handle user text messages
     if (msg.type === 'user' && msg.message?.role === 'user' && msg.message?.content) {
       // Route harness-injected messages out of the user-bubble bucket.
@@ -475,7 +454,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
         }
 
         const userMessage: ChatMessage = {
-          id: msg.uuid || `user-${Date.now()}`,
+          id: msg.uuid || `user-legacy-${sourceIndex}`,
           role: 'user',
           content: content,
           timestamp: msg.timestamp,
@@ -496,7 +475,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
         }
 
         const userMessage: ChatMessage = {
-          id: msg.uuid || `user-${Date.now()}`,
+          id: msg.uuid || `user-legacy-${sourceIndex}`,
           role: 'user',
           content: textBlocks.map((b) => b.text || '').join('\n'),
           timestamp: msg.timestamp,
@@ -582,7 +561,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
 // Codex session transcript parser
 // ============================================
 
-interface CodexPayload {
+interface CodexPayload extends CodexUserMessage {
   type?: string;
   role?: string;
   name?: string;
@@ -594,7 +573,6 @@ interface CodexPayload {
   call_id?: string;
   /** String for function_call_output; content blocks for custom_tool_call_output. */
   output?: string | Array<{ type?: string; text?: string }>;
-  content?: Array<{ type?: string; text?: string; image_url?: string }>;
   // web_search_end (an event_msg, not a response_item) — the only persisted web
   // search line carrying both the stable `ws_…` id and the query.
   query?: string;
@@ -626,6 +604,7 @@ export async function parseCodexTranscriptFile(
   let firstUserText: string | null = null;
   let lastUsage: TokenUsage | undefined;
   let msgCounter = 0;
+  let taskIndex = 0;
   // Paragraph-break only across a tool call (see assistantText.ts).
   let toolSinceText = false;
 
@@ -681,6 +660,7 @@ export async function parseCodexTranscriptFile(
         parts: [],
         toolCalls: [],
         timestamp,
+        turnId: `codex-task-${taskIndex}`,
       };
     }
     return currentAssistant;
@@ -696,24 +676,51 @@ export async function parseCodexTranscriptFile(
     const { type, payload, timestamp } = entry;
     if (!payload) continue;
 
+    // Keep late tool completions with the preceding task until the next starts.
+    // With no task markers the rollout is one atomic unit, as in codexFork.
+    if (type === 'event_msg' && payload.type === 'task_started') {
+      flushAssistant();
+      taskIndex++;
+    }
+
     if (type === 'response_item') {
       // User message
       if (payload.type === 'message' && payload.role === 'user') {
-        const { text, images } = extractCodexUserContent(payload.content);
-        // Skip system/developer messages (permissions, AGENTS.md, env context)
-        const prompt = codexPromptText(text, images.length);
-        if (prompt === null) continue;
+        const precedingNotices: ChatMessage[] = [];
+        for (const event of projectCodexUserMessage(payload)) {
+          if (event.kind !== 'prompt') {
+            const notice: CodexSubagentNotice = event.kind === 'notice' ? event.notice : { summary: event.detail.split('\n')[0], detail: event.detail };
+            flushAssistant();
+            const message: ChatMessage = {
+              id: `codex-system-${msgCounter++}`,
+              role: 'system',
+              content: notice.summary,
+              timestamp,
+              turnId: `codex-task-${taskIndex}`,
+              systemEvent: { kind: event.kind === 'notice' ? 'task-notification' : 'meta', detail: notice.detail, ...(notice.status ? { status: notice.status } : {}) },
+            };
+            messages.push(message);
+            precedingNotices.push(message);
+            continue;
+          }
+          const { text, images } = extractCodexUserContent(event.blocks);
+          const prompt = codexPromptText(text, images.length);
+          if (prompt === null) continue;
 
-        flushAssistant();
-        messages.push({
-          id: `codex-user-${msgCounter++}`,
-          role: 'user',
-          content: text,
-          ...(images.length > 0 ? { images } : {}),
-          timestamp,
-        });
-        // First real user message becomes the title
-        if (firstUserText === null) firstUserText = prompt;
+          flushAssistant();
+          const message: ChatMessage = {
+            id: `codex-user-${msgCounter++}`,
+            role: 'user',
+            content: text,
+            ...(images.length > 0 ? { images } : {}),
+            timestamp,
+            turnId: `codex-task-${taskIndex}`,
+          };
+          for (const notice of precedingNotices) notice.turnUserId = message.id;
+          messages.push(message);
+          // First real user message becomes the title.
+          if (firstUserText === null) firstUserText = prompt;
+        }
       }
 
       // Assistant text message
@@ -984,6 +991,11 @@ export async function parseCodexTranscriptFile(
   }
 
   flushAssistant();
+
+  for (const turn of splitTurns(messages)) {
+    const userCount = turn.filter((message) => message.role === 'user').length;
+    for (const message of turn) message.turnUserCount = userCount;
+  }
 
   return { messages, title: generateCodexTitle(firstUserText), bot: detectBotName(firstUserText), usage: lastUsage };
 }

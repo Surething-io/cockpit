@@ -11,7 +11,7 @@ import { readProjectTitles, titleFromProject, titleStore, type TitleFile } from 
  * Layout:    <cockpitDir>/search-corpus/<engine>/<sessionId>.txt + manifest.v2.json
  * Source:    corpus text is rendered from the TranscriptIndex snapshot (prompts and
  *            replies it has already folded) — this layer never parses a transcript.
- * Freshness: a session is re-rendered when its source mtime+size fingerprint or Cockpit title metadata changes,
+ * Freshness: a session is re-rendered when projection rules, its source fingerprint or Cockpit title metadata change,
  *            or when its project directory was unknown and has since become resolvable
  *            (the directory lookup draws on projects.json / state.json / other
  *            transcripts, none of which change the source fingerprint).
@@ -43,7 +43,7 @@ import { encodePath } from "@cockpit/shared-utils/encodePath"
 import { buildSessionLink } from "@cockpit/shared-utils/sessionLink"
 import { defaultSessionTitle, isCodexSubagent } from "../server/transcriptViews"
 import { listLogicalTranscriptFiles, readLogicalTranscript } from "./logicalTranscript"
-import { codexSessionEntries } from "./transcriptIndexLive"
+import { codexSessionEntries, TRANSCRIPT_INDEX_VERSION } from "./transcriptIndexLive"
 
 // ─────────────────────────────────────────────────────────
 // Corpus format (pure)
@@ -259,7 +259,7 @@ export const listCorpusSources: Effect.Effect<CorpusSource[], FSError> = Effect.
 
 /** The first `cwd` field of a claude transcript, from the transcript index. */
 const firstCwdInTranscript = (file: string, engine = "claude"): Effect.Effect<string | null, never> =>
-  readLogicalTranscript(file, isPiSessionPath(file) ? "pi" : engine, (view) => view.projection.pipe(Effect.map((snap) => snap.cwd))).pipe(
+  readLogicalTranscript(file, isPiSessionPath(file) ? "pi" : engine, (view) => view.projection.pipe(Effect.map((snap) => snap.cwd)), "scan").pipe(
     Effect.catchAll((error) => Effect.logWarning("Cannot read session cwd", error).pipe(Effect.as(null)))
   )
 
@@ -338,7 +338,7 @@ const extractText = (
       { engine: snap.engine ?? source.engine, sessionId: source.sessionId, cwd, title: titles ? titleFromProject(titles, source.sessionId, title, titleStore(source.engine), cwd).title : title, updatedAt: view.mtimeMs },
       snap.corpus.map((line) => ({ role: line.role, content: line.text }))
     );
-  }))
+  }), "scan")
 
 // ─────────────────────────────────────────────────────────
 // Sync
@@ -386,8 +386,8 @@ const syncImpl = (cockpitDir: string, corpusDir: string): Effect.Effect<CorpusSy
         titleFiles.set(titleProject, titles)
       }
       const titleInfo = titles ? titleFromProject(titles, source.sessionId, '', titleStore(source.engine), titleCwd) : null
-      // Version the projection too: title rules can change without a transcript write.
-      const fingerprint = `v6:${identity.value}:${JSON.stringify([titleInfo?.titleRevision, titleInfo?.customTitle])}`
+      // Both title and transcript classification rules can change without a source write.
+      const fingerprint = `v7:index-${TRANSCRIPT_INDEX_VERSION}:${identity.value}:${JSON.stringify([titleInfo?.titleRevision, titleInfo?.customTitle])}`
       const corpusPath = join(corpusDir, source.engine, `${source.sessionId}.txt`)
       const prev = previous[source.sourcePath]
       const unchanged = prev !== undefined && prev.fingerprint === fingerprint

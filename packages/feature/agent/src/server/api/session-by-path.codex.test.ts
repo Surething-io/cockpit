@@ -261,6 +261,7 @@ const loadSession = async (sessionId: string, extra: Record<string, unknown> = {
 // Codex session used to ship in full on every read whatever `limit` asked for.
 describe('session-by-path codex paging', () => {
   const turn = (n: number) => [
+    { type: 'event_msg', payload: { type: 'task_started' } },
     { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: `q${n}` }] } },
     { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: `a${n}` }] } },
   ];
@@ -293,6 +294,25 @@ describe('session-by-path codex paging', () => {
     const all = await post({ cwd: '/tmp', sessionId });
     expect(userTexts(all.messages)).toEqual(['q1', 'q2', 'q3']);
     expect(all).toMatchObject({ totalTurns: 3, hasMore: false, startTurnIndex: 0 });
+  });
+
+  it('pages a steered task with every input, reply and late tool completion intact', async () => {
+    const sessionId = 'codex-steering-paging';
+    writeCodexTranscript(sessionId, [
+      ...turn(1),
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'steer' }] } },
+      { type: 'event_msg', payload: { type: 'task_complete' } },
+      { type: 'event_msg', payload: { type: 'item_completed', item: { type: 'commandExecution', id: 'late-command', command: 'pwd', aggregatedOutput: '/tmp', exitCode: 0 } } },
+      ...turn(2),
+    ]);
+    const last = await post({ cwd: '/tmp', sessionId, limit: 1 });
+    expect(userTexts(last.messages)).toEqual(['q2']);
+    expect(last).toMatchObject({ totalTurns: 2, startTurnIndex: 1, hasMore: true });
+    const earlier = await post({ cwd: '/tmp', sessionId, limit: 1, beforeTurnIndex: last.startTurnIndex });
+    expect(userTexts(earlier.messages)).toEqual(['q1', 'steer']);
+    expect(earlier.messages.every((message: { turnUserCount: number }) => message.turnUserCount === 2)).toBe(true);
+    expect(earlier.messages.flatMap((message: { toolCalls?: { id: string }[] }) => message.toolCalls ?? []).map((tool: { id: string }) => tool.id)).toContain('late-command');
+    expect(earlier).toMatchObject({ totalTurns: 2, startTurnIndex: 0, hasMore: false });
   });
 });
 

@@ -75,7 +75,7 @@ export const GET = handler((req) =>
           })
         )
       ),
-      { concurrency: "unbounded" }
+      { concurrency: 4 }
     )
     // Engine per session (session.json's `engines` map) — the badge the cards
     // already render but never had data for.

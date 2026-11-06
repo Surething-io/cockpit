@@ -197,6 +197,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
   // Tab state management
   const {
     tabs,
+    titlesLoading,
     activeTabId,
     activeTab,
     paneTabIds,
@@ -784,6 +785,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                 <div className="w-full h-full flex">
                   <TabBar
                     tabs={tabs}
+                    titlesLoading={titlesLoading}
                     selectedTabId={activeTabId}
                     visibleTabIds={paneTabIds}
                     sideBySide={layout.split}
@@ -962,6 +964,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
           <div className="flex-1 flex overflow-hidden">
             <TabBar
               tabs={tabs}
+              titlesLoading={titlesLoading}
               selectedTabId={activeTabId}
               visibleTabIds={paneTabIds}
               sideBySide={layout.split}

@@ -1,4 +1,32 @@
 import type { ChatMessage } from './types';
+import { splitTurns } from '../shared/chatTurns';
+
+export interface HistoryPageAnchor {
+  firstMessageId?: string;
+  startTurnIndex: number;
+}
+
+// Use the same alignment for both the merge and its pagination cursor.
+function findWindowStart(messages: ChatMessage[], firstMessageId: string): number {
+  if (messages[0]?.id === firstMessageId) return 0;
+  return messages.findLastIndex((message) => message.id === firstMessageId);
+}
+
+/** Locate the rendered history's start relative to a server page's known cursor. */
+export function getHistoryStartTurnIndex(
+  messages: ChatMessage[],
+  anchor: HistoryPageAnchor | undefined,
+): number | undefined {
+  if (!anchor) return undefined;
+  if (anchor.firstMessageId === undefined) {
+    return messages.length === 0 ? anchor.startTurnIndex : undefined;
+  }
+  const windowStart = findWindowStart(messages, anchor.firstMessageId);
+  if (windowStart < 0) return undefined;
+  // Older turns can survive an incremental suffix merge. Live messages after
+  // the anchor do not move this cursor, even before they have reached disk.
+  return Math.max(0, anchor.startTurnIndex - splitTurns(messages.slice(0, windowStart)).length);
+}
 
 // ============================================
 // Incremental history merge
@@ -22,16 +50,7 @@ export function mergeIncrementalMessages(
   // Align the window against prevMessages by the window's first message id.
   // Search from the END: the window is a suffix of the session, so on duplicate
   // ids the later occurrence is the correct anchor.
-  let alignIndex = 0;
-  if (prevMessages.length > 0 && prevMessages[0].id !== newMessages[0].id) {
-    alignIndex = -1;
-    for (let i = prevMessages.length - 1; i >= 0; i--) {
-      if (prevMessages[i].id === newMessages[0].id) {
-        alignIndex = i;
-        break;
-      }
-    }
-  }
+  const alignIndex = prevMessages.length === 0 ? 0 : findWindowStart(prevMessages, newMessages[0].id);
   if (alignIndex < 0) {
     // No overlap between the window and what's rendered: the session grew past
     // the window since the last load, or the file was rewritten. The window is
@@ -45,11 +64,16 @@ export function mergeIncrementalMessages(
   // Compare id AND content: content alone misses the reconcile that swaps a
   // temp `live-*` bubble for its canonical disk uuid (same text, new id) —
   // skipping that would leave ephemeral ids around and break later id-based dedup.
+  // Task membership/count can change when steering arrives without changing the
+  // existing text; refresh it too so edit scope and confirmation stay current.
   let diffIndex = 0;
   for (let i = 0; i < Math.min(prevTail.length, newMessages.length); i++) {
     if (
       prevTail[i].id !== newMessages[i].id ||
-      prevTail[i].content !== newMessages[i].content
+      prevTail[i].content !== newMessages[i].content ||
+      prevTail[i].turnId !== newMessages[i].turnId ||
+      prevTail[i].turnUserId !== newMessages[i].turnUserId ||
+      prevTail[i].turnUserCount !== newMessages[i].turnUserCount
     ) {
       break;
     }

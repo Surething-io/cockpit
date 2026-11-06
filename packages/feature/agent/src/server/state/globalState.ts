@@ -2,6 +2,7 @@ import type { SessionTitleInfo } from '../../shared/sessionTitle';
 import { readProjectTitles, readSessionTitle, titleFromProject, titleStore, type TitleFile } from '../../effect/sessionTitles';
 import { resolveSessionPath } from '../api/session/sessionStore';
 import { Effect } from 'effect';
+import type { TranscriptCachePolicy } from '@cockpit/effect-services';
 import {
   GLOBAL_STATE_FILE,
   readJsonFile,
@@ -230,9 +231,9 @@ export async function updateGlobalSessionStatus(
 }
 
 /** The complete logical conversation, including an independent task's stashed history. */
-async function sessionSnapshot(cwd: string, sessionId: string): Promise<LogicalTranscriptProjection | null> {
+async function sessionSnapshot(cwd: string, sessionId: string, cache: TranscriptCachePolicy = 'retain'): Promise<LogicalTranscriptProjection | null> {
   const store = await resolveSessionPath(cwd, sessionId);
-  return store ? Effect.runPromise(readLogicalTranscript(store.sessionPath, store.engine, (view) => view.projection)) : null;
+  return store ? Effect.runPromise(readLogicalTranscript(store.sessionPath, store.engine, (view) => view.projection, cache)) : null;
 }
 
 /** Native fallback; Cockpit custom titles are applied separately. */
@@ -293,8 +294,8 @@ interface SessionContent {
  * call when the transcript is unchanged, a parse of only the appended bytes when
  * it has grown.
  */
-async function getSessionContent(cwd: string, sessionId: string): Promise<SessionContent> {
-  const snap = await sessionSnapshot(cwd, sessionId);
+async function getSessionContent(cwd: string, sessionId: string, cache: TranscriptCachePolicy): Promise<SessionContent> {
+  const snap = await sessionSnapshot(cwd, sessionId, cache);
   if (!snap) return { defaultTitle: UNTITLED_SESSION, summary: '', messages: [] };
   return { summary: snap.summary, messages: previewMessages(snap), defaultTitle: defaultSessionTitle(snap) };
 }
@@ -310,7 +311,7 @@ export async function getSessionPreview(
   sessionId: string,
   opts?: { includeSearchText?: boolean; titleData?: TitleFile }
 ): Promise<SessionPreview> {
-  const { summary, messages, defaultTitle } = await getSessionContent(cwd, sessionId);
+  const { summary, messages, defaultTitle } = await getSessionContent(cwd, sessionId, opts?.includeSearchText ? 'scan' : 'retain');
   const store = await resolveSessionPath(cwd, sessionId);
   const titleInfo = opts?.titleData
     ? titleFromProject(opts.titleData, sessionId, defaultTitle, titleStore(store?.engine ?? 'claude'), cwd)

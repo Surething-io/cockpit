@@ -231,6 +231,9 @@ export const GET = handler((req) =>
         new ValidationError({ field: "path", reason: "is a directory" })
       )
     }
+    if (!info.isFile) {
+      return yield* Effect.fail(new ValidationError({ field: "path", reason: "not a regular file" }))
+    }
 
     const ext = path.extname(fullPath).toLowerCase()
     const contentType = mimeFor(ext)

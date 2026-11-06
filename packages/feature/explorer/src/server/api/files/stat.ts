@@ -64,6 +64,12 @@ export const GET = handler((req) =>
     }
 
     const ext = path.extname(filePath).toLowerCase()
+    if (!info.isDirectory && !info.isFile) {
+      return new Response(JSON.stringify({ exists: true, isFile: false, error: "Not a regular file" }), {
+        status: 409,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
+      })
+    }
     let kind: "file" | "dir" | "symlink" = "file"
     if (info.isDirectory) kind = "dir"
     else if (info.isSymlink) kind = "symlink"
@@ -80,6 +86,7 @@ export const GET = handler((req) =>
     return new Response(
       JSON.stringify({
         exists: true,
+        isFile: info.isFile,
         kind,
         size: info.size,
         mtimeMs: info.mtimeMs,

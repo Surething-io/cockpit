@@ -16,7 +16,7 @@ import { MarkdownRenderer } from '@cockpit/shared-ui';
 import { resolveBashCwd } from '@cockpit/shared-utils';
 import { rehypeSourceLines } from '@cockpit/shared-ui';
 import { scrollToHeadingAnchor } from '@cockpit/shared-ui';
-import { isBotFile, isMarkdownFile, isPlainTextFile, isSkillFile, resolveRelativePath } from './toolCallUtils';
+import { isBotFile, isMarkdownFile, isSkillFile, resolveRelativePath } from './toolCallUtils';
 import { useAddSkill } from './registry/useAddSkill';
 import { useAddBot } from './registry/useAddBot';
 import type { CodeComment } from '@cockpit/feature-comments';
@@ -41,7 +41,7 @@ interface InteractiveMarkdownPreviewProps {
    *  and makes ESC a no-op for closing — the host owns the on/off control. Defaults to false
    *  so the modal call sites (agent chat, diff view) keep their current behavior. */
   embedded?: boolean;
-  /** Explorer-only: open a local .md or .txt link target in-place. Receives the resolved
+  /** Explorer-only: open a local file link target in-place. Receives the resolved
    *  cwd-relative path and an optional `#anchor`. Omitted in agent chat / diff,
    *  where local links keep their default browser behavior. */
   onLocalFileLink?: (targetRel: string, anchor: string | null) => void;
@@ -135,7 +135,7 @@ export function InteractiveMarkdownPreview({
     if (containerRef.current !== containerEl) setContainerEl(containerRef.current);
   });
 
-  // Intercept markdown links → open local .md / .txt targets in-place (explorer only).
+  // Intercept local file links independently of the target's extension.
   // Returns true when consumed so MarkdownRenderer prevents browser navigation.
   //
   // Identity-stable: `onLocalFileLink` from the caller (FileBrowserModal) churns on
@@ -157,7 +157,6 @@ export function InteractiveMarkdownPreview({
     if (!pathPart) return false; // pure #anchor — handled inside MarkdownRenderer
     let decoded = pathPart;
     try { decoded = decodeURIComponent(pathPart); } catch { /* keep raw */ }
-    if (!isMarkdownFile(decoded) && !isPlainTextFile(decoded)) return false;
     onLink(resolveRelativePath(src, decoded), isMarkdownFile(decoded) ? anchor : null);
     return true;
   }).current;

@@ -4,7 +4,7 @@
  * Absolute-path file reader (used by chat tool-call previews);
  * multiple HTTP statuses: 200/206/304/400/403/404/409/413/416/500.
  */
-import { readFile, stat } from "fs/promises"
+import { stat } from "fs/promises"
 import { createReadStream } from "fs"
 import { Readable } from "stream"
 import path from "path"
@@ -20,11 +20,12 @@ import {
   computeETag,
   buildCacheHeaders,
   ifNoneMatch,
-  isBinaryContent,
   getMimeType,
   MAX_TEXT_SIZE,
   MAX_IMAGE_SIZE,
 } from "@cockpit/feature-explorer/server/files/shared"
+
+import { readTextPreview } from '../files/textPreview'
 
 const jsonResp = (body: unknown, status: number, extra?: HeadersInit): Response =>
   new Response(JSON.stringify(body), {
@@ -172,7 +173,7 @@ export const GET = handler((req) =>
     }
 
     // ---- Text JSON (default) ----
-    if (category === "image" || category === "binary") {
+    if (category === "image") {
       return jsonResp(
         {
           error: `Not a text file (category: ${category}). Use raw=true for images.`,
@@ -191,26 +192,20 @@ export const GET = handler((req) =>
       )
     }
 
-    const content = yield* Effect.tryPromise({
-      try: () => readFile(absolutePath, "utf-8"),
-      catch: (cause) =>
-        new ValidationError({ field: "path", reason: String(cause) }),
-    })
-
-    if (isBinaryContent(content)) {
-      return jsonResp(
-        { error: "File appears to be binary", category: "binary" },
-        409
-      )
+    const text = yield* readTextPreview(absolutePath)
+    if (text.kind !== "text") {
+      const error = text.kind === "too-large" ? "File too large (over 10MB)"
+        : text.kind === "binary" ? "File appears to be binary" : "Not a regular file"
+      return jsonResp({ error, category: text.kind, size: text.size }, text.kind === "too-large" ? 413 : 409)
     }
 
     return jsonResp(
       {
-        content,
+        content: text.content,
         path: absolutePath,
-        size: stats.size,
-        mtimeMs: stats.mtimeMs,
-        etag,
+        size: text.size,
+        mtimeMs: text.mtimeMs,
+        etag: computeETag(text.size, text.mtimeMs),
       },
       200,
       { "Cache-Control": "no-cache" }

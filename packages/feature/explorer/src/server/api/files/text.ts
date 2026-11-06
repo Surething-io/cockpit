@@ -4,7 +4,6 @@
  * Reads utf-8 text with multiple HTTP statuses: 200 / 400 / 403 / 404 / 409 / 413 / 500.
  * 409/413 are built via raw Response (they are not in the errorToStatus standard mapping).
  */
-import { readFile } from "fs/promises"
 import path from "path"
 import { Effect } from "effect"
 import { handler } from "@cockpit/effect-runtime/server"
@@ -18,9 +17,10 @@ import {
   statWithSymlink,
   classify,
   computeETag,
-  isBinaryContent,
   MAX_TEXT_SIZE,
 } from "@cockpit/feature-explorer/server/files/shared"
+
+import { readTextPreview } from '../../files/textPreview'
 
 const jsonResp = (body: unknown, status: number): Response =>
   new Response(JSON.stringify(body), {
@@ -64,10 +64,12 @@ export const GET = handler((req) =>
       return jsonResp({ error: "Path is a directory" }, 409)
     }
 
+    if (!result.isFile) return jsonResp({ error: "Not a regular file" }, 409)
+
     const ext = path.extname(filePath).toLowerCase()
     const category = classify(ext, result.size)
 
-    if (category === "image" || category === "binary") {
+    if (category === "image") {
       return jsonResp(
         { error: `Not a text file (category: ${category})`, category },
         409
@@ -83,25 +85,19 @@ export const GET = handler((req) =>
       )
     }
 
-    const content = yield* Effect.tryPromise({
-      try: () => readFile(fullPath, "utf-8"),
-      catch: (cause) =>
-        new ValidationError({ field: "path", reason: String(cause) }),
-    })
-
-    if (isBinaryContent(content)) {
-      return jsonResp(
-        { error: "File appears to be binary", category: "binary" },
-        409
-      )
+    const text = yield* readTextPreview(fullPath)
+    if (text.kind !== "text") {
+      const error = text.kind === "too-large" ? "File too large (over 10MB)"
+        : text.kind === "binary" ? "File appears to be binary" : "Not a regular file"
+      return jsonResp({ error, category: text.kind, size: text.size }, text.kind === "too-large" ? 413 : 409)
     }
 
     return jsonResp(
       {
-        content,
-        size: result.size,
-        mtimeMs: result.mtimeMs,
-        etag: computeETag(result.size, result.mtimeMs),
+        content: text.content,
+        size: text.size,
+        mtimeMs: text.mtimeMs,
+        etag: computeETag(text.size, text.mtimeMs),
         ...(result.isSymlink
           ? { isSymlink: true, symlinkTarget: result.symlinkTarget }
           : {}),

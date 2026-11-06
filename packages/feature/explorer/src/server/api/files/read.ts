@@ -63,6 +63,7 @@ export const GET = handler((req) =>
     if (info.isDirectory) {
       return jsonResp({ error: "Path is a directory" }, 409)
     }
+    if (!info.isFile) return jsonResp({ error: "Not a regular file" }, 409)
 
     const ext = path.extname(filePath).toLowerCase()
     const category = classify(ext, info.size)

@@ -14,16 +14,17 @@ import { isMutatingToolName } from '../shared/toolMutation';
 //   - FileContextMenu: chat-adjacent code that hasn't migrated yet.
 //   - MarkdownRenderer: a generic markdown renderer; candidate for shared-ui.
 // Allowed by MODULES.md as transitional reverse imports.
-import { HtmlPreviewModal, CsvPreviewModal, isMarkdownFile, isPlainTextFile, isHtmlFile, isImageFile, isCsvFile, resolveRelativePath, fetchFileStat } from '@cockpit/feature-explorer';
+import { HtmlPreviewModal, CsvPreviewModal, isHtmlFile, isImageFile, isCsvFile, fetchFileStat } from '@cockpit/feature-explorer';
 import { parseSessionLink, splitSessionLinks } from '@cockpit/shared-utils/sessionLink';
 import { openSessionLink } from './openSessionLink';
 import { MarkdownRenderer, SessionLinkChip } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { Cause, Option } from 'effect';
 import { MdPreviewModal } from './MdPreviewModal';
 import { TextPreviewModal } from './TextPreviewModal';
 import { readFileForPreview } from './effect/agentClient';
 import { useTranslation } from 'react-i18next';
-import { relativeToRoot } from '@cockpit/shared-utils/pathWithin';
+import { parseLocalFileLink, getFilePreviewKind, type FilePreviewRequest } from './filePreview';
 
 // Migrated from src/components/project/MessageBubble.tsx.
 
@@ -290,86 +291,6 @@ interface MessageBubbleProps {
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
 }
 
-/**
- * Canonical spelling of an absolute path, for prefix-comparing it against cwd.
- * Drops a trailing slash and macOS's `/private` prefix — `/tmp/x` and
- * `/private/tmp/x` are the same file, and a bare string compare would call one
- * of them "outside the project".
- */
-function normalizeAbsPath(p: string): string {
-  const trimmed = p.replace(/\/+$/, '');
-  return trimmed.startsWith('/private/') ? trimmed.slice('/private'.length) : trimmed;
-}
-
-/**
- * A local file link parsed out of an AI reply.
- *
- * `rel` is always the cwd-relative candidate (the Explorer tree's contract).
- * `abs` is non-null only when the href was absolute *and* not under cwd — the
- * one case the string alone can't settle, because `/docs/x.md` is equally
- * plausible as a repo-root-relative link or as another project's real path.
- * The click handler resolves that with a single stat rather than guessing.
- */
-interface LocalFileLink {
-  rel: string;
-  abs: string | null;
-  lineNumber?: number;
-}
-
-function parseLocalFileLink(href: string, cwd?: string): LocalFileLink | null {
-  if (!href || href.startsWith('#')) return null;
-  if (/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith('file:')) return null;
-
-  let decoded = href;
-  try { decoded = decodeURIComponent(href); } catch { /* keep raw */ }
-  if (decoded.startsWith('file://')) decoded = decoded.slice('file://'.length);
-
-  const hashIdx = decoded.indexOf('#');
-  const hash = hashIdx >= 0 ? decoded.slice(hashIdx + 1) : '';
-  let pathPart = hashIdx >= 0 ? decoded.slice(0, hashIdx) : decoded;
-
-  const queryIdx = pathPart.indexOf('?');
-  const query = queryIdx >= 0 ? pathPart.slice(queryIdx + 1) : '';
-  pathPart = queryIdx >= 0 ? pathPart.slice(0, queryIdx) : pathPart;
-
-  let lineNumber: number | undefined;
-  const hashLine = hash.match(/^L?(\d+)(?:-L?\d+)?$/i)?.[1];
-  const queryLine = query.match(/(?:^|[&;])(?:line|L)=(\d+)(?:$|[&;])/i)?.[1];
-  const suffixLineMatch = pathPart.match(/:(\d+)(?::\d+)?$/);
-  const lineText = hashLine || queryLine || suffixLineMatch?.[1];
-  if (lineText) {
-    lineNumber = Number(lineText);
-    if (suffixLineMatch) pathPart = pathPart.slice(0, -suffixLineMatch[0].length);
-  }
-
-  pathPart = pathPart.trim();
-  if (!pathPart) return null;
-
-  const line = lineNumber && lineNumber > 0 ? { lineNumber } : {};
-  const root = cwd ? normalizeAbsPath(cwd) : '';
-
-  if (pathPart.startsWith('/')) {
-    const abs = normalizeAbsPath(pathPart);
-    const inside = root ? relativeToRoot(root, abs) : null;
-    if (inside === '') return null; // the project dir itself, not a file
-    if (inside) {
-      // Plainly inside the project — the Explorer tree can show it.
-      return { rel: resolveRelativePath('', inside), abs: null, ...line };
-    }
-    // Outside cwd (or no cwd at all): ambiguous, keep BOTH readings.
-    return { rel: resolveRelativePath('', abs), abs, ...line };
-  }
-
-  const looksLocal =
-    pathPart.startsWith('./') ||
-    pathPart.startsWith('../') ||
-    pathPart.includes('/') ||
-    /\.[A-Za-z0-9][A-Za-z0-9_-]*$/.test(pathPart);
-  if (!looksLocal) return null;
-
-  return { rel: resolveRelativePath('', pathPart), abs: null, ...line };
-}
-
 // Threshold for collapsing tool calls — any tool call (≥1) renders inside a collapsible header,
 // so special operation entries (AskUserQuestion / FileDiff) on the header are always reachable.
 const TOOL_CALLS_COLLAPSE_THRESHOLD = 0;
@@ -418,17 +339,12 @@ const TextPartRow = memo(function TextPartRow({
      * been cwd-bound, and it's the same modal the tool-call doc chips open, so
      * a linked file and a touched file preview identically.
      *
-     * Gated to the extensions that stack actually renders (markdown, txt, images,
-     * and csv/tsv as a parsed table). `.html` is excluded
-     * even though HtmlPreviewModal would display it: `/apps/local` injects
-     * `window.cockpit` (full shell access) into an un-sandboxed iframe, so
-     * previewing an out-of-project page straight off an AI reply link would run
-     * it — a privilege the user never granted. See CLAUDE.md's HTML Apps
-     * Runtime notes; every other entry into that frame is an explicit gesture
-     * on a file the user chose.
+     * Any extension can be tried: the reader rejects binary and oversized
+     * files. Linked HTML uses the source viewer; executing an HTML page is a
+     * separate gesture on the tool-call file button.
      */
     const openOutsideProject = (abs: string) => {
-      if (!onPreviewFile || !(isMarkdownFile(abs) || isPlainTextFile(abs) || isImageFile(abs) || isCsvFile(abs))) {
+      if (!onPreviewFile) {
         toast(t('toast.fileOutsideProject'), 'error');
         return;
       }
@@ -843,9 +759,8 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     [message.toolCalls]
   );
 
-  // Extract deduplicated previewable paths (.md / .txt / .html / .htm / .csv / .tsv /
-  // images) from
-  // Read/Edit/Write tool calls. Single-click opens an in-modal preview.
+  // Deduplicate file paths from Read/Edit/Write. The reader, rather than a
+  // suffix allowlist, decides whether a file can be displayed.
   const docFiles = useMemo(() => {
     if (!message.toolCalls) return [];
     const seen = new Set<string>();
@@ -853,7 +768,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     for (const tc of message.toolCalls) {
       if (tc.name === 'Read' || tc.name === 'Edit' || tc.name === 'Write') {
         const fp = (tc.input as { file_path?: string }).file_path;
-        if (fp && (isMarkdownFile(fp) || isPlainTextFile(fp) || isHtmlFile(fp) || isImageFile(fp) || isCsvFile(fp)) && !seen.has(fp)) {
+        if (fp && !seen.has(fp)) {
           seen.add(fp);
           result.push(fp);
         }
@@ -881,21 +796,30 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     return result;
   }, [message.toolCalls]);
 
-  const [previewFile, setPreviewFile] = useState<string | null>(null);
-  const [previewContent, setPreviewContent] = useState<string | null>(null);
+  const [previewRequest, setPreviewRequest] = useState<FilePreviewRequest | null>(null);
+  const previewFile = previewRequest?.path ?? null;
+  const previewKind = previewRequest ? getFilePreviewKind(previewRequest) : null;
+  const [loadedPreview, setLoadedPreview] = useState<{ path: string; content: string } | null>(null);
+  const previewContent = loadedPreview?.path === previewFile ? loadedPreview.content : null;
+  const openLinkedFilePreview = useCallback((path: string) => {
+    setPreviewRequest({ path, source: 'link' });
+  }, []);
+  const closeFilePreview = useCallback(() => setPreviewRequest(null), []);
 
   // Fetch content when a text document is selected. Images are served
   // as raw bytes via <img src>, so they skip this text-content fetch.
   useEffect(() => {
-    if (!previewFile || isImageFile(previewFile)) { queueMicrotask(() => setPreviewContent(null)); return; }
+    if (!previewFile || isImageFile(previewFile)) { queueMicrotask(() => setLoadedPreview(null)); return; }
     let cancelled = false;
     BrowserRuntime.runPromiseExit(readFileForPreview(previewFile)).then((exit) => {
       if (cancelled) return;
       if (exit._tag === 'Success' && exit.value.content !== undefined) {
-        setPreviewContent(exit.value.content);
+        setLoadedPreview({ path: previewFile, content: exit.value.content });
       } else {
-        toast(t('toast.readFileFailed'), 'error');
-        setPreviewFile(null);
+        const failure = exit._tag === 'Failure' ? Cause.failureOption(exit.cause) : Option.none();
+        const detail = Option.isSome(failure) ? failure.value.message : '';
+        toast(detail ? `${t('toast.readFileFailed')}: ${detail}` : t('toast.readFileFailed'), 'error');
+        setPreviewRequest(null);
       }
     });
     return () => { cancelled = true; };
@@ -1142,8 +1066,8 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                     isUser={isUser}
                     isStreaming={!!message.isStreaming && i === textParts.length - 1}
                     onOpenFileLink={onOpenFileLink}
-                    // Plain setState — referentially stable, so TextPartRow's memo holds.
-                    onPreviewFile={setPreviewFile}
+                    // Stable callback, so TextPartRow's memo holds.
+                    onPreviewFile={openLinkedFilePreview}
                     cwd={cwd}
                   />
                 ))}
@@ -1245,7 +1169,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                     // Disabled rather than hidden: the file name is half the
                     // information in this row, only the preview is an overlay.
                     disabled={disableOverlays}
-                    onClick={() => setPreviewFile(fp)}
+                    onClick={() => setPreviewRequest({ path: fp, source: 'tool' })}
                     className="flex items-center gap-1.5 w-full text-left rounded px-1 py-0.5 group/md transition-colors enabled:hover:bg-hover disabled:cursor-default"
                   >
                     {isImageFile(fp) ? (
@@ -1524,37 +1448,37 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
 
       {/* File preview — image via raw <img src>, html in a same-origin iframe
           with the bash SDK (i.e. previewing it runs it), csv as a parsed table,
-          txt as literal text, md via the rich preview */}
-      {previewFile && isImageFile(previewFile) && (
-        <ImageFilePreviewModal key={`${cwd}:${sessionId}:${previewFile}`} filePath={previewFile} cwd={cwd} sessionId={sessionId} onClose={() => setPreviewFile(null)} />
+          other text as source, md via the rich preview */}
+      {previewFile && previewKind === 'image' && (
+        <ImageFilePreviewModal key={`${cwd}:${sessionId}:${previewFile}`} filePath={previewFile} cwd={cwd} sessionId={sessionId} onClose={closeFilePreview} />
       )}
-      {previewFile && !isImageFile(previewFile) && previewContent !== null && (
-        isHtmlFile(previewFile) ? (
+      {previewFile && previewKind !== 'image' && previewContent !== null && (
+        previewKind === 'html' ? (
           <HtmlPreviewModal
             filePath={previewFile}
             content={previewContent}
             cwd={cwd}
-            onClose={() => setPreviewFile(null)}
+            onClose={closeFilePreview}
             onContentSearch={onContentSearch}
           />
-        ) : isCsvFile(previewFile) ? (
+        ) : previewKind === 'csv' ? (
           <CsvPreviewModal
             filePath={previewFile}
             content={previewContent}
-            onClose={() => setPreviewFile(null)}
+            onClose={closeFilePreview}
           />
-        ) : isPlainTextFile(previewFile) ? (
-          <TextPreviewModal
-            filePath={previewFile}
-            content={previewContent}
-            onClose={() => setPreviewFile(null)}
-          />
-        ) : (
+        ) : previewKind === 'markdown' ? (
           <MdPreviewModal
             filePath={previewFile}
             content={previewContent}
             cwd={cwd || ''}
-            onClose={() => setPreviewFile(null)}
+            onClose={closeFilePreview}
+          />
+        ) : (
+          <TextPreviewModal
+            filePath={previewFile}
+            content={previewContent}
+            onClose={closeFilePreview}
           />
         )
       )}

@@ -1008,7 +1008,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
     selectFileWithSaveRef.current = handleSelectFileWithSave;
   }, [handleSelectFileWithSave]);
   const lastFileOpenNonceRef = useRef<number | null>(null);
-  const { setPreviewMarkdown, setShouldScrollToSelected } = fileTree;
+  const { setPreviewMarkdown, setPreviewHtml, setShouldScrollToSelected } = fileTree;
 
   useEffect(() => {
     if (!fileOpenRequest) return;
@@ -1021,10 +1021,11 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
     skipNextRecentAutoSelectRef.current = true;
     setEditorMode('code');
     setActiveTab('tree');
+    setPreviewHtml(false); // Chat links open source, even after an HTML preview.
     if (fileOpenRequest.lineNumber != null) setPreviewMarkdown(false);
     selectFileWithSaveRef.current(fileOpenRequest.path, fileOpenRequest.lineNumber);
     setShouldScrollToSelected(true);
-  }, [fileOpenRequest, fileTree.isLoadingFiles, setPreviewMarkdown, setShouldScrollToSelected]);
+  }, [fileOpenRequest, fileTree.isLoadingFiles, setPreviewMarkdown, setPreviewHtml, setShouldScrollToSelected]);
 
   // ========== Code Map header slots (shared by the plain and diff variants) ==========
   // Both map variants take over the whole right panel, so their header is the
@@ -1101,9 +1102,10 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
   const [mdLinkAnchor, setMdLinkAnchor] = useState<string | null>(null);
 
   // Open a local document in-place and highlight it in the tree. Markdown
-  // uses the rich preview and optional heading anchor; TXT falls through to CodeViewer.
+  // uses the rich preview and optional heading anchor; other text uses CodeViewer.
   const handleOpenLocalFileLink = useCallback((targetRel: string, anchor: string | null) => {
     fileTree.setPreviewMarkdown(true);     // defensive — ensure in-place preview
+    fileTree.setPreviewHtml(false);        // a document link opens HTML as source
     locateInTree(targetRel);               // load + select + expand + scroll → tree highlight
     setMdLinkAnchor(anchor);
     if (anchor) {

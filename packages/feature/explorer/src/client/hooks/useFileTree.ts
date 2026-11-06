@@ -356,13 +356,6 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
             mtime: s.mtimeMs,
             ...(s.isSymlink ? { isSymlink: true, symlinkTarget: s.symlinkTarget } : {}),
           } as FileContent;
-        case 'binary':
-          return {
-            type: 'binary',
-            message: 'Cannot preview binary file',
-            size: s.size,
-            mtime: s.mtimeMs,
-          } as FileContent;
         case 'too-large':
           return {
             type: 'error',
@@ -370,6 +363,7 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
             size: s.size,
             mtime: s.mtimeMs,
           } as FileContent;
+        case 'binary': // Extension hints do not veto readable text.
         case 'text':
         default: {
           const text = yield* fetchFileText(cwd, filePath);

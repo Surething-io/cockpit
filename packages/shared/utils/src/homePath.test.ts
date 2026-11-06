@@ -5,6 +5,8 @@ import {
   toFileViewerUrl,
   fromLocalAppUrl,
   isRootedPath,
+  toLocalPreviewUrl,
+  isFileViewerPath,
 } from "./htmlBashSdk"
 
 const HOME = "/Users/me"
@@ -127,5 +129,22 @@ describe("paths copied from preview titles", () => {
     const file = "/Users/me/report\u200e.txt"
     const url = toFileViewerUrl(file, PROJECT)
     expect(new URL(url, "http://localhost").searchParams.get("file")).toBe(file)
+  })
+})
+
+describe("explicit local browser previews", () => {
+  it.each(["/tmp/review.APElEH", "/tmp/README", "/tmp/code.ts"])("routes %s through the document viewer", (file) => {
+    const url = new URL(toLocalPreviewUrl(file, PROJECT), "http://localhost")
+    expect(url.pathname).toBe("/apps/builtin/file-viewer/index.html")
+    expect(url.searchParams.get("file")).toBe(file)
+  })
+
+  it("preserves explicit HTML pages and Console command detection", () => {
+    expect(toLocalPreviewUrl("app.html", PROJECT)).toBe(toLocalAppUrl("app.html", PROJECT))
+    expect(isFileViewerPath("git status")).toBe(false)
+    expect(isFileViewerPath("npm run dev")).toBe(false)
+    expect(isFileViewerPath("/usr/bin/env")).toBe(false)
+    expect(isFileViewerPath("/tmp/review.APElEH")).toBe(false)
+    expect(isFileViewerPath("notes.txt")).toBe(true)
   })
 })

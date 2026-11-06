@@ -26,7 +26,7 @@ function renderViewer(path, readState) {
   return renderToStaticMarkup(root);
 }
 
-describe('TXT file preview', () => {
+describe('text file preview', () => {
   it('routes a Console TXT path to a literal text view, preserving markup and whitespace', () => {
     const path = '/project/notes/review instructions.TXT';
     const content = '# Heading\n  **literal**\n<script>alert(1)</script>\n';
@@ -40,6 +40,11 @@ describe('TXT file preview', () => {
       .toBe('<pre class="text-view"></pre>');
   });
 
+  it.each(['/tmp/cockpit-codex-review.APElEH', '/tmp/README', '/tmp/code.ts', '/tmp/source.html'])('shows %s as literal text', (path) => {
+    expect(renderViewer(path, { loading: false, data: '<h1>literal</h1>', error: null }))
+      .toBe('<pre class="text-view">&lt;h1&gt;literal&lt;/h1&gt;</pre>');
+  });
+
   it('surfaces a read failure instead of presenting an empty document', () => {
     expect(renderViewer('missing.txt', { loading: false, data: null, error: 'No such file' }))
       .toContain('file-viewer: /project/missing.txt\n\nNo such file');
@@ -47,5 +52,18 @@ describe('TXT file preview', () => {
 
   it('keeps HTML outside the document viewer routing', () => {
     expect(isFileViewerPath('/project/unreviewed.html')).toBe(false);
+  });
+
+  it.each(['README', 'guide.md', 'table.csv', 'data.json', 'picture.png', 'document.pdf'])('resolves ~/ paths before dispatching %s', (name) => {
+    const context = vm.createContext({
+      React: { ...React, useEffect() {} },
+      ReactDOM: { createRoot: () => ({ render() {} }) },
+      document: { getElementById: () => null },
+      location: { search: '?file=' + encodeURIComponent('~/notes/' + name) },
+      URLSearchParams,
+      cockpit: { cwd: '/resolved/home/notes' },
+    });
+    vm.runInContext(code + '\nglobalThis.selectedView = App();', context);
+    expect(context.selectedView.props.file).toBe('/resolved/home/notes/' + name);
   });
 });

@@ -237,10 +237,6 @@ export function isMarkdownFile(filePath: string): boolean {
   return filePath.toLowerCase().endsWith('.md');
 }
 
-export function isPlainTextFile(filePath: string): boolean {
-  return filePath.toLowerCase().endsWith('.txt');
-}
-
 export function isHtmlFile(filePath: string): boolean {
   const lower = filePath.toLowerCase();
   return lower.endsWith('.html') || lower.endsWith('.htm');

@@ -965,7 +965,8 @@ export const FILE_VIEWER_CHIPS: readonly string[] = FILE_VIEWER_EXT_GROUPS.map(
   (g) => g.chip
 )
 
-/** True for a local file path the console routes to the file-viewer app. */
+/** Known file shortcuts for Console input auto-detection. Explicit browser
+ *  opens use toLocalPreviewUrl, which also handles unknown extensions. */
 export function isFileViewerPath(filePath: string): boolean {
   return FILE_VIEWER_EXT_RE.test(filePath.trim())
 }
@@ -1005,6 +1006,15 @@ export function toFileViewerUrl(filePath: string, projectRoot?: string): string 
     "file-viewer/index.html?file=" +
     encodeURIComponent(abs.replace(/\\/g, "/"))
   )
+}
+
+/** A local path explicitly opened in a browser bubble. HTML remains an
+ *  executable page; all other files go through the document viewer. This must
+ *  not be used to decide whether arbitrary Console input is a shell command. */
+export function toLocalPreviewUrl(filePath: string, projectRoot?: string): string {
+  return /\.html?$/i.test(trimPreviewPath(filePath))
+    ? toLocalAppUrl(filePath, projectRoot)
+    : toFileViewerUrl(filePath, projectRoot)
 }
 
 /**

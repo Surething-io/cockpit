@@ -180,11 +180,11 @@ export function classify(filePathOrExt: string, size: number): FileCategory {
  * Only meaningful for text routes; image/binary routes don't need this.
  */
 export function isBinaryContent(content: string): boolean {
+  if (content.includes('\0')) return true;
   let nonPrintable = 0;
   const sampleSize = Math.min(content.length, 1000);
   for (let i = 0; i < sampleSize; i++) {
     const code = content.charCodeAt(i);
-    if (code === 0) return true;
     if (code < 32 && code !== 9 && code !== 10 && code !== 13) {
       nonPrintable++;
     }
@@ -198,6 +198,7 @@ export interface FileStatInfo {
   size: number;
   mtimeMs: number;
   isDirectory: boolean;
+  isFile: boolean;
   isSymlink: boolean;
   symlinkTarget?: string;
 }
@@ -224,6 +225,7 @@ export async function statWithSymlink(fullPath: string): Promise<FileStatInfo> {
     size: s.size,
     mtimeMs: s.mtimeMs,
     isDirectory: s.isDirectory(),
+    isFile: s.isFile(),
     isSymlink,
     symlinkTarget,
   };

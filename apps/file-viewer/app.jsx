@@ -46,7 +46,46 @@ async function bash(command) {
   return res.stdout;
 }
 
-const readText = (absPath) => bash('cat -- ' + sh(absPath));
+// Use only the public bash SDK. Bound the read itself as well as the initial
+// stat, so a growing file cannot bypass the text preview's 10 MiB limit.
+const READ_TEXT_NODE = String.raw`
+const fs = require('node:fs');
+let fd;
+try {
+  if (!fs.statSync(process.argv[1]).isFile()) throw new Error('Not a regular file');
+  fd = fs.openSync(process.argv[1], 'r');
+  const stat = fs.fstatSync(fd);
+  const limit = 10 * 1024 * 1024;
+  if (!stat.isFile()) throw new Error('Not a regular file');
+  if (stat.size > limit) throw new Error('File too large (over 10MB)');
+  const bytes = Buffer.alloc(limit + 1);
+  let size = 0;
+  while (size < bytes.length) {
+    const count = fs.readSync(fd, bytes, size, bytes.length - size, null);
+    if (!count) break;
+    size += count;
+  }
+  if (size > limit) throw new Error('File too large (over 10MB)');
+  const text = bytes.subarray(0, size).toString('utf8');
+  const sample = text.slice(0, 1000);
+  let controls = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const code = sample.charCodeAt(i);
+    if (code < 32 && code !== 9 && code !== 10 && code !== 13) controls++;
+  }
+  if (text.includes('\0') || (sample.length && controls / sample.length > 0.1)) {
+    throw new Error('File appears to be binary');
+  }
+  process.stdout.write(text);
+} catch (error) {
+  process.stderr.write(error.message + '\n');
+  process.exitCode = 1;
+} finally {
+  if (fd !== undefined) fs.closeSync(fd);
+}
+`;
+
+const readText = (absPath) => bash('node -e ' + sh(READ_TEXT_NODE) + ' -- ' + sh(absPath));
 
 const fileSize = async (absPath) => {
   const n = parseInt((await bash('wc -c < ' + sh(absPath))).trim(), 10);
@@ -56,6 +95,7 @@ const fileSize = async (absPath) => {
 const IMAGE_MIME = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
   gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+  bmp: 'image/bmp', ico: 'image/x-icon', avif: 'image/avif',
 };
 
 /** Read a binary file as a data URL, guarding against oversized payloads. */
@@ -82,6 +122,15 @@ const extOf = (p) => {
 };
 const dirOf = (p) => p.replace(/\\/g, '/').replace(/\/[^/]*$/, '') || '/';
 const baseOf = (p) => p.split(/[/\\]/).pop();
+
+/** The public SDK cwd is already the resolved directory of ?file, including
+ * server-side home expansion. Use it before dispatch so every viewer branch
+ * receives the same absolute path without exposing a privileged endpoint. */
+function resolveViewerPath(file) {
+  if (!file || !/^~(?=$|[/\\])/.test(file)) return file;
+  const name = baseOf(file);
+  return cockpit.cwd.replace(/[/\\]+$/, '') + (name && name !== '~' ? '/' + name : '');
+}
 
 /**
  * Lazily load a script (+ optional css) once; resolves when ready.
@@ -471,10 +520,10 @@ function useLang() {
 
 // ----------------------------------------------------------------------- app
 
-const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'];
+const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif'];
 
 function App() {
-  const file = new URLSearchParams(location.search).get('file');
+  const file = resolveViewerPath(new URLSearchParams(location.search).get('file'));
   useEffect(() => {
     if (file) document.title = baseOf(file) || 'File Viewer';
   }, [file]);
@@ -484,12 +533,11 @@ function App() {
   }
   const ext = extOf(file);
   if (ext === 'md') return <MarkdownView file={file} />;
-  if (ext === 'txt') return <TextView file={file} />;
   if (ext === 'json') return <JsonView file={file} />;
   if (ext === 'pdf') return <PdfView file={file} />;
   if (ext === 'csv' || ext === 'tsv') return <CsvView file={file} />;
   if (IMAGE_EXTS.indexOf(ext) >= 0) return <ImageView file={file} />;
-  return <Status kind="error">{'file-viewer: unsupported file type .' + ext + '\n' + file}</Status>;
+  return <TextView file={file} />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);

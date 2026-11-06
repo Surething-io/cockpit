@@ -116,11 +116,13 @@ export const handleBash = (
       // it report the failure back to the page.
       children.set(id, child)
 
-      child.stdout?.on("data", (d: Buffer) => {
-        Effect.runFork(conn.send({ type: "stdout", id, data: d.toString() }))
+      child.stdout?.setEncoding("utf8")
+      child.stderr?.setEncoding("utf8")
+      child.stdout?.on("data", (data: string) => {
+        Effect.runFork(conn.send({ type: "stdout", id, data }))
       })
-      child.stderr?.on("data", (d: Buffer) => {
-        Effect.runFork(conn.send({ type: "stderr", id, data: d.toString() }))
+      child.stderr?.on("data", (data: string) => {
+        Effect.runFork(conn.send({ type: "stderr", id, data }))
       })
       child.on("close", (code: number | null) => {
         if (children.get(id) === child) children.delete(id)

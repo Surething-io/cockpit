@@ -484,7 +484,7 @@ export const loadOllamaModelsWithAutoStart = (
   })
 
 // ─────────────────────────────────────────────────────────
-// /api/file (read content for markdown preview)
+// /api/file (read preview content and preserve actionable read errors)
 // ─────────────────────────────────────────────────────────
 
 export interface FileReadResponse {
@@ -495,7 +495,18 @@ export interface FileReadResponse {
 export const readFileForPreview = (
   path: string
 ): Effect.Effect<FileReadResponse, AppError> =>
-  httpJson(`/api/file?path=${encodeURIComponent(path)}`)
+  Effect.tryPromise({
+    try: async () => {
+      const response = await fetch(`/api/file?path=${encodeURIComponent(path)}`)
+      const data = await response.json() as FileReadResponse
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
+      return data
+    },
+    catch: (cause) => new AppError({
+      message: cause instanceof Error ? cause.message : 'Failed to read file',
+      cause,
+    }),
+  })
 
 // ─────────────────────────────────────────────────────────
 // /api/claude-stats (token usage)

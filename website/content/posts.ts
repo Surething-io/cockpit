@@ -32,6 +32,201 @@ export interface Post {
 
 export const posts: Post[] = [
   {
+    slug: 'pair-programming-partner',
+    date: '2026-11-06',
+    keywords: [
+      'AI pair programming',
+      'programming partner',
+      'contextual coding skill',
+      'software design',
+      'code review',
+      'AI 结对编程',
+      '编程伙伴',
+      '代码设计',
+      'OpenCockpit',
+    ],
+    content: {
+      en: {
+        title: '/pair: Your Programming Partner, Anytime',
+        description:
+          'Use /pair throughout a coding conversation: explore code, discuss design, assess reviews, and apply agreed changes with evidence and a clear scope.',
+        readingTime: '4 min read',
+        body: `Halfway through a feature, you want another look at a responsibility boundary. Later, you want feedback on the code taking shape. After review, you need to decide which findings justify another change.
+
+In OpenCockpit, you can bring [\`/pair\`](/en/docs/agent/skills/) into any of those moments:
+
+\`\`\`text
+/pair Take a look
+\`\`\`
+
+The current conversation supplies the question. Pair uses the relevant code and constraints to give a judgement, explain the evidence, and suggest what to do next. When you explicitly ask it to apply an agreed approach, it implements and verifies within that scope.
+
+Here is an illustrative conversation about adding CSV export to an orders page.
+
+## Start with the code you have
+
+\`\`\`text
+We need CSV export for the orders page, using the current filters.
+/pair Take a look at how this part of the project works.
+\`\`\`
+
+At this point, the useful work is exploration. Pair should locate how the page sends filters, where the server selects orders, and which layer enforces access. The answer should point to the relevant files and distinguish what it found from what still needs checking.
+
+That gives the next decision a concrete basis. If there is already an order-query service, its behavior and callers matter before adding another path to retrieve the same data.
+
+## Discuss the design where the decision arises
+
+\`\`\`text
+Should CSV formatting live in the route or in the order service?
+\`\`\`
+
+The conversation has moved to design. Pair can reason about responsibilities using the code just explored: the existing query service might own order selection, a formatter might own CSV encoding, and the route might own the HTTP response.
+
+The details depend on the project. Does the query service apply authorization itself, or does its caller? Does it return one page or the entire matching result? A recommendation needs to keep those guarantees visible. Reusing a function is useful only when its meaning fits the export.
+
+You can continue that discussion without selecting a separate design mode or preparing a formal document.
+
+## Look at code while it is taking shape
+
+Suppose you start implementing the agreed approach, then ask:
+
+\`\`\`text
+/pair Take a look at whether this implementation fits what we discussed.
+\`\`\`
+
+Pair now has implementation work to assess. It can check whether filters reach the query correctly, whether the response includes all intended rows, and whether CSV fields containing commas, quotes, or newlines are encoded properly. It can also assess names, function boundaries, and whether a new abstraction earns its place.
+
+The explanation should connect each suggested adjustment to behavior or maintainability. A finding such as “the export only includes the first page” has a specific consequence. An extra exporter framework needs a separate reason to belong in this change.
+
+A request to take a look asks for advice. It leaves you room to discuss the recommendation before authorizing edits.
+
+## Assess review findings before adding work
+
+Imagine a reviewer raises two points: the export drops the current filters, and the formatter could become a reusable framework for future formats.
+
+\`\`\`text
+/pair Which of these findings need fixing for this feature?
+\`\`\`
+
+Pair should check the claims against the implementation and the agreed behavior. Dropped filters would obstruct the requested export. A framework proposal needs evidence that the current work requires it. Either claim may need more investigation before a recommendation is justified.
+
+This is a useful place to keep scope explicit. Inspecting a nearby issue gives you information; deciding to include it in the work still requires a reason tied to the outcome.
+
+## Apply the agreed change
+
+\`\`\`text
+Fix the filter handling using the approach we discussed,
+keep the formatter as it is, and verify the export.
+\`\`\`
+
+That authorizes implementation within the stated scope. Pair should carry it through and report what it actually checked: for example, whether different filters select the expected records and whether existing access restrictions still hold. An untested browser download should remain an explicit verification gap.
+
+Goals, constraints, and decisions already present in the conversation remain relevant across these turns. You can ask follow-up questions naturally and use \`/pair\` again when you want its guidance. If the topic changes or a reference is unclear, the target may need to be re-established.
+
+## Bring it into the conversation you already have
+
+Pair is a built-in Skill. Its entry instructions guide the AI toward relevant material for exploration, planning, design, coding, review, verification, and explanation. The question determines which guidance is useful; there is no required sequence to complete.
+
+Try it at the next decision: ask it to inspect an approach, explain a tradeoff, or assess a review. Once you agree on a change, say what to apply and what to preserve.
+
+See the [Skills documentation](/en/docs/agent/skills/) for the invocation rules and other built-in Skills.
+
+---
+
+**Try it:** \`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [Try Online](/try)`,
+      },
+      zh: {
+        title: '/pair：随时一起看代码的编程伙伴',
+        description:
+          '在连续的编程对话中使用 /pair：探索代码、讨论设计、检查实现、判断评审意见，再按约定范围实施和验证。用一个 CSV 导出示例看看如何协作。',
+        readingTime: '阅读约 4 分钟',
+        body: `做功能做到一半，想找人看看职责划分是否合适。代码写出来了，想检查实现有没有偏离刚才的讨论。收到评审意见，又需要判断哪些问题值得继续修改。
+
+在 OpenCockpit 里，这些时候都可以叫上 [\`/pair\`](/zh/docs/agent/skills/)：
+
+\`\`\`text
+/pair 看看
+\`\`\`
+
+当前对话提供讨论对象，Pair 结合相关代码与约束给出判断，说明依据和下一步。明确要求应用已经讨论的方案时，它就在约定范围内实施并验证。
+
+下面用一段假设的对话，看看如何一起为订单页面增加 CSV 导出。
+
+## 从现有代码开始
+
+\`\`\`text
+订单页面需要增加 CSV 导出，沿用当前筛选条件。
+/pair 看看项目里这部分是怎么工作的。
+\`\`\`
+
+这时需要的是探索。Pair 应该找到页面如何传递筛选条件、服务端在哪里查询订单、哪一层检查访问权限。回答要指向相关文件，区分已经查到的行为和尚待核实的部分。
+
+接下来的设计因此有了依据。如果项目里已经有订单查询服务，在增加另一条数据获取路径之前，需要先了解它的行为和调用方。
+
+## 在需要决策的地方讨论设计
+
+\`\`\`text
+CSV 格式化应该放在路由里，还是订单服务里？
+\`\`\`
+
+话题已经进入设计。Pair 可以结合刚才读到的代码判断职责：现有查询服务负责选择订单，格式化函数负责 CSV 编码，路由负责 HTTP 响应。
+
+具体怎么划分还要看项目。查询服务自己检查权限，还是依赖调用方？返回的是一页数据，还是全部匹配结果？推荐方案时，需要说明这些保证由谁承接。复用现有函数，也要确认它的语义适合导出。
+
+你可以顺着对话继续讨论，无需另外选择设计模式或先准备正式文档。
+
+## 编码过程中也能一起看
+
+假设你按讨论的方案写了一部分代码，再问：
+
+\`\`\`text
+/pair 看看这个实现是否符合刚才讨论的方案。
+\`\`\`
+
+这次有了具体实现，Pair 可以检查筛选条件是否正确传到查询、导出是否覆盖预期记录，以及含逗号、引号、换行的字段是否正确编码。命名、函数边界、新增抽象是否值得，也都可以一起讨论。
+
+建议需要关联到行为或维护成本。“导出只包含第一页”有明确的后果；为了未来格式新增一套导出框架，则需要另外说明为什么当前改动需要它。
+
+“看看”请求的是建议，你可以先讨论其中的取舍，再决定是否修改。
+
+## 收到评审后，先判断再加工作
+
+假设评审提出两点：导出丢失了当前筛选条件，以及格式化函数可以升级为支持未来多种格式的框架。
+
+\`\`\`text
+/pair 这些意见里，哪些是这个功能需要修的？
+\`\`\`
+
+Pair 应该结合实现和已确认行为核实这些意见。丢失筛选条件会妨碍本次导出需求；引入框架则需要证明当前工作确实需要。任何一条意见，都可能需要进一步调查才能下结论。
+
+这里很适合把范围说清楚。检查附近的问题可以增加了解；要把它纳入修改，仍然需要说明它与预期结果的关系。
+
+## 决定之后，直接实施
+
+\`\`\`text
+按刚才的方案修复筛选条件传递，
+保留现有格式化函数，并验证导出。
+\`\`\`
+
+这就授权了指定范围内的实现。Pair 应该完成修改，并报告实际验证了什么，例如不同筛选条件能否选出预期记录、原有访问限制是否仍然有效。没有检查的浏览器下载行为，也应明确列为验证缺口。
+
+这些轮次里，对话已有的目标、约束和决策可以继续作为依据。你可以自然追问，也可以在需要时再次使用 \`/pair\`。话题改变或指代不清时，再重新明确讨论对象。
+
+## 加入你正在进行的对话
+
+Pair 是一个内置 Skill。入口指引 AI 按需读取探索、规划、设计、编码、评审、验证和讲解的相关指导。当前问题决定用哪些内容，没有必须走完的固定流程。
+
+下次遇到需要判断的地方，就可以让它看方案、讲清取舍或核实评审意见。决定修改后，说明应用什么、保留什么。
+
+调用规则和其他内置 Skills 见 [Skills 使用文档](/zh/docs/agent/skills/)。
+
+---
+
+**试一下：** \`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [在线体验](/try)`,
+      },
+    },
+  },
+  {
     slug: 'three-ways-to-use-dl',
     date: '2026-10-14',
     keywords: [

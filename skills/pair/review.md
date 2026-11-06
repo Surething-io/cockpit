@@ -12,7 +12,7 @@ Assess correctness, project conventions, relevant performance effects, test cove
 
 - **Reuse and meaning:** check whether new code duplicates an existing capability and whether that capability's semantics fit. Similar code alone is not a mandate to generalize different rules.
 - **State and boundaries:** look for redundant or derivable state, illegal combinations, parameter sprawl, copy-paste knowledge and internal details leaking across owners. Investigate causes rather than flagging shapes mechanically.
-- **Efficiency:** examine relevant repeated work, duplicate IO, missed independent concurrency, blocking hot-path work, no-op updates, unbounded retention and resource cleanup. Establish when the path runs and what the cost affects; avoid an unrelated optimization project.
+- **Efficiency:** examine relevant repeated work, duplicate IO, missed independent concurrency, blocking hot-path work, no-op updates, unbounded retention and resource cleanup. For data access, consider per-item queries, unbounded result sets and whether query plans or indexes support the actual workload. Establish when the path runs and what the cost affects; avoid an unrelated optimization project.
 - **Expression:** keep names and abstraction levels coherent; remove needless wrappers or comments when they obscure the actual work, while retaining non-obvious rationale, constraints and invariants.
 
 For a claimed defect, identify its trigger, location, expected behavior and consequence. Check upstream validation, downstream recovery, intended design and other counterevidence before reporting it as established. Distinguish a concrete problem, a question still to investigate and an independent improvement. Do not force findings, numerical confidence scores or a fixed report length.
@@ -20,6 +20,8 @@ For a claimed defect, identify its trigger, location, expected behavior and cons
 ## Assess incoming feedback independently
 
 Check the reviewer's premises and the current code. Explain whether the finding is supported, what it affects and whether it is necessary for the current goal. A true pre-existing issue can block the goal; a newly noticed issue can be independent. Neither age nor reviewer confidence settles that question. Do not treat accepting a review report as authorization to implement all of its suggestions.
+
+When prioritization or technical-debt assessment is requested, compare observed user or development impact, the likelihood and consequence of leaving the issue, repair effort, dependencies and migration risk. Separate work necessary for the current outcome from independent improvements. Explain the ordering and uncertainty; do not turn labels such as duplication, low coverage or an old dependency into automatic defects, or use an unsupported scoring formula to imply precision.
 
 ## Consolidate when authorized
 

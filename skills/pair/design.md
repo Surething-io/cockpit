@@ -6,6 +6,8 @@ Use this guide when choosing domain concepts, data and state models, responsibil
 
 Identify the intended outcome and necessary guarantees, then inspect the existing implementation and affected callers. Use a concrete scenario to connect the proposed model to observable behavior. Distinguish required behavior from an implementation assumption or a hypothetical future extension.
 
+Identify operational constraints that could change the decision: expected data volume and concurrency, latency, availability, recovery needs, cost, delivery time and the team's ability to maintain the solution. Use observed baselines or explicit requirements where available; keep estimates and unknowns visible. A local feature need not acquire distributed-system requirements, caches or queues merely because those are common design topics.
+
 Consider existing functions, native capabilities and dependencies before designing a replacement. Verify semantic and boundary fit rather than choosing reuse from a similar name. Compare meaningful alternatives on correctness, ownership, compatibility and total change cost. A bounded repair or keeping the current design can be appropriate.
 
 ## Choose concepts, state and boundaries
@@ -41,5 +43,7 @@ Respect an explicitly chosen pattern or ordinary style preference. Raise an alte
 ## Deliver the design decision
 
 Explain the recommended model, responsibility boundaries and the concrete behavior it supports. Include material tradeoffs, applicability limits and unresolved evidence. Use a small example or diagram where relationships carry the decision; keep it consistent with the actual dependencies and guarantees.
+
+For consequential choices, explain what becomes easier, what becomes harder and which observed change in workload, requirements or operating conditions would justify revisiting the decision. Include migration and operational burden where relevant. Use the project's ADR format when a decision record is requested or required; an ordinary design discussion can stay in the conversation.
 
 A design recommendation is ready when necessary responsibilities have a supported owner and its conditions are clear. Use [Planning](planning.md) when sequencing work is itself a meaningful problem and [Coding](coding.md) when translating the chosen design into implementation. Do not add either as a mandatory ceremony for a local decision.

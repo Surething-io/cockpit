@@ -16,6 +16,12 @@ For runtime claims, reach the relevant real interface and compare output with ex
 
 Choose counterexamples from the actual risk: changed error paths, malformed or boundary inputs, repeated operations, concurrent state changes, interruption, stale persistence or adjacent unaffected behavior. Do not impose one probe per file or an exhaustive catalogue. Inspect mocks and substitutes for assumptions that bypass the boundary being claimed.
 
+## Choose a testing strategy when needed
+
+When asked how to test, or when existing coverage leaves a material risk unresolved, choose test layers by where a failure can occur. Unit tests can exercise domain rules and boundary values; integration tests can expose IO, persistence and component interactions; contract tests can protect producer-consumer expectations; end-to-end tests can check critical user flows across the assembled system. Combine layers when they cover different risks rather than duplicating the same assertion everywhere.
+
+Weigh confidence against feedback time, environment dependence, flakiness and maintenance cost. Keep setup representative and failures diagnosable. Prioritize business-critical behavior, authorization and data integrity where relevant; choose tests for a small script by its consequences, not its size. Coverage percentages or a prescribed testing pyramid do not establish adequate evidence. A requested test plan should connect important risks, cases, test layers and remaining gaps without imposing arbitrary targets.
+
 ## Exercise the relevant surface
 
 - **UI:** drive the affected user interaction and inspect the visible state and relevant errors. API calls alone do not establish that a button or navigation path works.

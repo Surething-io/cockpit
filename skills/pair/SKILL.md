@@ -1,6 +1,6 @@
 ---
 name: pair
-description: "A contextual programming partner for exploring code, designing solutions, writing code, planning work, reviewing changes, verifying behavior, and explaining decisions. Give evidence-based advice when asked to take a look; implement within the agreed scope when asked to apply or fix."
+description: "A contextual programming partner for exploring code, designing solutions, writing code and technical documentation, planning work, reviewing changes, verifying behavior, and explaining decisions. Give evidence-based advice when asked to take a look; implement within the agreed scope when asked to apply or fix."
 ---
 
 # Pair — Programming Partner
@@ -28,6 +28,7 @@ Choose by the current question and decision, not a keyword, file extension or ta
 | Assess changed code, another review's findings, or simplify affected code when authorized | [Review]({{COCKPIT_DIR}}/skills/pair/review.md) |
 | Assess a concrete security concern or conduct a requested security review | [Security review]({{COCKPIT_DIR}}/skills/pair/security-review.md) |
 | Establish whether a claim, feature or fix holds and what the evidence supports | [Verification]({{COCKPIT_DIR}}/skills/pair/verification.md) |
+| Write or maintain technical documentation for users, developers or operators | [Documentation]({{COCKPIT_DIR}}/skills/pair/documentation.md) |
 | Explain code or decisions, or help the user learn through meaningful collaboration | [Learning]({{COCKPIT_DIR}}/skills/pair/learning.md) |
 | Recover, summarize or hand off the current task without losing its constraints | [Context]({{COCKPIT_DIR}}/skills/pair/context.md) |
 

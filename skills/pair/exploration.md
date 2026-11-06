@@ -14,6 +14,8 @@ Separate the current implementation from comments, names, intended behavior and 
 
 Establish expected versus observed behavior before naming a cause. Trace the path that can produce the symptom and check relevant upstream guarantees and downstream handling. Distinguish an observed break from an explanation still to test. Seek evidence that differentiates plausible causes rather than accumulating speculative defensive patches.
 
+Use onset, affected users or inputs, recent code changes, configuration, dependency versions and environment differences to narrow plausible causes. Inspect exact errors and relevant logs where available. A recent change is a lead to test, not proof of causation; check whether it can produce the observed failure and what evidence would distinguish it from alternatives.
+
 When observation is needed, use the verification guide for the relevant interface. Use [Design](design.md) for modelling, responsibility or interface decisions, and [Planning](planning.md) for work sequencing and dependencies. Do not declare a timing problem from intermittency alone or change code merely to make a hypothesis look plausible.
 
 ## Deliver the useful understanding

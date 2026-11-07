@@ -102,7 +102,7 @@ const CODEX_MODELS: ReadonlyArray<{
   defaultReasoning: CodexReasoningEffort;
 }> = [
   // Model order and supported efforts mirror the Codex model catalog; Cockpit
-  // defaults Sol models to high and other GPT models to medium.
+  // defaults Sol and Astra models to high and other GPT models to medium.
   // Ultra enables automatic delegation and is encoded as an effort by Codex.
   // Luna does not support ultra.
   {
@@ -115,7 +115,7 @@ const CODEX_MODELS: ReadonlyArray<{
     id: 'gpt-6-astra',
     label: 'GPT-6 Astra',
     reasoning: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
-    defaultReasoning: 'medium',
+    defaultReasoning: 'high',
   },
   {
     id: 'gpt-6.1-terra',

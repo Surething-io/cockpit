@@ -20,6 +20,8 @@ const TOOL_NAMES: Record<string, string> = {
 
 /** Keeps ACP partial tool updates associated with their original call. */
 export class GrokEventAdapter {
+  constructor(private readonly nextId: () => string = randomUUID) {}
+
   private readonly tools = new Map<string, AcpObject>();
   private readonly completed = new Set<string>();
   private readonly background = new Map<string, { toolId: string; description: string }>();
@@ -110,7 +112,7 @@ export class GrokEventAdapter {
       return events;
     }
     if (kind === 'plan' && Array.isArray(update.entries)) {
-      const id = `grok-plan-${randomUUID()}`;
+      const id = `grok-plan-${this.nextId()}`;
       return [{ type: 'assistant', message: { content: [{ type: 'tool_use', id, name: 'TodoWrite', input: {
         todos: update.entries.map((entry) => ({ ...object(entry), activeForm: object(entry).content })),
       } }] } }, { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'Plan updated.' }] } }];

@@ -7,6 +7,7 @@ import { dirname, join, resolve } from 'path';
 import { Effect } from 'effect';
 import { isPiSessionPath } from '@cockpit/shared-utils';
 import { listPiChildren } from '../../effect/piSubagentSessionLive';
+import { readGrokSubagentTranscript } from '../../effect/grokSubagentTranscript';
 import { resolveSessionPath } from './session/sessionStore';
 import { findCodexSession } from '../../effect/transcriptIndexLive';
 import { handler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
@@ -309,6 +310,11 @@ export const POST = handler((req) =>
         return yield* Effect.fail(
           new ValidationError({ field: 'toolUseId', reason: 'invalid' })
         );
+      }
+      if (engine === 'grok') {
+        const transcript = yield* readGrokSubagentTranscript(cwd, sessionId, toolUseId, ifFingerprint);
+        if (!transcript) return yield* Effect.fail(new NotFoundError({ resource: 'subagent', id: toolUseId }));
+        return ok(transcript);
       }
       if (isPiSessionPath(sessionPath)) {
         if (childSessionId && !/^[A-Za-z0-9_-]+$/.test(childSessionId)) {

@@ -75,7 +75,7 @@ export function piMessage(message: Message, id: string, timestamp: string, cwd?:
     }
     return [];
   });
-  if (message.errorMessage) result.push({ ...base, type: 'assistant', message: { content: [{ type: 'text', text: `⚠️ ${message.errorMessage}` }] } });
+  if (message.errorMessage) result.push({ ...base, type: 'assistant', message: { errorMessage: message.errorMessage, content: [{ type: 'text', text: `⚠️ ${message.errorMessage}` }] } });
   if (!result.length) result.push({ ...base, type: 'assistant', message: { content: [] } });
   const last = result[result.length - 1];
   last.message = { ...last.message, model: message.model, usage: piUsage(message.usage) };

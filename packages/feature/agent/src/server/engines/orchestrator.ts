@@ -1,7 +1,7 @@
 import { updateGlobalState, getSessionTitle } from '../state/globalState';
 import {
   startRun, appendRun, rekeyRun, markRunIdle, isRunActive, setRunAbort, releaseRun, waitForWriter,
-  injectRun, setRunInjector,
+  getRunSnapshot, injectRun, setRunInjector,
 } from '../sessionRunHub';
 import { snapshotOnRunStart, snapshotOnRunEvent } from '../snapshot/hook';
 import { resolveCommandPrompt } from '../lib/slashCommands';
@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto';
 import type { DispatchParams, DispatchOutcome, RunCtx, RunEvent, EngineSpec } from './types';
 import { formatProviderError } from './shared/providerError';
 import { formatOutputStyleSection, resolveOutputStyleText } from '../lib/outputStyles';
+import { isRecoverySettlement } from '../../shared/recoveryCopy';
 
 /**
  * How long a new turn waits for a stopped turn's engine to exit before giving up with 409.
@@ -98,6 +99,7 @@ export async function dispatchChat(
   let currentKey = sessionId || runId;
   let actualSessionId: string | undefined = sessionId;
   let isClosed = false;
+  let hasRecoveryFailure = false;
 
   // #5 runId idempotency / #10 one-active: startRun is an atomic test-and-set — it returns false
   // if a turn is already live under currentKey. This is the single authoritative guard (the
@@ -128,7 +130,6 @@ export async function dispatchChat(
     return { ok: false, status: 409, error: 'run already active' };
   }
   setRunAbort(currentKey, () => {
-    isClosed = true;
     abort.abort();
   });
   if (cwd && sessionId) {
@@ -143,11 +144,14 @@ export async function dispatchChat(
     images,
     cwd: cwd || '',
     sessionId,
-    params: body,
+    params: { ...body, runId },
     outputStyle,
     signal: abort.signal,
     emit(event: RunEvent) {
       if (isClosed) return;
+      // Stop blocks model output while the writer still owns recovery settlement.
+      if (abort.signal.aborted && !isRecoverySettlement(event)) return;
+      if (event.type === 'error' && isRecoverySettlement(event)) hasRecoveryFailure = true;
       appendRun(currentKey, event);
       // Tool-call snapshots: observe every engine's tool_use/tool_result here —
       // the single choke point all providers flow through. Fire-and-forget.
@@ -177,6 +181,8 @@ export async function dispatchChat(
     try {
       await runAndTeardown();
     } finally {
+      // Fence even recovery callbacks before another run can acquire this key.
+      isClosed = true;
       // run() has returned (or thrown): the engine writes nothing more. Only now may the
       // next turn on this session start — see waitForWriter above.
       releaseRun(currentKey);
@@ -190,7 +196,7 @@ export async function dispatchChat(
       if (abort.signal.aborted) {
         // explicit stop: requestStop already emitted the terminal result + marked idle.
         isClosed = true;
-        markRunIdle(currentKey, 'idle');
+        markRunIdle(currentKey, hasRecoveryFailure ? 'error' : 'idle');
         return;
       }
       console.error(`[engine:${spec.name}] run error:`, error);
@@ -217,8 +223,8 @@ export async function dispatchChat(
       await updateGlobalState(cwd, actualSessionId, 'unread', title, undefined, spec.name).catch(() => {});
     }
     isClosed = true;
-    markRunIdle(currentKey, 'idle');
+    markRunIdle(currentKey, hasRecoveryFailure ? 'error' : 'idle');
   }
 
-  return { ok: true, runKey: currentKey, sessionId: actualSessionId ?? null };
+  return { ok: true, runKey: currentKey, sessionId: actualSessionId ?? null, startedAt: getRunSnapshot(currentKey)?.startedAt };
 }

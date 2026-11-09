@@ -24,10 +24,12 @@ import {
   parseCodexSubAgentActivity,
 } from './session/codexTools';
 import {
-  pageTurns,
   parseCodexTranscriptFile,
   parseTranscriptFile,
 } from './session/transcriptParsers';
+import { historyWindow } from '../../server/historyWindow';
+import { historyReadMarker, isSessionBusy } from '../../server/sessionRunHub';
+import type { HistoryReference } from '../../shared/historyReference';
 import { readLogicalTranscript } from '../../effect/logicalTranscript';
 
 export const runtime = 'nodejs';
@@ -61,6 +63,9 @@ interface SessionByPathBody {
    */
   fromTurnIndex?: number;
   ifFingerprint?: string;
+  expectedBeforeProof?: string;
+  expectedStartProof?: string;
+  target?: HistoryReference;
 }
 
 // Subagent meta sidecar (agent-<id>.meta.json next to agent-<id>.jsonl)
@@ -421,6 +426,8 @@ export const POST = handler((req) =>
     }
 
     const metadata = yield* readSessionTitle(cwd, sessionId, '', titleStore(engine));
+    const readMarker = historyReadMarker(sessionId);
+    const wasBusy = isSessionBusy(sessionId);
     const detail = yield* readLogicalTranscript(sessionPath, engine, (view) => Effect.gen(function* () {
       const fingerprint = `${view.fingerprint}:title-${metadata.titleRevision}`;
       if (ifFingerprint && ifFingerprint === fingerprint) return { notModified: true as const, fingerprint };
@@ -429,15 +436,17 @@ export const POST = handler((req) =>
         try: async () => {
           if (engine === 'codex') {
             const codex = await parseCodexTranscriptFile(source);
-            return { ...codex, ...pageTurns(codex.messages, { limit, beforeTurnIndex, fromTurnIndex }) };
+            return { ...codex, ...historyWindow(codex.messages, { limit, beforeTurnIndex, fromTurnIndex, expectedBeforeProof: body.expectedBeforeProof, expectedStartProof: body.expectedStartProof, target: body.target, coordinateEpoch: view.coordinateEpoch }) };
           }
-          return parseTranscriptFile(source, { limit, beforeTurnIndex, fromTurnIndex });
+          const parsed = await parseTranscriptFile(source);
+          return { ...parsed, ...historyWindow(parsed.messages, { limit, beforeTurnIndex, fromTurnIndex, expectedBeforeProof: body.expectedBeforeProof, expectedStartProof: body.expectedStartProof, target: body.target, coordinateEpoch: view.coordinateEpoch }) };
         },
         catch: (cause) => new AppError({ message: 'parseTranscriptFile failed', cause }),
       });
       return { notModified: false as const, fingerprint, parsed };
     }));
-    if (detail.notModified) return ok({ notModified: true, fingerprint: detail.fingerprint });
+    const stable = !wasBusy && !isSessionBusy(sessionId) && readMarker === historyReadMarker(sessionId);
+    if (detail.notModified) return ok({ notModified: true, fingerprint: detail.fingerprint, stable });
     const { parsed: parseResult, fingerprint } = detail;
 
     const { messages, title, bot, usage } = parseResult;
@@ -461,6 +470,9 @@ export const POST = handler((req) =>
       hasMore,
       startTurnIndex,
       fingerprint,
+      beforeProof: parseResult.beforeProof, replacesWindow: parseResult.replacesWindow,
+      stable,
+      targetStatus: parseResult.targetStatus, resolvedMessageId: parseResult.resolvedMessageId,
       // Authoritative engine for this session, resolved by file location across
       // all 7 engines. Clients use this to send on the session's native engine —
       // more reliable than the optional global-state engine field, which is only

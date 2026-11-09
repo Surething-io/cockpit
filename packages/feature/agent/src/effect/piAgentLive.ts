@@ -39,7 +39,7 @@ export const runPiAgent = (ctx: RunCtx, config: PiAgentConfig): Effect.Effect<vo
     const inputs = yield* makePiRunInput(ctx, (pending) => Effect.gen(function* () {
       const reason = ctx.signal.aborted ? 'the run was cancelled' : 'the run failed';
       const text = `Input did not complete because ${reason}:\n${pending.map((input) => input.text || '[image input]').join('\n')}`;
-      yield* Effect.sync(() => ctx.emit({ type: 'error', error: text }));
+      yield* Effect.sync(() => ctx.emit({ type: 'error', error: `Input did not complete because ${reason}.`, undeliveredInputs: pending }));
       if (sessionManager) yield* Effect.try({
         try: () => {
           const manager = sessionManager!;
@@ -108,7 +108,24 @@ export const runPiAgent = (ctx: RunCtx, config: PiAgentConfig): Effect.Effect<vo
     yield* sdk(() => session.bindExtensions({}));
     ctx.rekey(session.sessionManager.getSessionId());
     ctx.emit({ type: 'system', subtype: 'init', session_id: session.sessionManager.getSessionId() });
+    let currentInputId: string | undefined;
+    let awaitingIdentity: { inputId: string; message: unknown } | undefined;
+    const bindPersistedInput = () => {
+      const pending = awaitingIdentity;
+      if (!pending) return;
+      const entry = session.sessionManager.getBranch().findLast((entry) => entry.type === 'message' && entry.message === pending.message);
+      if (!entry) return;
+      Effect.runSync(inputs.delivered(pending.inputId));
+      ctx.emit({ type: 'system', subtype: 'input_binding', inputId: pending.inputId, sourceId: entry.id });
+      awaitingIdentity = undefined;
+    };
     yield* Effect.acquireRelease(Effect.sync(() => session.subscribe((event) => {
+      // message_end listeners precede appendMessage; the next event sees its native entry.
+      bindPersistedInput();
+      if (event.type === 'message_end' && event.message.role === 'user' && currentInputId) {
+        awaitingIdentity = { inputId: currentInputId, message: event.message };
+        currentInputId = undefined;
+      }
       for (const output of piRunEvents(event, cwd)) ctx.emit(output);
       if (event.type === 'message_end' && event.message.role === 'assistant') {
         const update = usage.record(event.message);
@@ -131,7 +148,9 @@ export const runPiAgent = (ctx: RunCtx, config: PiAgentConfig): Effect.Effect<vo
       }
       // Cockpit owns the only input queue. Each prompt starts against an idle Pi
       // session, including inputs accepted while Pi was emitting agent_settled.
-      yield* sdk(() => session.prompt(input.text ?? '', { images: piImages(input.images) }));
+      currentInputId = input.inputId;
+      if (input.inputId) ctx.emit({ type: 'system', subtype: 'input_started', inputId: input.inputId });
+      yield* sdk(() => session.prompt(input.text ?? '', { images: piImages(input.images) })).pipe(Effect.ensuring(Effect.sync(bindPersistedInput)));
       yield* sdk(() => session.waitForIdle());
       if (ctx.signal.aborted) return;
       // Pi may omit a failed recovery from model context. Read the native journal,

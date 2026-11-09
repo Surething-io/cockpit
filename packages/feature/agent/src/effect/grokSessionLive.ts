@@ -11,14 +11,16 @@ export function grokSessionPath(cwd: string, sessionId: string): string {
   return join(GROK_SESSIONS_DIR, encodePath(cwd), `${sessionId}.jsonl`);
 }
 
-export function appendGrokTranscript(cwd: string, sessionId: string, entry: AcpObject): Effect.Effect<void, FSError> {
+export function appendGrokTranscript(cwd: string, sessionId: string, entry: AcpObject): Effect.Effect<string, FSError> {
   return Effect.tryPromise({
     try: async () => {
       const dir = join(GROK_SESSIONS_DIR, encodePath(cwd));
       await mkdir(dir, { recursive: true });
+      const uuid = randomUUID();
       await appendFile(grokSessionPath(cwd, sessionId), `${JSON.stringify({
-        ...entry, uuid: randomUUID(), sessionId, cwd, timestamp: new Date().toISOString(),
+        ...entry, uuid, sessionId, cwd, timestamp: new Date().toISOString(),
       })}\n`, { mode: 0o600 });
+      return uuid;
     },
     catch: (cause) => new FSError({ path: GROK_SESSIONS_DIR, op: 'write', cause }),
   });

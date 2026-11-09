@@ -23,12 +23,13 @@ import { TokenUsageBar } from './TokenUsageBar';
 import { useComposerSlot } from './ComposerSlot';
 import { UserMessagesModal } from './UserMessagesModal';
 import { useChatContextOptional } from './ChatContext';
+import { useMessageNavigation } from './useMessageNavigation';
 import { useChatHistory } from './useChatHistory';
 import { useChatStream, NO_BG_TASKS } from './useChatStream';
 import { TaskStoreContext, createTaskStore } from './taskStore';
 import { MessageList, MessageListHandle } from './MessageList';
 import { ChatInput } from './ChatInput';
-import type { ChatMessage, TokenUsage, LiveOutputTokens, BackgroundTaskInfo, ImageInfo, ChatEngine, EngineModelId, ToolCallInfo, ClaudeModelId, ClaudeEffort, CodexModelId, CodexReasoningEffort } from './types';
+import type { TokenUsage, LiveOutputTokens, BackgroundTaskInfo, ImageInfo, ChatEngine, EngineModelId, ToolCallInfo, ClaudeModelId, ClaudeEffort, CodexModelId, CodexReasoningEffort } from './types';
 // In-package siblings (chat-only)
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { OllamaModelPicker } from './OllamaModelPicker';
@@ -52,14 +53,6 @@ import { useTranslation } from 'react-i18next';
 // Migrated from src/components/project/Chat.tsx.
 
 const HISTORY_RECONCILE_TURNS = 10;
-
-// Frames a user-message jump waits for its target bubble after paging in the
-// turns around it. requestAnimationFrame runs after the commit's layout effects,
-// so the first frame that renders the target is the first frame that can scroll
-// to it — the budget only has to cover how long React takes, and overshooting
-// costs nothing since the loop exits on the first hit.
-const JUMP_RENDER_FRAMES = 30;
-
 
 interface ChatProps {
   tabId?: string; // Tab ID, used to register with ChatContext
@@ -178,7 +171,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   const [draft, setDraft] = useState('');
   const [draftImages, setDraftImages] = useState<ImageInfo[]>([]);
   const chatContext = useChatContextOptional();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
@@ -233,17 +225,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     }
   }, [initialCwd, onTitleChange]);
 
-  // Reconcile-on-run-end: `liveSessionId` is derived below useChatStream, so the actual
-  // disk-reload closure is injected into this ref by an effect further down and invoked via
-  // a stable thunk. Lets the originator converge its live bubbles to canonical UUIDs when a
-  // run ends — symmetric with the viewer's onComplete reconcile.
-  const reconcileFromDiskRef = useRef<(() => void) | null>(null);
-
-  // History hook
-  // #10: whether useLiveStream is actively rendering a live run for this tab. Declared
-  // before useChatHistory so the initial history load can DEFER to the live stream — a viewer
-  // that joins mid-run (auto-created tab for a new session) must not also disk-load the
-  // in-flight turn, or it renders twice.
+  // Viewer status drives the input and progress indicators.
   const [liveRunning, setLiveRunning] = useState(false);
   const [viewerLiveOutputTokens, setViewerLiveOutputTokens] = useState<LiveOutputTokens | null>(null);
   const [viewerRunStartedAt, setViewerRunStartedAt] = useState<number | null>(null);
@@ -259,23 +241,35 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   // (see the engine resolution right below): a session reopened from a list arrives with no
   // engine at all, and every downstream `!engine` reads as claude.
   const {
+    messages,
+    recoveryCopies,
+    onRecoveryDeleted,
+    setMessages,
+    onLiveSnapshotStart,
+    onWriterIdle,
+    setRunMessages,
+    onRunAccepted,
+    onSendFailure,
+    onInputRejected,
+    onLiveRunEnd,
+    onSenderStart,
     isLoadingHistory,
     isLoadingMore,
     hasMoreHistory,
     loadMoreHistory,
     ensureTurnLoaded,
+    cancelTurnLoad,
     loadHistoryByCwdAndSessionId,
     loadedSessionId,
     loadedEngine,
     loadedModel,
     loadedBot,
-  } = useChatHistory(messages, setMessages, sessionId, {
+  } = useChatHistory(sessionId, {
     cwd: initialCwd,
     initialSessionId,
     onSessionId: setSessionId,
     onTitleChange,
     onTokenUsage: setHistoryTokenUsage,
-    liveRunningRef,
   });
 
   // Restore the session's engine; provider selection is only available at creation.
@@ -331,6 +325,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   }, [loadedSessionId, loadedModel, loadedEngine]);
   // Stream hook
   const {
+    drainingSubscriptions,
     isLoading,
     tokenUsage: streamTokenUsage,
     liveOutputTokens: streamLiveOutputTokens,
@@ -342,7 +337,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     handleSend: streamHandleSend,
     handleStop,
     injectMessage,
-  } = useChatStream(messages, setMessages, {
+  } = useChatStream(messages, setRunMessages, {
     sessionId,
     cwd: initialCwd,
     engine,
@@ -361,7 +356,12 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     grokReasoningEffort,
     onSessionId: setSessionId,
     onFetchTitle: fetchSessionTitle,
-    onRunComplete: () => reconcileFromDiskRef.current?.(),
+    onSendStart: onSenderStart,
+    onRunAccepted,
+    onSendFailure,
+    onInputRejected,
+    onRunEnd: onLiveRunEnd,
+    onRecoveryDeleted,
     taskStore,
   });
 
@@ -468,19 +468,19 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   // global-state broadcast — decides whether a run is live. This is what lets a refreshed
   // originator (or any tab) reliably resume an in-flight run.
   const liveViewerEnabled = isActive && !isLoading && !!liveSessionId;
-  useLiveStream(liveSessionId, setMessages, liveViewerEnabled, engine, {
+  useLiveStream(liveSessionId, setRunMessages, liveViewerEnabled, engine, {
     // Update the ref synchronously (not just via the effect on liveRunning) so the initial
     // history load, resolving moments later, reliably sees that the live stream owns this run.
+    onSnapshotStart: onLiveSnapshotStart,
+    onWriterIdle,
+
+    onRunEnd: onLiveRunEnd,
+    onRecoveryDeleted,
     onRunningChange: (r) => { liveRunningRef.current = r; setLiveRunning(r); },
     onLiveOutputTokens: setViewerLiveOutputTokens,
     onRunStartedAt: setViewerRunStartedAt,
     onBackgroundTasks: (tasks) => setViewerBackgroundTasks(tasks.length ? tasks : NO_BG_TASKS),
     taskStore,
-    onComplete: () => {
-      // Turn finished → reconcile from disk (replaces temp `live-…` bubbles with canonical
-      // real-uuid messages).
-      if (initialCwd && liveSessionId) loadHistoryByCwdAndSessionId(initialCwd, liveSessionId, true, HISTORY_RECONCILE_TURNS);
-    },
   });
   // When not viewing live, clear the running flag.
   useEffect(() => {
@@ -491,15 +491,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       setViewerBackgroundTasks(NO_BG_TASKS);
     }
   }, [liveViewerEnabled]);
-
-  // Keep the originator's reconcile-on-run-end closure current (same disk reload the viewer's
-  // onComplete uses). Injected into useChatStream via reconcileFromDiskRef so a finished run
-  // converges its live bubbles to canonical UUIDs.
-  useEffect(() => {
-    reconcileFromDiskRef.current = () => {
-      if (initialCwd && liveSessionId) loadHistoryByCwdAndSessionId(initialCwd, liveSessionId, true, HISTORY_RECONCILE_TURNS);
-    };
-  }, [initialCwd, liveSessionId, loadHistoryByCwdAndSessionId]);
 
   // Incrementally fetch messages when becoming active (handles external writes like scheduled tasks)
   // With limit to fetch only the last N rounds + fingerprint check + time throttle (inside useChatHistory)
@@ -526,7 +517,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     const sid = sessionId || loadedSessionId;
     if (!initialCwd || !sid) return;
     if (refreshSignal.sessionId !== sessionId && refreshSignal.sessionId !== loadedSessionId) return;
-    // A live-streaming or in-flight run owns the tail; onComplete reconciles from disk.
+    // A live run owns the tail; the history hook reconciles after writer release.
     if (isLoading || liveRunning) return;
     loadHistoryByCwdAndSessionId(initialCwd, sid, true, 10, undefined, true);
   }, [refreshSignal, sessionId, loadedSessionId, initialCwd, isLoading, liveRunning, loadHistoryByCwdAndSessionId]);
@@ -717,6 +708,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       deleteSessionTurn(deleteSid, { cwd: initialCwd, messageUuid: messageId })
     );
     if (exit._tag === 'Success') {
+      if (exit.value.recoveryDeletion) onRecoveryDeleted(exit.value.recoveryDeletion);
       // Remove immediately so an empty one-turn transcript also renders correctly; the disk
       // reload then supplies canonical ids and pagination metadata for every engine.
       setMessages((current) => removeMessageTurn(current, messageId));
@@ -726,7 +718,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       console.error('Delete turn failed:', exit.cause);
       toast(t('toast.deleteTurnFailed', { defaultValue: 'Failed to delete this turn' }), 'error');
     }
-  }, [initialCwd, loadedSessionId, sessionId, isLoading, liveRunning, messages, loadHistoryByCwdAndSessionId, t]);
+  }, [initialCwd, loadedSessionId, sessionId, isLoading, liveRunning, messages, loadHistoryByCwdAndSessionId, onRecoveryDeleted, t]);
 
   const handleDeleteTurnRef = useRef(handleDeleteTurnImpl);
   handleDeleteTurnRef.current = handleDeleteTurnImpl;
@@ -772,27 +764,16 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     setIsUserMessagesOpen(true);
   }, []);
 
-  // `messages` only holds the paged-in tail, while the user-message modal lists the
-  // whole session — so a row may name a message with no DOM node yet. Page its turn
-  // in first, then jump. Read through a ref: the callback is handed to a modal and
-  // must not take a new identity on every streamed token.
-  const messagesRef = useRef(messages);
-  messagesRef.current = messages;
-
+  const scrollToUserMessage = useCallback((id: string) => messageListRef.current?.scrollToMessage(id) ?? false, []);
+  const navigateToMessage = useMessageNavigation(`${initialCwd}:${loadedSessionId ?? sessionId}`, messages, isActive, ensureTurnLoaded, scrollToUserMessage, cancelTurnLoad);
+  const handleCloseUserMessages = useCallback(() => { navigateToMessage.cancel(); setIsUserMessagesOpen(false); }, [navigateToMessage]);
   const handleJumpToUserMessage = useCallback(async (entry: UserMessageIndexEntry) => {
-    if (messagesRef.current.some((m) => m.id === entry.id)) {
-      messageListRef.current?.scrollToMessage(entry.id);
-      return;
+    const result = await navigateToMessage(entry);
+    if (result.status !== 'scrolled' && result.status !== 'cancelled') {
+      toast(t('chat.messageNavigationFailed', { defaultValue: 'The message could not be located. Refresh the message list and try again.' }), 'error');
     }
-    await ensureTurnLoaded(entry.turnIndex);
-    // The bubble exists only once React has committed the turns just loaded, and
-    // that commit is not guaranteed to have happened by the time this promise
-    // continuation runs. Retry per frame until it lands.
-    for (let attempt = 0; attempt < JUMP_RENDER_FRAMES; attempt++) {
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      if (messageListRef.current?.scrollToMessage(entry.id)) return;
-    }
-  }, [ensureTurnLoaded]);
+    return result;
+  }, [navigateToMessage, t]);
 
 
   /* Independent task: each message is sent WITHOUT the prior turns. Stays on until unchecked —
@@ -835,6 +816,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     // SubagentTranscriptModal nested arbitrarily deep. Portals inherit context, so the modal
     // stack is covered without threading a prop through each layer.
     <TaskStoreContext.Provider value={taskStore}>
+    {drainingSubscriptions}
     <div className={`flex ${hideHeader && hideSidebar ? 'h-full' : 'h-screen'} bg-card`}>
       {/* Main Content */}
       <div
@@ -962,6 +944,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             // #10: as a viewer, drive the "thinking" bubble from the live run status too.
             ref={messageListRef}
             messages={messages}
+            recoveryCopies={recoveryCopies}
             isLoading={isLoading || liveRunning}
             liveOutputTokens={liveOutputTokens}
             runningStartedAt={runningStartedAt}
@@ -1043,7 +1026,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       {/* User Messages Modal */}
       <UserMessagesModal
         isOpen={isUserMessagesOpen}
-        onClose={() => setIsUserMessagesOpen(false)}
+        onClose={handleCloseUserMessages}
         cwd={initialCwd}
         sessionId={loadedSessionId ?? sessionId}
         onSelectMessage={handleJumpToUserMessage}

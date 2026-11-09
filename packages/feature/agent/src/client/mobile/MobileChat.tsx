@@ -12,7 +12,7 @@ import { TaskStoreContext, createTaskStore } from '../taskStore';
 import { useLiveStream } from '../useLiveStream';
 import { MessageList, type MessageListHandle } from '../MessageList';
 import { MobileChatInput } from './MobileChatInput';
-import type { ChatMessage, ChatEngine, EngineModelId, LiveOutputTokens, BackgroundTaskInfo } from '../types';
+import type { ChatEngine, EngineModelId, LiveOutputTokens, BackgroundTaskInfo } from '../types';
 
 // Per-session engine + model + execution mode, persisted by the desktop tab system in the
 // project's session.json. This is the same source useTabState resumes from —
@@ -47,7 +47,6 @@ interface MobileChatProps {
 }
 
 export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActive = true }: MobileChatProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [title, setTitle] = useState<string>(initialTitle ?? '');
   const [resolved, setResolved] = useState<ResolvedRun>({});
@@ -81,25 +80,33 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   const [viewerBackgroundTasks, setViewerBackgroundTasks] = useState<BackgroundTaskInfo[]>(NO_BG_TASKS);
   // Mirrors Chat.tsx: live task state for every spawn depth, kept beside the message tree.
   const taskStore = useMemo(() => createTaskStore(), []);
-  const liveRunningRef = useRef(false);
-  useEffect(() => { liveRunningRef.current = liveRunning; }, [liveRunning]);
 
   // History first — it yields the authoritative engine (echoed by /api/session-by-path).
   const {
+    messages,
+    recoveryCopies,
+    onRecoveryDeleted,
+    onLiveSnapshotStart,
+    onWriterIdle,
+    setRunMessages,
+    onRunAccepted,
+    onSendFailure,
+    onInputRejected,
+    onLiveRunEnd,
+    onSenderStart,
     isLoadingHistory,
     isLoadingMore,
     hasMoreHistory,
     loadMoreHistory,
-    loadHistoryByCwdAndSessionId,
     loadedSessionId,
     loadedEngine,
     loadedBot,
-  } = useChatHistory(messages, setMessages, sessionId, {
+  } = useChatHistory(sessionId, {
+    reconcileLimit: null,
     cwd,
     initialSessionId,
     onSessionId: setSessionId,
     onTitleChange: setTitle,
-    liveRunningRef,
   });
 
   // Send on the session's native engine. Same precedence as Chat.tsx: what the transcript's
@@ -108,11 +115,8 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   const engine: ChatEngine | undefined = loadedEngine ?? resolved.engine ?? undefined;
 
   const noop = useCallback(() => {}, []);
-  // Reconcile-on-run-end (mirrors Chat.tsx): useChatStream is constructed before
-  // loadHistoryByCwdAndSessionId / liveSessionId exist, so the disk-reload closure is
-  // injected into this ref below and invoked via a stable thunk.
-  const reconcileFromDiskRef = useRef<(() => void) | null>(null);
   const {
+    drainingSubscriptions,
     isLoading,
     liveOutputTokens: streamLiveOutputTokens,
     runningStartedAt: streamRunningStartedAt,
@@ -120,7 +124,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     backgroundTasks,
     handleSend,
     handleStop,
-  } = useChatStream(messages, setMessages, {
+  } = useChatStream(messages, setRunMessages, {
     sessionId,
     cwd,
     engine,
@@ -136,10 +140,15 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
           : resolved.deepseekModel,
     onSessionId: setSessionId,
     onFetchTitle: noop,
+    onSendStart: onSenderStart,
+    onRunAccepted,
+    onSendFailure,
+    onInputRejected,
+    onRunEnd: onLiveRunEnd,
+    onRecoveryDeleted,
     // Mirrors Chat.tsx: when a run this screen ORIGINATED ends, reconcile from disk so
     // temp live bubbles converge to canonical uuids — without this the next snapshot /
     // incremental load can double-render the turn on mobile.
-    onRunComplete: () => reconcileFromDiskRef.current?.(),
     taskStore,
   });
 
@@ -148,15 +157,17 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   // task) stream live on the phone — the core "did it finish?" monitoring case.
   const liveSessionId = loadedSessionId || sessionId;
   const liveViewerEnabled = !isLoading && !!liveSessionId;
-  useLiveStream(liveSessionId, setMessages, liveViewerEnabled, engine, {
-    onRunningChange: (r) => { liveRunningRef.current = r; setLiveRunning(r); },
+  useLiveStream(liveSessionId, setRunMessages, liveViewerEnabled, engine, {
+    onSnapshotStart: onLiveSnapshotStart,
+    onWriterIdle,
+
+    onRunEnd: onLiveRunEnd,
+    onRecoveryDeleted,
+    onRunningChange: setLiveRunning,
     onLiveOutputTokens: setViewerLiveOutputTokens,
     onRunStartedAt: setViewerRunStartedAt,
     onBackgroundTasks: (tasks) => setViewerBackgroundTasks(tasks.length ? tasks : NO_BG_TASKS),
     taskStore,
-    onComplete: () => {
-      if (liveSessionId) loadHistoryByCwdAndSessionId(cwd, liveSessionId, true);
-    },
   });
   useEffect(() => {
     if (!liveViewerEnabled) {
@@ -166,14 +177,6 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
       setViewerBackgroundTasks(NO_BG_TASKS);
     }
   }, [liveViewerEnabled]);
-
-  // Keep the originator's reconcile-on-run-end closure current (same disk reload the
-  // viewer's onComplete uses).
-  useEffect(() => {
-    reconcileFromDiskRef.current = () => {
-      if (liveSessionId) loadHistoryByCwdAndSessionId(cwd, liveSessionId, true);
-    };
-  }, [cwd, liveSessionId, loadHistoryByCwdAndSessionId]);
 
   const isRunning = isLoading || liveRunning;
   const liveOutputTokens = isLoading ? streamLiveOutputTokens : liveRunning ? viewerLiveOutputTokens : null;
@@ -192,6 +195,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
 
   return (
     <TaskStoreContext.Provider value={taskStore}>
+    {drainingSubscriptions}
     <div className="flex h-[100dvh] flex-col bg-card">
       {/* Back bar */}
       <div className="flex flex-shrink-0 items-center gap-1 border-b border-border bg-card px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
@@ -216,6 +220,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
         <MessageList
           ref={messageListRef}
           messages={messages}
+            recoveryCopies={recoveryCopies}
           isLoading={isRunning}
           liveOutputTokens={liveOutputTokens}
           runningStartedAt={runningStartedAt}

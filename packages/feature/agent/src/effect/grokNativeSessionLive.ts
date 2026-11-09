@@ -192,7 +192,8 @@ export const editGrokTurn = (cwd: string, sessionId: string, uuid: string | unde
       try { await rewriteTranscript(grokSessionPath(cwd, newId), jsonl(selected)); }
       catch (error) { await rm(grokNativeSessionPath(cwd, newId), { recursive: true, force: true }); throw error; }
     }
-    return { newSessionId: newId, messageCount: selected.length, deletedLineCount: entries.length - selected.length, targetMissed: false };
+    return { newSessionId: newId, messageCount: selected.length, deletedLineCount: entries.length - selected.length, targetMissed: false,
+      recoveryDeletion: scope === 'delete' ? { sourceIds: entries.filter((_, i) => turns.byLine[i] === target).flatMap((entry) => typeof entry.uuid === 'string' ? [entry.uuid] : []), taskIds: [] } : undefined };
   });
 
 type Independent = { sessionId: string; offset: number; preambleCount: number };

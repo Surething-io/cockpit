@@ -61,7 +61,7 @@ describe('Codex input lifecycle', () => {
     test.sink?.({ text: 'next' });
     await vi.waitFor(() => expect(test.events.some((event) => event.notice === 'codex_input_accepted')).toBe(true));
     expect(send).toHaveBeenCalledTimes(2);
-    expect(test.events).toContainEqual(expect.objectContaining({ notice: 'codex_input_failed', input_text: 'rejected', error: expect.stringContaining('turn mismatch') }));
+    expect(test.events).toContainEqual(expect.objectContaining({ type: 'error', undeliveredInputs: [{ text: 'rejected' }], error: expect.stringContaining('turn mismatch') }));
     expect(test.sink).not.toBeNull();
     test.done.resolve();
     await test.run;
@@ -82,7 +82,7 @@ describe('Codex input lifecycle', () => {
     expect(test.sink).toBeNull();
     ack.resolve();
     await tick();
-    expect(test.events.filter((event) => event.notice === 'codex_input_failed')).toHaveLength(2);
+    expect(test.events.filter((event) => event.type === 'error')).toHaveLength(2);
     expect(test.events.filter((event) => event.notice === 'codex_input_accepted')).toHaveLength(0);
     expect(send).toHaveBeenCalledOnce();
     test.done.resolve();
@@ -95,8 +95,37 @@ describe('Codex input lifecycle', () => {
     test.sink?.({ text: 'pending during init' });
     test.abort.abort();
     expect(test.sink).toBeNull();
-    expect(test.events).toContainEqual(expect.objectContaining({ notice: 'codex_input_failed', input_text: 'pending during init' }));
+    expect(test.events).toContainEqual(expect.objectContaining({ type: 'error', undeliveredInputs: [{ text: 'pending during init' }] }));
     test.done.resolve();
     await test.run;
   });
+});
+
+
+it.each([false, true])('retains cancelled Codex input through dispatch and reconnect (in flight: %s)', async inFlight => {
+  const { dispatchChat } = await import('../server/engines/orchestrator');
+  const hub = await import('../server/sessionRunHub');
+  const key = `codex-cancel-${inFlight}`;
+  const entered = gate(); const finish = gate(); const ack = gate();
+  let sending = false;
+  const image = { type: 'base64' as const, media_type: 'image/png' as const, data: 'image' };
+  await dispatchChat({ name: 'codex', runner: { run: ctx => Effect.runPromise(withCodexRunInput(ctx, async input => {
+    if (inFlight) input.open(async () => { sending = true; await ack.promise; });
+    entered.resolve(); await finish.promise;
+  })) } }, { prompt: 'launch', runId: key });
+  try {
+    await entered.promise;
+    expect(hub.injectRun(key, { text: 'queued', images: [image] }, 'pending')).toBe('ok');
+    if (inFlight) await vi.waitFor(() => expect(sending).toBe(true));
+    hub.requestStop(key); ack.resolve(); finish.resolve();
+    expect(await hub.waitForWriter(key, 1000)).toBe(true);
+    const snapshot = hub.getRunSnapshot(key)!;
+    expect(snapshot.status).toBe('error');
+    expect(snapshot.events).toContainEqual(expect.objectContaining({ type: 'error', undeliveredInputs: [
+      { inputId: 'pending', text: 'queued', images: [image] },
+    ] }));
+    hub.startRun(key, '', 'next', 'successor');
+    expect(hub.getRunRecoveries(key)).toHaveLength(1);
+    hub.markRunIdle(key); hub.releaseRun(key);
+  } finally { ack.resolve(); finish.resolve(); hub.requestStop(key); await hub.waitForWriter(key, 1000); }
 });

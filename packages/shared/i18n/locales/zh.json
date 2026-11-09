@@ -592,6 +592,10 @@
       "failed": "追加消息发送失败或未确认，请打开详情查看",
       "images": "图片：{{count}} 张"
     },
+    "recoveryCopy": "失败运行的恢复副本",
+    "recoveryCopyHint": "这是运行期间观察到的内容的临时副本，可能与已保存的历史重复，不会发送给模型。仅在本对话保持打开期间保留。",
+    "recoveryCopiesLabel": "失败运行的恢复副本",
+    "recoveryAttachment": "恢复副本附件",
     "startConversation": "开始对话吧",
     "loadMoreHistory": "加载更多...",
     "scrollUpForMore": "↑ 向上滚动加载更多历史",

@@ -18,6 +18,10 @@ export const withCodexRunInput = (
   let accepting = true;
   let current: InjectedInput | undefined;
   const notice = (input: InjectedInput, state: 'queued' | 'accepted' | 'failed', error?: string): void => {
+    if (state === 'failed') {
+      ctx.emit({ type: 'error', error: error ?? 'Input delivery was not confirmed.', undeliveredInputs: [input] });
+      return;
+    }
     ctx.emit({
       type: 'system', subtype: 'notice', notice: `codex_input_${state}`,
       input_text: input.text ?? '', input_images: input.images?.length ?? 0, error,

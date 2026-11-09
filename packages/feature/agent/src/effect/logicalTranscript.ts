@@ -14,6 +14,8 @@ export type LogicalTranscriptProjection = Pick<TranscriptSnapshot, 'format' | 'e
 /** No file bytes are read until the caller requests a projection or parser source. */
 export interface LogicalTranscriptReader {
   readonly fingerprint: string;
+  /** Stable across appends, invalidated by topology changes or managed rewrites. */
+  readonly coordinateEpoch: string;
   readonly mtimeMs: number;
   readonly projection: Effect.Effect<LogicalTranscriptProjection, FSError>;
   readonly source: Effect.Effect<TranscriptSource, FSError>;
@@ -88,6 +90,7 @@ export const readLogicalTranscript = <A, E, R>(
       catch: (cause) => new FSError({ path, op: 'read', cause }),
     }) : Effect.succeed(path);
     const reader: LogicalTranscriptReader = {
+      coordinateEpoch: JSON.stringify([process.pid, before.generation, before.history?.ino, before.current?.ino]),
       fingerprint: `logical-v2:${engine}:${JSON.stringify([before.history, before.current])}`,
       mtimeMs: Math.max(before.history?.mtimeMs ?? 0, before.current?.mtimeMs ?? 0),
       projection, source,

@@ -35,18 +35,28 @@ import type { ImageMediaType, ImageInfo, MessageImage } from '@cockpit/shared-ut
 export type { ImageMediaType, ImageInfo, MessageImage };
 
 export interface ChatMessage {
+  sourceId?: string;
+  sourceTaskId?: string;
+  sourceRef?: import("../shared/historyReference").HistoryReference;
   id: string;
   role: MessageRole;
   content: string;
   images?: MessageImage[];  // Images in the message
   toolCalls?: ToolCallInfo[];
   isStreaming?: boolean;
+  /** Raw terminal error from a stream or persisted error event, independent of answer text. */
+  streamError?: string;
   timestamp?: string;  // Message creation time (ISO format)
   /** Persisted history notices can precede the user message of their turn. */
   turnUserId?: string;
   /** Persisted Codex task ownership and the number of human inputs it contains. */
   turnId?: string;
   turnUserCount?: number;
+  /** Source task boundary, distinct from late tool/message timestamps. */
+  turnStartedAt?: string;
+  /** Transient viewer provenance, independent of the current bubble ID. */
+  liveRunId?: string;
+  liveInputId?: string;
   // Set on role:'system' rows — a harness event rendered as a muted one-line bar
   // (not a conversation bubble). `task-notification` shows the <summary> line;
   // `meta` covers skill image annotations / compact-summary notices.

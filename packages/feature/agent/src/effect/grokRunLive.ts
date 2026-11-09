@@ -163,10 +163,11 @@ export function runGrok(ctx: RunCtx, options: GrokRunOptions = {}): Effect.Effec
       return yield* Effect.fail(agentError(new Error('This Grok CLI does not support image prompts. Send text or update Grok Build.')));
     }
     yield* appendGrokTranscript(ctx.cwd, sessionId, { type: 'system', subtype: 'init', engine: 'grok', model: targetModel });
-    yield* appendGrokTranscript(ctx.cwd, sessionId, { type: 'user', message: { role: 'user', content: [
+    const inputSourceId = yield* appendGrokTranscript(ctx.cwd, sessionId, { type: 'user', message: { role: 'user', content: [
       ...(ctx.prompt ? [{ type: 'text', text: ctx.prompt }] : []),
       ...(ctx.images ?? []).map((image) => ({ type: 'image', source: image })),
     ] } });
+    if (typeof ctx.params.runId === 'string') ctx.emit({ type: 'system', subtype: 'input_binding', inputId: ctx.params.runId, sourceId: inputSourceId });
     const promptId = randomUUID();
     const prompt = [
       ...(ctx.prompt || ctx.outputStyle ? [{ type: 'text', text: [ctx.prompt, ctx.outputStyle].filter(Boolean).join('\n\n') }] : []),
@@ -188,7 +189,7 @@ export function runGrok(ctx: RunCtx, options: GrokRunOptions = {}): Effect.Effec
       pendingBlocks = [];
       return appendGrokTranscript(ctx.cwd, sessionId, { type: 'assistant', message: {
         role: 'assistant', content, model: targetModel, ...(usage ? { usage } : {}),
-      } });
+      } }).pipe(Effect.asVoid);
     });
     yield* Effect.addFinalizer(() => flush().pipe(Effect.catchAll((error) => Effect.logWarning('Cannot save partial Grok output', error))));
     const finish = (): void => { ctx.emit({ type: 'result', subtype: 'success', session_id: sessionId }); };

@@ -595,6 +595,10 @@
       "failed": "Additional message delivery failed or is unconfirmed — open for details",
       "images": "Images: {{count}}"
     },
+    "recoveryCopy": "Failed run recovery copy",
+    "recoveryCopyHint": "Temporary copy of observed content. It may repeat saved history and is not sent to the model. Kept while this conversation remains open.",
+    "recoveryCopiesLabel": "Failed run recovery copies",
+    "recoveryAttachment": "Recovery attachment",
     "startConversation": "Start a conversation",
     "loadMoreHistory": "Load more...",
     "scrollUpForMore": "↑ Scroll up to load more history",

@@ -16,6 +16,6 @@ export const POST = handler((request) =>
         headers: { 'Content-Type': 'application/json' },
       });
     }
-    return Response.json({ runKey: outcome.runKey, sessionId: outcome.sessionId, injected: !!outcome.injected });
+    return Response.json({ runKey: outcome.runKey, sessionId: outcome.sessionId, startedAt: outcome.startedAt, injected: !!outcome.injected });
   })
 );

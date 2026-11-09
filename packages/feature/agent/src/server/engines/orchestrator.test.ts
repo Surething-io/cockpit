@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { dispatchChat } from './orchestrator';
-import { isRunActive, getRunSnapshot, getRunSessionId, requestStop } from '../sessionRunHub';
+import { isRunActive, getRunSnapshot, getRunSessionId, requestStop, getRunRecoveries, waitForWriter } from '../sessionRunHub';
 import type { EngineSpec, InjectedInput, RunCtx, RunEvent } from './types';
 
 // ── Contract suite for the shared run-lifecycle skeleton (orchestrator) ──
@@ -88,7 +88,7 @@ describe('orchestrator dispatch contract', () => {
     const runId = freshRunId();
     const second = await dispatchChat(spec(accepting), { prompt: 'also y', sessionId, runId, inject: true });
     expect(second).toEqual({ ok: true, runKey: sessionId, sessionId, injected: true });
-    expect(got).toEqual([{ text: 'also y', images: undefined }]);
+    expect(got).toEqual([{ text: 'also y', images: undefined, inputId: runId }]);
     const human = (getRunSnapshot(sessionId)?.events ?? []).filter(
       (e) => (e as { _human?: boolean })._human,
     ) as Array<{ _turnId?: string; message: { content: string } }>;
@@ -240,5 +240,52 @@ describe('orchestrator dispatch contract', () => {
     requestStop(out.runKey);
     await waitUntil(() => !isRunActive(out.runKey));
     expect(getRunSnapshot(out.runKey)?.status).toBe('idle');
+  });
+
+  it.each(['return', 'throw'] as const)('stop: drains recovery before %s and fences the old context after writer handoff', async (exit) => {
+    const sessionId = freshRunId();
+    const runId = freshRunId();
+    let old!: RunCtx;
+    let finish!: () => void;
+    const draining = new Promise<void>((resolve) => { finish = resolve; });
+    const binding = { type: 'system', subtype: 'input_binding', inputId: runId, sourceId: 'native-input' };
+    const recovery = { type: 'error', error: 'Input cancelled', undeliveredInputs: [{ inputId: runId, text: 'first' }] };
+    await dispatchChat(spec(async ctx => {
+      old = ctx;
+      await draining;
+      if (exit === 'throw') throw new Error('Cancelled');
+    }), { prompt: 'first', sessionId, runId });
+    try {
+      requestStop(sessionId);
+      old.emit({ type: 'assistant', text: 'late output' });
+      old.emit({ type: 'error', error: 'late ordinary error' });
+      old.emit(binding);
+      old.emit(recovery);
+      const stopped = getRunSnapshot(sessionId)!;
+      expect(stopped).toMatchObject({ status: 'error', writerActive: true });
+      expect(stopped.events).toContainEqual(binding);
+      expect(stopped.events).toContainEqual(recovery);
+      expect(stopped.events).not.toContainEqual({ type: 'assistant', text: 'late output' });
+      expect(stopped.events).not.toContainEqual({ type: 'error', error: 'late ordinary error' });
+
+      let successor: RunCtx | undefined;
+      const pending = dispatchChat(spec(ctx => { successor = ctx; return blockingRun(ctx); }),
+        { prompt: 'next', sessionId, runId: freshRunId() });
+      expect(successor).toBeUndefined();
+      finish();
+      expect((await pending).ok).toBe(true);
+      expect(getRunRecoveries(sessionId)).toMatchObject([{ runId, status: 'error', writerActive: false }]);
+      const before = getRunSnapshot(sessionId);
+      old.emit(binding);
+      old.emit(recovery);
+      old.emit({ type: 'assistant', text: 'obsolete callback' });
+      expect(getRunSnapshot(sessionId)).toEqual(before);
+      successor!.emit({ type: 'assistant', text: 'new output' });
+      expect(getRunSnapshot(sessionId)?.events).toContainEqual({ type: 'assistant', text: 'new output' });
+    } finally {
+      finish();
+      requestStop(sessionId);
+      await waitForWriter(sessionId, 1000);
+    }
   });
 });

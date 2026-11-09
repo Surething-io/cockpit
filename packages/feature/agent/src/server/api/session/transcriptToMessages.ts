@@ -26,6 +26,8 @@ export interface TranscriptMessage {
   sourceToolUseID?: string;
   message?: {
     role?: string;
+    /** Structured provider failure preserved by native transcript adapters. */
+    errorMessage?: string;
     model?: string;
     usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
     content?: string | Array<{
@@ -67,6 +69,7 @@ interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  streamError?: string;
   images?: MessageImage[];
   timestamp?: string;
   systemEvent?: { kind: 'task-notification' | 'meta'; status?: string; detail?: string };
@@ -287,6 +290,7 @@ export function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMes
             toolCalls: [],
           };
         }
+        if (msg.message.errorMessage) currentAssistantMessage.streamError = msg.message.errorMessage;
         toolSinceText = false;
       }
 

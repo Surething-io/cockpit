@@ -56,6 +56,8 @@ export interface DispatchParams {
  *  lands; for the claude CLI that is the next tool boundary of the current turn, or a new turn
  *  at once when the run is idle-resident. */
 export interface InjectedInput {
+  /** Admission identity, retained through queueing until a native input is assigned. */
+  inputId?: string;
   text?: string;
   images?: ImageData[];
 }
@@ -64,7 +66,7 @@ export interface InjectedInput {
  *  registry runKey immediately and observes progress via the run registry — the HTTP route
  *  streams it through /ws/session-stream; the scheduler polls isRunActive/getRunSnapshot. */
 export type DispatchOutcome =
-  | { ok: true; runKey: string; sessionId: string | null; injected?: boolean }
+  | { ok: true; runKey: string; sessionId: string | null; injected?: boolean; startedAt?: number }
   | { ok: false; status: number; error: string };
 
 /** One event fanned out to the run registry. Must carry a discriminating `type`. */

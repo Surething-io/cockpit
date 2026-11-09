@@ -96,11 +96,11 @@ function context(id: string, prompt: string, sessionId?: string) {
   let sink: Parameters<RunCtx['acceptInput']>[0] = null;
   const ctx: RunCtx = {
     cwd: home, prompt, sessionId, images: undefined,
-    params: { model: 'test-model' }, signal: abort.signal,
+    params: { model: 'test-model', runId: id }, signal: abort.signal,
     currentKey: () => sessionId ?? id, rekey: () => {}, emit: (event) => events.push(event),
     acceptInput: (input) => { sink = input; },
   };
-  return { ctx, events, abort, input: (text: string) => sink?.({ text }) };
+  return { ctx, events, abort, input: (text: string, inputId?: string) => sink?.({ text, inputId }) };
 }
 
 describe('embedded Pi runtime', () => {
@@ -352,15 +352,61 @@ describe('embedded Pi runtime', () => {
       return create(options);
     });
     const run = context('init-input-session', 'launch prompt');
+    const hub = await import('../server/sessionRunHub');
+    hub.startRun('init-input-session', home, 'launch prompt', 'init-input-session', 'ollama');
+    run.ctx.acceptInput = (sink) => hub.setRunInjector('init-input-session', sink);
+    run.ctx.emit = (event) => { run.events.push(event); hub.appendRun('init-input-session', event); };
     const pending = Effect.runPromise(runPiAgent(run.ctx, { engine: 'ollama', baseUrl, apiKey: 'test' }));
     await initializing;
-    const accepted = run.input('during initialization');
+    const accepted = hub.injectRun('init-input-session', { text: 'during initialization' }, 'queued-input');
     release();
-    await pending.finally(() => spy.mockRestore());
-    expect(accepted).toBe(true);
+    await pending.finally(() => { spy.mockRestore(); hub.markRunIdle('init-input-session'); hub.releaseRun('init-input-session'); });
+    expect(accepted).toBe('ok');
     const file = await Effect.runPromise(sessions.findPiSession(home, 'init-input-session'));
     const parsed = await parser.parseTranscriptFile(file!.path);
     expect(parsed.messages.filter((message) => message.role === 'user').map((message) => message.content)).toEqual(['launch prompt', 'during initialization']);
+    const inputs = parsed.messages.filter((message) => message.role === 'user');
+    expect(run.events.filter((event) => event.subtype === 'input_binding')).toEqual([
+      { type: 'system', subtype: 'input_binding', inputId: 'init-input-session', sourceId: inputs[0].sourceId },
+      { type: 'system', subtype: 'input_binding', inputId: 'queued-input', sourceId: inputs[1].sourceId },
+    ]);
+  });
+
+  it('settles actual consumption identities when initialization queues an input before a length failure', async () => {
+    const hub = await import('../server/sessionRunHub');
+    const { chatHistoryReducer: reduce, emptyChatHistory } = await import('../client/chatHistoryState');
+    const { applyStreamEvent } = await import('../client/applyStreamEvent');
+    const { historyWindow } = await import('../server/historyWindow');
+    const id = 'queued-length-settlement';
+    const run = context(id, 'truncate-parent');
+    hub.startRun(id, home, run.ctx.prompt, id, 'ollama');
+    run.ctx.acceptInput = (sink) => {
+      hub.setRunInjector(id, sink);
+      if (sink) expect(hub.injectRun(id, { text: 'truncate-parent' }, 'queued-length')).toBe('ok');
+    };
+    run.ctx.emit = (event) => hub.appendRun(id, event);
+    await expect(Effect.runPromise(runPiAgent(run.ctx, { engine: 'ollama', baseUrl, apiKey: 'test' }))).rejects.toThrow();
+    const events = hub.getRunSnapshot(id)!.events as RunEvent[];
+    expect(events.filter((event) => event.subtype === 'input_started').map((event) => event.inputId)).toEqual([id]);
+    hub.markRunIdle(id, 'error'); hub.releaseRun(id);
+    let messages: import('../client/types').ChatMessage[] = [];
+    let assistantId = '';
+    for (const event of events) {
+      if (event._human) messages.push({ id: String(event._turnId), liveInputId: String(event._turnId), role: 'user', content: 'truncate-parent' });
+      else {
+        if (event.subtype === 'input_started') assistantId = `answer-${event.inputId}`;
+        messages = applyStreamEvent(messages, event, { engine: 'ollama', assistantId });
+      }
+    }
+    let state = reduce(emptyChatHistory, { type: 'replay-start', run: { id, startedAt: Date.now() } });
+    state = reduce(state, { type: 'run-messages', runId: id, update: messages });
+    state = reduce(state, { type: 'run-end', runId: id, writerActive: false, failed: true });
+    const file = await Effect.runPromise(sessions.findPiSession(home, id));
+    state = reduce(state, { type: 'page', sessionId: id, mode: 'replace', reconciles: [id],
+      page: { ...historyWindow((await parser.parseTranscriptFile(file!.path)).messages, {}), stable: true } });
+    expect(state.messages.filter((row) => row.content === 'truncate-parent')).toHaveLength(1);
+    expect(state.failures[0].messages.filter((row) => row.content === 'truncate-parent')).toHaveLength(2);
+    expect(state.messages.filter((row) => row.content.includes('Partial parent answer'))).toHaveLength(1);
   });
 
   it('retains accepted inputs in native storage when cancelled before the first prompt', async () => {
@@ -374,23 +420,30 @@ describe('embedded Pi runtime', () => {
     });
     const hub = await import('../server/sessionRunHub');
     const id = 'cancel-init-session';
-    const run = context(id, 'initial unprocessed input');
-    expect(hub.startRun(id, home, run.ctx.prompt, id, 'ollama')).toBe(true);
-    hub.setRunAbort(id, () => run.abort.abort());
-    run.ctx.emit = (event) => hub.appendRun(id, event);
-    run.ctx.acceptInput = (sink) => hub.setRunInjector(id, sink);
-    const pending = Effect.runPromise(runPiAgent(run.ctx, { engine: 'ollama', baseUrl, apiKey: 'test' }));
-    await initializing;
-    expect(hub.injectRun(id, { text: 'accepted while initializing' }, 'injected')).toBe('ok');
-    expect(hub.requestStop(id)).toBe(true);
-    release();
-    await pending.finally(() => { spy.mockRestore(); hub.releaseRun(id); });
-    expect(hub.getRunSnapshot(id)?.status).toBe('idle');
+    const { dispatchChat } = await import('../server/engines/orchestrator');
+    const image = { type: 'base64' as const, media_type: 'image/png' as const, data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jR8sAAAAASUVORK5CYII=' };
+    try {
+      expect((await dispatchChat({ name: 'ollama', runner: {
+        // Keep dispatch ownership intact; omit its cwd to exclude unrelated Git snapshots.
+        run: ctx => Effect.runPromise(runPiAgent({ ...ctx, cwd: home }, { engine: 'ollama', baseUrl, apiKey: 'test' })),
+      } }, { prompt: 'initial unprocessed input', runId: id, model: 'test-model' })).ok).toBe(true);
+      await initializing;
+      expect(hub.injectRun(id, { text: 'accepted while initializing' }, 'injected')).toBe('ok');
+      expect(hub.injectRun(id, { images: [image] }, 'image-input')).toBe('ok');
+      expect(hub.requestStop(id)).toBe(true);
+    } finally {
+      release();
+      await hub.waitForWriter(id, 3000);
+      spy.mockRestore();
+    }
+    expect(hub.getRunSnapshot(id)?.writerActive).toBe(false);
+    expect(hub.getRunSnapshot(id)?.status).toBe('error');
     const file = await Effect.runPromise(sessions.findPiSession(home, 'cancel-init-session'));
     expect(file).toBeDefined();
     const restored = SessionManager.open(file!.path);
     expect(JSON.stringify(restored.getEntries())).toContain('accepted while initializing');
     expect(restored.buildSessionContext().messages).toEqual([]);
+    expect(await readFile(file!.path, 'utf8')).toContain(image.data);
     const parsed = await parser.parseTranscriptFile(file!.path);
     expect(parsed.messages.some((message) => message.role === 'system' && message.content.includes('accepted while initializing'))).toBe(true);
     const resumed = context('unused', 'new explicit task', id);
@@ -398,6 +451,25 @@ describe('embedded Pi runtime', () => {
     expect(JSON.stringify(requests.at(-1)?.messages)).not.toContain('accepted while initializing');
     const afterResume = await parser.parseTranscriptFile(file!.path);
     expect(afterResume.messages.some((message) => message.role === 'system' && message.content.includes('accepted while initializing'))).toBe(true);
+    const { chatHistoryReducer, emptyChatHistory } = await import('../client/chatHistoryState');
+    const { historyWindow } = await import('../server/historyWindow');
+    const recovery = hub.getRunSnapshot(id)!.events.find(event => (event as { undeliveredInputs?: unknown }).undeliveredInputs) as import('../client/applyStreamEvent').StreamEvent;
+    expect(recovery).toMatchObject({ undeliveredInputs: [{ inputId: id }, { inputId: 'injected' }, { inputId: 'image-input', images: [image] }] });
+    let state = chatHistoryReducer(emptyChatHistory, { type: 'replay-start', run: { id, startedAt: Date.now() } });
+    state = chatHistoryReducer(state, { type: 'run-messages', runId: id, update: [
+      { id: 'first', role: 'user', content: 'initial unprocessed input', liveInputId: id },
+      { id: 'queued', role: 'user', content: 'accepted while initializing', liveInputId: 'injected' },
+      { id: 'image', role: 'user', content: '', images: [image], liveInputId: 'image-input' },
+    ] });
+    state = chatHistoryReducer(state, { type: 'run-messages', runId: id, update: { event: recovery, engine: 'ollama', assistantId: 'placeholder' } });
+    state = chatHistoryReducer(state, { type: 'run-end', runId: id, writerActive: false, failed: true });
+    state = chatHistoryReducer(state, { type: 'page', sessionId: id, mode: 'replace', reconciles: [id], page: { ...historyWindow(parsed.messages, {}), stable: true } });
+    expect(state.runs).toHaveLength(0);
+    expect(state.failures).toHaveLength(1);
+    expect(state.failures[0].messages.find(row => row.liveInputId === 'image-input' && row.role === 'user')?.images).toEqual([image]);
+    expect(state.failures[0].messages.some(row => row.streamError?.includes('cancelled'))).toBe(true);
+    expect(state.messages.some(row => row.images?.length)).toBe(false);
+
   });
 
   it('delivers every input accepted at SDK settlement boundaries before closing', async () => {
@@ -447,24 +519,36 @@ describe('embedded Pi runtime', () => {
   );
 
   it('reports and retains accepted input that cancellation prevents from completing', async () => {
-    const run = context('cancelled-queued-session', 'hang-stream');
-    const emit = run.ctx.emit;
+    const hub = await import('../server/sessionRunHub');
+    const { dispatchChat } = await import('../server/engines/orchestrator');
+    const id = 'cancelled-queued-session';
     let injected = false;
-    run.ctx.emit = (event) => {
-      emit(event);
+    const off = hub.addRunListener(id, ({ message }) => {
+      const event = message as RunEvent;
       if (!injected && event.type === 'stream_event' && (event.event as { type: string }).type === 'content_block_delta') {
         injected = true;
-        expect(run.input('accepted before cancellation')).toBe(true);
-        run.abort.abort();
+        expect(hub.injectRun(id, { text: 'accepted before cancellation' }, 'queued-before-stop')).toBe('ok');
+        hub.requestStop(id);
       }
-    };
-    await Effect.runPromise(runPiAgent(run.ctx, { engine: 'ollama', baseUrl, apiKey: 'test' }));
-    expect(run.events.some((event) => event.type === 'error' && String(event.error).includes('accepted before cancellation'))).toBe(true);
+    });
+    try {
+      expect((await dispatchChat({ name: 'ollama', runner: {
+        run: ctx => Effect.runPromise(runPiAgent({ ...ctx, cwd: home }, { engine: 'ollama', baseUrl, apiKey: 'test' })),
+      } }, { prompt: 'hang-stream', runId: id, model: 'test-model' })).ok).toBe(true);
+      expect(await hub.waitForWriter(id, 3000)).toBe(true);
+    } finally { off(); hub.requestStop(id); await hub.waitForWriter(id, 3000); }
+    expect(injected).toBe(true);
+    expect(hub.getRunSnapshot(id)?.status).toBe('error');
+    expect(hub.getRunSnapshot(id)?.events.find((event) => (event as RunEvent).type === 'error')).toMatchObject({
+      error: 'Input did not complete because the run was cancelled.',
+      // The prompt Pi was answering is already native history; only the queued input is undelivered.
+      undeliveredInputs: [expect.objectContaining({ text: 'accepted before cancellation', inputId: 'queued-before-stop' })],
+    });
     const file = await Effect.runPromise(sessions.findPiSession(home, 'cancelled-queued-session'));
     const parsed = await parser.parseTranscriptFile(file!.path);
     expect(parsed.messages.some((message) => message.role === 'system' && message.content.includes('accepted before cancellation'))).toBe(true);
     expect(JSON.stringify(SessionManager.open(file!.path).buildSessionContext().messages)).not.toContain('accepted before cancellation');
-    expect(run.input('after close')).toBeUndefined();
+    expect(hub.injectRun(id, { text: 'after close' }, 'rejected-after-close')).toBe('idle');
   });
 
   it('hands an HTTP send after input closure to a new run after the old writer releases', async () => {
@@ -660,6 +744,37 @@ describe('embedded Pi runtime', () => {
     expect(run.events.some((event) => event.type === 'result')).toBe(false);
     const file = await Effect.runPromise(sessions.findPiSession(home, 'error-session'));
     expect(JSON.stringify((await parser.parseTranscriptFile(file!.path)).messages)).toContain('Invalid test API key');
+  });
+
+  it('treats Stop mid-reply as a plain stop without recovery notes', async () => {
+    const hub = await import('../server/sessionRunHub');
+    const { dispatchChat } = await import('../server/engines/orchestrator');
+    const id = 'plain-stop-session';
+    let stopped = false;
+    const received: RunEvent[] = [];
+    const off = hub.addRunListener(id, ({ message }) => {
+      const event = message as RunEvent;
+      received.push(event);
+      if (!stopped && event.type === 'stream_event' && (event.event as { type: string }).type === 'content_block_delta') {
+        stopped = true;
+        hub.requestStop(id);
+      }
+    });
+    try {
+      expect((await dispatchChat({ name: 'ollama', runner: {
+        run: ctx => Effect.runPromise(runPiAgent({ ...ctx, cwd: home }, { engine: 'ollama', baseUrl, apiKey: 'test' })),
+      } }, { prompt: 'hang-stream', runId: id, model: 'test-model' })).ok).toBe(true);
+      expect(await hub.waitForWriter(id, 3000)).toBe(true);
+    } finally { off(); hub.requestStop(id); await hub.waitForWriter(id, 3000); }
+    expect(stopped).toBe(true);
+    expect(received).toContainEqual(expect.objectContaining({ subtype: 'input_binding', inputId: id }));
+    expect(hub.getRunSnapshot(id)?.status).toBe('idle');
+    expect(received.some((event) => 'undeliveredInputs' in event)).toBe(false);
+    expect(received.find((event) => event.type === 'run-settled')).toMatchObject({ status: 'idle' });
+    const file = await Effect.runPromise(sessions.findPiSession(home, id));
+    expect(await readFile(file!.path, 'utf8')).not.toContain('cockpit.undelivered-input');
+    const parsed = await parser.parseTranscriptFile(file!.path);
+    expect(parsed.messages.filter((message) => message.role === 'user').map((message) => message.content)).toEqual(['hang-stream']);
   });
 
   it('aborts a streaming request and releases the input sink', async () => {

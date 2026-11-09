@@ -24,13 +24,17 @@ interface ToolResultBlock {
   content?: unknown;
 }
 export interface StreamEvent {
+  taskId?: string;
+  inputId?: string;
+  undeliveredInputs?: Array<{ inputId?: string; text?: string; images?: MessageImage[] }>;
+  sourceId?: string;
   tool_call_id?: string;
   progress_text?: string;
   type?: string;
   subtype?: string;
   _human?: boolean; // synthetic human-prompt user event (rendered by useLiveStream)
   _turnId?: string; // per-turn unique id (the dispatch runId) — identity for live-bubble dedup
-  _ts?: number; // server clock at startRun — time boundary for disk-copy dedup
+  _ts?: number; // Server clock at prompt/task start, retained for replay and disk alignment.
   _images?: MessageImage[]; // images sent with a message injected into the live run
   message?: { model?: string; role?: string; content?: unknown };
   event?: { type?: string; delta?: { type?: string; text?: string } };
@@ -97,6 +101,15 @@ const TASK_EVENT_SUBTYPES: readonly string[] = ['task_started', 'task_progress',
 
 export function isTaskEvent(ev: StreamEvent): boolean {
   return ev.type === 'system' && TASK_EVENT_SUBTYPES.includes(ev.subtype ?? '');
+}
+
+/** These events address existing tool cards, independently of the run carrying them. */
+export function isToolUpdateEvent(ev: StreamEvent): boolean {
+  if (isSubagentFrame(ev) || ev._human) return false;
+  return (isTaskEvent(ev) && !!ev.tool_use_id && !ev.ambient)
+    || (ev.type === 'tool_progress' && !!ev.tool_call_id)
+    || (ev.type === 'user' && Array.isArray(ev.message?.content)
+      && ev.message.content.some((block: ToolResultBlock) => !!block.tool_use_id));
 }
 
 /**
@@ -189,6 +202,25 @@ export function applyStreamEvent(
   // A subagent's frames belong to its own transcript, never to this bubble (see isSubagentFrame).
   // Guarded here as well as at the hook entry points so the reducer is safe for any caller.
   if (isSubagentFrame(ev)) return messages;
+
+  if (ev.type === 'system' && ev.subtype === 'input_started' && ev.inputId) {
+    const input = messages.find((row) => row.role === 'user' && row.liveInputId === ev.inputId);
+    if (!input) return messages;
+    // Admission can precede consumption. Place this answer beside its actual input,
+    // and remove only unused placeholders left by init (never earlier output).
+    const rows = messages.filter((row) => row.id === assistantId || row.role !== 'assistant' || row.content || row.toolCalls?.length || row.streamError);
+    if (rows.some(row => row.id === assistantId)) return rows;
+    const index = rows.indexOf(input);
+    const answer: ChatMessage = { id: assistantId, role: 'assistant', content: '', isStreaming: true,
+      liveInputId: ev.inputId, liveRunId: input.liveRunId, sourceId: undefined,
+      turnStartedAt: input.turnStartedAt, timestamp: input.timestamp, runKey: input.runKey };
+    return [...rows.slice(0, index + 1), answer, ...rows.slice(index + 1)];
+  }
+
+  if (ev.type === 'system' && ev.subtype === 'input_binding' && ev.inputId && ev.sourceId) {
+    return messages.map((message) => message.role === 'user' && message.liveInputId === ev.inputId
+      ? { ...message, sourceId: ev.sourceId } : message);
+  }
 
   // A spawned task reporting on itself → settle the row that launched it, not this bubble.
   if (isTaskEvent(ev)) return applyTaskEvent(messages, ev);
@@ -293,11 +325,39 @@ export function applyStreamEvent(
 
   // in-stream error ({type:'error', error}) — emitted by codex/kimi/ollama/deepseek and the
   // orchestrator's failure path. Without this the viewer (useLiveStream, which routes through
-  // this reducer) drops it silently and a failed turn shows as an empty bubble. (useChatStream
-  // handles 'error' itself and returns before calling this, so it is unaffected.)
+  // this reducer) drops it silently and a failed turn shows as an empty bubble.
+  // The sender flushes buffered deltas before applying the same error projection.
   if (ev.type === 'error') {
     const errText = ev.error || 'An error occurred. Please try again.';
     const banner = `⚠️ ${errText}`;
+    if (ev.undeliveredInputs?.length) {
+      let rows = messages;
+      for (const [offset, pending] of ev.undeliveredInputs.entries()) {
+        const id = `undelivered-${pending.inputId ?? `${assistantId}-${offset}`}`;
+        if (rows.some(row => row.id === id)) continue;
+        let input = rows.find(row => row.role === 'user' && pending.inputId && row.liveInputId === pending.inputId);
+        if (!input) {
+          input = { id: `${id}-input`, role: 'user', content: pending.text ?? '', images: pending.images,
+            liveInputId: pending.inputId };
+          rows = [...rows, input];
+        }
+        if (engine === 'codex') {
+          // Admission to a run is not proof of consumption by its native task.
+          // Keep unconfirmed input outside that task's atomic deletion group.
+          const detached = { ...input, turnId: id, sourceTaskId: undefined };
+          rows = rows.map(row => row === input ? detached : row);
+          input = detached;
+        }
+        const inputIndex = rows.indexOf(input);
+        const nextInput = rows.findIndex((row, index) => index > inputIndex && row.role === 'user');
+        const end = nextInput < 0 ? rows.length : nextInput;
+        const error: ChatMessage = { id, role: 'assistant', content: banner, streamError: errText,
+          turnId: engine === 'codex' ? id : undefined,
+          liveInputId: pending.inputId, liveRunId: input.liveRunId, timestamp: input.timestamp, isStreaming: false };
+        rows = [...rows.slice(0, end), error, ...rows.slice(end)];
+      }
+      return rows;
+    }
     return messages.map((m) =>
       m.id === assistantId
         ? {
@@ -305,6 +365,7 @@ export function applyStreamEvent(
             // joinAssistantText rather than a raw `\n\n` concat, so this stays
             // byte-identical to deriveContent(parts) — the banner is its own part.
             content: joinAssistantText(m.content || '', banner, true),
+            streamError: errText,
             parts: appendTextPart(m.parts, banner, true),
             isStreaming: false,
           }

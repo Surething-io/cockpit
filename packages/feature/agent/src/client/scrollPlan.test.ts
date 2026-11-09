@@ -520,3 +520,16 @@ describe('invariants over random event sequences', () => {
     }
   });
 });
+
+
+describe('explicit navigation owns the viewport', () => {
+  it('keeps the selected position when resize runs before the native scroll event', () => {
+    const scroller = new Scroller(4000, 600);
+    scroller.scrollTop = 800;
+    scroller.send({ type: 'jump' });
+    scroller.clientH = 500;
+    scroller.send({ type: 'viewport' });
+    expect(scroller.scrollTop).toBe(800);
+    expect(scroller.owner.mode).toBe('free');
+  });
+});

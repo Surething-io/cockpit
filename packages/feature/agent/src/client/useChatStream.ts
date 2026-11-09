@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { isRecoverySettlement, type RecoveryDeletion } from '../shared/recoveryCopy';
+import { useState, useCallback, useRef, useId, useEffect, createElement, type ReactNode } from 'react';
+import { Effect } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { GROK_DEFAULT_MODEL, GROK_DEFAULT_REASONING } from '../shared/grokModels';
-import { injectChatMessage } from './effect/agentClient';
+import { injectChatMessage, stopChat } from './effect/agentClient';
 import { estimateOutputUnits } from '@cockpit/shared-utils/outputProgress';
-import { applyStreamEvent, isSubagentFrame, isTaskEvent, settleRunningTasks, type StreamEvent } from './applyStreamEvent';
+import { isSubagentFrame, isTaskEvent, settleRunningTasks, type StreamEvent } from './applyStreamEvent';
 import type {
   ChatMessage,
   ImageInfo,
@@ -24,8 +26,9 @@ import type {
 } from './types';
 import type { TaskStore } from './taskStore';
 import { buildNoticeMessage } from './systemNotice';
+import { useLiveStream } from './useLiveStream';
 import i18n from '@cockpit/shared-i18n';
-import { useWebSocket } from '@cockpit/shared-ui';
+import { useWebSocket, toast } from '@cockpit/shared-ui';
 
 // Stable identity for "no background tasks" so clearing never churns the prop and defeats memo.
 // Exported so the viewer path (Chat/MobileChat, fed by useLiveStream) clears to the SAME
@@ -41,6 +44,8 @@ function genRunId(): string {
     return `run-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
   }
 }
+
+import type { RunMessageUpdate, LiveHistoryRun, HistoryFailure, HistoryMessageUpdate } from './chatHistoryState';
 
 // Migrated from src/components/project/useChatStream.ts.
 
@@ -71,14 +76,14 @@ interface UseChatStreamOptions {
   grokReasoningEffort?: string;
   onSessionId: (sid: string) => void;
   onFetchTitle: (sid: string) => void;
-  /**
-   * A run (launch turn + any #bg follow-up turns) just ended. The originator should reconcile
-   * from disk here so its live `user-*` / `assistant-*` / `auto-*` bubbles converge to the
-   * canonical persisted UUID messages — mirroring what the viewer path already does on
-   * completion, and what a page reload produces. Kept symmetric so in-session state never
-   * lingers as ephemeral ids until the next refresh.
-   */
-  onRunComplete?: () => void;
+  /** Transfer message ownership before creating the originator's bubbles. */
+  onSendStart?: (run: { id: string; startedAt: number }) => void;
+  /** Generation can end before its writer releases the transcript. */
+  onRecoveryDeleted?: (deletion: RecoveryDeletion) => void;
+  onRunEnd?: (writerActive: boolean, runId: string, failed?: boolean) => void;
+  onRunAccepted?: (run: LiveHistoryRun) => void;
+  onSendFailure?: (runId: string) => void;
+  onInputRejected?: (sessionId: string, copy: HistoryFailure) => void;
   /**
    * Sink for `system/task_*` events, recorded beside the message tree so a task whose spawning
    * call is not in this message list at all — a sub-agent's own sub-agent — still has live
@@ -88,6 +93,7 @@ interface UseChatStreamOptions {
 }
 
 interface UseChatStreamReturn {
+  drainingSubscriptions: ReactNode;
   isLoading: boolean;
   tokenUsage: TokenUsage | null;
   liveOutputTokens: LiveOutputTokens | null;
@@ -114,11 +120,49 @@ interface UseChatStreamReturn {
 // Hook
 // ============================================
 
+// Each stopped writer retains its own projection until settlement. It can update
+// history, but has no authority over the successor's loading, session or tokens.
+function DrainingRun({ run, update, engine, onAccepted, onEnd, onDeleted, onSettled }: {
+  run: { id: string; runKey: string }; update: RunMessageUpdate; engine?: ChatEngine;
+  onAccepted: UseChatStreamOptions['onRunAccepted']; onEnd: UseChatStreamOptions['onRunEnd'];
+  onDeleted: UseChatStreamOptions['onRecoveryDeleted']; onSettled: (id: string) => void;
+}) {
+  useLiveStream(run.runKey, update, true, engine, {
+    onlyRunId: run.id,
+    onSnapshotStart: value => { onAccepted?.(value); update(value.id, []); },
+    onRunEnd: (writer, id, failed) => {
+      onEnd?.(writer, id, failed);
+      if (!writer) onSettled(run.id);
+    },
+    onRecoveryDeleted: onDeleted,
+    onWriterIdle: () => { onEnd?.(false, run.id); onSettled(run.id); },
+  });
+  return null;
+}
+
 export function useChatStream(
   messages: ChatMessage[],
-  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-  { sessionId, cwd, engine, planMode, noHistory, outputStyleId, ollamaModel, engineModel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, onSessionId, onFetchTitle, onRunComplete, taskStore }: UseChatStreamOptions
+  updateRunMessages: RunMessageUpdate,
+  { sessionId, cwd, engine, planMode, noHistory, outputStyleId, ollamaModel, engineModel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, onSessionId, onFetchTitle, onSendStart, onRunEnd, onRunAccepted, onSendFailure, onInputRejected, onRecoveryDeleted, taskStore }: UseChatStreamOptions
 ): UseChatStreamReturn {
+  // Each subscriber needs its own initial snapshot, including a sender/viewer handoff.
+  const subscriptionId = useId();
+  const expectedSession = useRef(sessionId);
+  const viewIdentity = useRef({ cwd, sessionId });
+  const [drainingRuns, setDrainingRuns] = useState<Array<{ id: string; runKey: string }>>([]);
+  useEffect(() => {
+    const previous = viewIdentity.current;
+    if (previous.cwd !== cwd || (previous.sessionId !== sessionId && expectedSession.current !== sessionId)) setDrainingRuns([]);
+    viewIdentity.current = { cwd, sessionId };
+    expectedSession.current = sessionId;
+  }, [cwd, sessionId]);
+  const forgetDraining = useCallback((id: string) => setDrainingRuns(runs => runs.filter(run => run.id !== id)), []);
+  // Reuse the viewer's full snapshot projection without opening another socket or
+  // changing this sender's progress. A resend can miss the old writer's settlement.
+  const replayRecovery = useLiveStream(null, updateRunMessages, false, engine, {
+    onSnapshotStart: run => { onRunAccepted?.(run); updateRunMessages(run.id, []); },
+    onRunEnd, onRecoveryDeleted,
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const [liveOutputTokens, setLiveOutputTokens] = useState<LiveOutputTokens | null>(null);
@@ -136,13 +180,12 @@ export function useChatStream(
   const [activeRun, setActiveRun] = useState<{ runKey: string; assistantId: string } | null>(null);
   const activeRunRef = useRef(activeRun);
   activeRunRef.current = activeRun;
+  const waitingForWriterRef = useRef(false);
   const sawServerUsageUpdateRef = useRef(false);
 
-  // Latest onRunComplete via ref so endRun can fire it without taking it as a dependency
-  // (the callback identity changes each render; threading it through endRun's deps would churn
-  // handleSend too). endRun runs long after mount, so the ref is always populated by then.
-  const onRunCompleteRef = useRef(onRunComplete);
-  onRunCompleteRef.current = onRunComplete;
+  // Keep endRun stable while reading the latest lifecycle callback.
+  const onRunEndRef = useRef(onRunEnd);
+  onRunEndRef.current = onRunEnd;
   const taskStoreRef = useRef(taskStore);
   taskStoreRef.current = taskStore;
 
@@ -177,27 +220,31 @@ export function useChatStream(
   // a message: the model's next message opens a fresh bubble below it rather than continuing the
   // one above.
   const launchTurnIdRef = useRef<string | null>(null);
+  const launchMessagesRef = useRef<ChatMessage[]>([]);
   const splitPendingRef = useRef(false);
+  const consumptionBoundRef = useRef(false);
+  const setMessages = useCallback<(update: HistoryMessageUpdate) => void>((update) => {
+    const id = launchTurnIdRef.current;
+    if (id) updateRunMessages(id, update);
+  }, [updateRunMessages]);
 
   // Flush buffer to state (batched text delta → shared reducer)
   const flushStreamBuffer = useCallback(() => {
     const buffer = streamBufferRef.current;
     if (buffer && buffer.text) {
       const { messageId, text } = buffer;
-      setMessages((prev) =>
-        applyStreamEvent(
-          prev,
-          { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text } } },
-          { engine, assistantId: messageId }
-        )
-      );
+      setMessages({
+        event: { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text } } },
+        engine, assistantId: messageId,
+      });
       streamBufferRef.current = { messageId, text: '' };
     }
     streamFlushTimerRef.current = null;
   }, [setMessages, engine]);
 
   // End the originator's view of the current run (turn finished / stopped / failed).
-  const endRun = useCallback(() => {
+  const endRun = useCallback((writerActive = false, failed = false) => {
+    if (launchTurnIdRef.current) onRunEndRef.current?.(writerActive, launchTurnIdRef.current, failed);
     if (streamFlushTimerRef.current) {
       clearTimeout(streamFlushTimerRef.current);
       streamFlushTimerRef.current = null;
@@ -207,9 +254,8 @@ export function useChatStream(
       wsWatchdogRef.current = null;
     }
     flushStreamBuffer();
-    // The owning process is gone → no task it spawned is still running (see settleRunningTasks).
-    // endRun fires per RUN, not per turn, so this cannot cut a background task loose between the
-    // launch turn and the follow-up turn the SDK auto-runs when it reports back.
+    // Stop finalizes UI task state even while the writer finishes flushing.
+    // This fires per run, not between a resident run's follow-up turns.
     setMessages(settleRunningTasks);
     taskStoreRef.current?.settleRunning();
     setIsLoading(false);
@@ -223,24 +269,24 @@ export function useChatStream(
         prev.map((m) => (m.id === ar.assistantId || m.id === curId ? { ...m, isStreaming: false } : m))
       );
     }
-    setActiveRun(null);
-    // Converge the just-finished run's live bubbles to canonical persisted UUIDs (incremental +
-    // fingerprint-guarded on the callee, so a no-op when disk is unchanged / the viewer already
-    // reconciled). This closes the ephemeral-id lifecycle within the run and keeps in-session
-    // state identical to a page reload.
-    onRunCompleteRef.current?.();
+    waitingForWriterRef.current = writerActive && !!ar;
+    if (!waitingForWriterRef.current) {
+      activeRunRef.current = null;
+      setActiveRun(null);
+    }
+
   }, [flushStreamBuffer, setMessages]);
 
   // Stop generation: the run is detached server-side, so closing a socket won't stop it —
   // hit the explicit stop endpoint. Send both keys (sessionId once known, else runId).
-  const handleStop = useCallback(() => {
+  const handleStop = useCallback(async () => {
     const ar = activeRunRef.current;
-    fetch('/api/chat/stop', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: sessionIdRef.current, runId: ar?.runKey }),
-    }).catch(() => {});
-    endRun();
+    const result = await BrowserRuntime.runPromiseExit(stopChat({ sessionId: sessionIdRef.current, runId: ar?.runKey }));
+    if (result._tag === 'Failure') {
+      toast(i18n.t('chat.stopFailed', { defaultValue: 'Could not stop the run. Try again.' }), 'error');
+      return;
+    }
+    if (result.value.ok && ar && activeRunRef.current === ar) endRun(true);
   }, [endRun]);
 
   // SSE event handling
@@ -260,9 +306,28 @@ export function useChatStream(
 
     // Handle session_id + turn boundary. Each turn (including a follow-up turn the SDK auto-runs
     // after a background task completes) starts with a system.init.
+    if (eventType === 'system' && event.subtype === 'input_started' && typeof event.inputId === 'string') {
+      flushStreamBuffer();
+      consumptionBoundRef.current = true;
+      splitPendingRef.current = false;
+      const id = `input-asst-${event.inputId}`;
+      curAsstIdRef.current = id;
+      setMessages({ event: event as StreamEvent, engine, assistantId: id });
+      return;
+    }
+    if (eventType === 'system' && event.subtype === 'input_binding') {
+      setMessages({ event: event as StreamEvent, engine, assistantId: '' });
+      return;
+    }
+    if (eventType === 'system' && event.subtype === 'task_binding' && typeof event.taskId === 'string') {
+      setMessages((prev) => prev.map((message) => message.liveRunId === launchTurnIdRef.current
+        ? { ...message, sourceTaskId: event.taskId as string } : message));
+      return;
+    }
     if (eventType === 'system' && event.subtype === 'init') {
       const newSessionId = event.session_id as string;
       const isFollowUpTurn = sawResultRef.current;
+      expectedSession.current = newSessionId;
       onSessionId(newSessionId);
       sessionIdRef.current = newSessionId;
       if (!isFollowUpTurn) {
@@ -276,11 +341,11 @@ export function useChatStream(
       // of merging into the launcher's.
       if (isFollowUpTurn) {
         splitPendingRef.current = false;
-        const autoId = `auto-asst-${++bgSeqRef.current}`;
+        const autoId = `auto-asst-${launchTurnIdRef.current}-${++bgSeqRef.current}`;
         curAsstIdRef.current = autoId;
         setMessages((prev) => [
           ...prev,
-          { id: autoId, role: 'assistant', content: '', toolCalls: [], isStreaming: true, runKey: activeRunRef.current?.runKey } as ChatMessage,
+          { id: autoId, role: 'assistant', content: '', toolCalls: [], isStreaming: true, liveRunId: launchTurnIdRef.current ?? undefined, turnId: engine === "codex" ? `live-task-${launchTurnIdRef.current}` : undefined, runKey: activeRunRef.current?.runKey } as ChatMessage,
         ]);
       }
       turnActiveRef.current = true;
@@ -291,7 +356,12 @@ export function useChatStream(
     // `_human` event. The launch prompt's own event is skipped — its bubble already exists.
     if (eventType === 'user' && event._human) {
       const turnId = typeof event._turnId === 'string' ? event._turnId : null;
-      if (!turnId || turnId === launchTurnIdRef.current) return;
+      if (!turnId) return;
+      if (turnId === launchTurnIdRef.current) {
+        const timestamp = typeof event._ts === 'number' ? new Date(event._ts).toISOString() : undefined;
+        setMessages((prev) => prev.map((message) => message.liveRunId === turnId ? { ...message, turnStartedAt: timestamp } : message));
+        return;
+      }
       const text = (event.message as { content?: unknown } | undefined)?.content;
       const id = `auto-user-${turnId}`;
       setMessages((prev) =>
@@ -299,13 +369,14 @@ export function useChatStream(
           ? prev
           : [...prev, {
               id,
+              liveInputId: turnId,
               role: 'user',
               content: typeof text === 'string' ? text : '',
               ...(Array.isArray(event._images) && event._images.length ? { images: event._images as MessageImage[] } : {}),
-              runKey: activeRunRef.current?.runKey,
+              liveRunId: launchTurnIdRef.current ?? undefined, turnId: engine === "codex" ? `live-task-${launchTurnIdRef.current}` : undefined, runKey: activeRunRef.current?.runKey,
             } as ChatMessage]
       );
-      splitPendingRef.current = true;
+      if (!consumptionBoundRef.current) splitPendingRef.current = true;
       return;
     }
 
@@ -329,7 +400,7 @@ export function useChatStream(
       // Both sinks, always: the message tree settles the row when the spawning call is on
       // screen, the store covers every depth including the ones that have no row here.
       taskStoreRef.current?.applyEvent(event as unknown as StreamEvent);
-      setMessages((prev) => applyStreamEvent(prev, event as unknown as StreamEvent, { engine, assistantId: messageId }));
+      setMessages({ event: event as unknown as StreamEvent, engine, assistantId: messageId });
       if (event.subtype !== 'task_notification') return;
     }
 
@@ -357,7 +428,7 @@ export function useChatStream(
             role: 'system',
             content: summary,
             systemEvent: { kind: 'task-notification', ...(status ? { status } : {}), detail },
-            runKey: activeRunRef.current?.runKey,
+            liveRunId: launchTurnIdRef.current ?? undefined, turnId: engine === "codex" ? `live-task-${launchTurnIdRef.current}` : undefined, runKey: activeRunRef.current?.runKey,
           } as ChatMessage,
         ]);
       }
@@ -369,7 +440,7 @@ export function useChatStream(
     // session id, so it reads as an explanation of the change the user is about to notice.
     if (eventType === 'system' && event.subtype === 'notice') {
       const row = buildNoticeMessage(event as unknown as StreamEvent, `auto-notice-${++bgSeqRef.current}`);
-      if (row) setMessages((prev) => [...prev, { ...row, runKey: activeRunRef.current?.runKey }]);
+      if (row) setMessages((prev) => [...prev, { ...row, liveRunId: launchTurnIdRef.current ?? undefined, turnId: engine === "codex" ? `live-task-${launchTurnIdRef.current}` : undefined, runKey: activeRunRef.current?.runKey }]);
       return;
     }
 
@@ -427,17 +498,7 @@ export function useChatStream(
         streamFlushTimerRef.current = null;
       }
       flushStreamBuffer();
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === messageId
-            ? {
-                ...msg,
-                content: msg.content ? `${msg.content}\n\n⚠️ ${errText}` : `⚠️ ${errText}`,
-                isStreaming: false,
-              }
-            : msg
-        )
-      );
+      setMessages({ event: { ...(event as StreamEvent), type: 'error', error: errText }, engine, assistantId: messageId });
       return;
     }
 
@@ -455,12 +516,12 @@ export function useChatStream(
         }
         flushStreamBuffer();
         const prevId = messageId;
-        const autoId = `auto-asst-${++bgSeqRef.current}`;
+        const autoId = `auto-asst-${launchTurnIdRef.current}-${++bgSeqRef.current}`;
         curAsstIdRef.current = autoId;
         messageId = autoId;
         setMessages((prev) => [
           ...prev.map((m) => (m.id === prevId ? { ...m, isStreaming: false } : m)),
-          { id: autoId, role: 'assistant', content: '', toolCalls: [], isStreaming: true, runKey: activeRunRef.current?.runKey } as ChatMessage,
+          { id: autoId, role: 'assistant', content: '', toolCalls: [], isStreaming: true, liveRunId: launchTurnIdRef.current ?? undefined, turnId: engine === "codex" ? `live-task-${launchTurnIdRef.current}` : undefined, runKey: activeRunRef.current?.runKey } as ChatMessage,
         ]);
       }
       if (streamEvent?.type === 'content_block_delta' && streamEvent.delta?.type === 'text_delta') {
@@ -492,11 +553,11 @@ export function useChatStream(
           else if (block.name) bumpOutputProgress(`${block.name} ${JSON.stringify(block.input ?? {})}`);
         }
       }
-      setMessages((prev) => applyStreamEvent(prev, event as unknown as StreamEvent, { engine, assistantId: messageId }));
+      setMessages({ event: event as unknown as StreamEvent, engine, assistantId: messageId });
     }
 
     if (eventType === 'tool_progress') {
-      setMessages((prev) => applyStreamEvent(prev, event as unknown as StreamEvent, { engine, assistantId: messageId }));
+      setMessages({ event: event as unknown as StreamEvent, engine, assistantId: messageId });
       return;
     }
 
@@ -508,7 +569,7 @@ export function useChatStream(
           bumpOutputProgress(typeof block.content === 'string' ? block.content : JSON.stringify(block.content ?? ''));
         }
       }
-      setMessages((prev) => applyStreamEvent(prev, event as unknown as StreamEvent, { engine, assistantId: messageId }));
+      setMessages({ event: event as unknown as StreamEvent, engine, assistantId: messageId });
     }
 
     // Arrives after the turn's result, before the run ends.
@@ -563,17 +624,17 @@ export function useChatStream(
       // — note these arrive as subtype:'success'/is_error:false, so we can't gate on the error flag —
       // and result-only turns with no assistant message at all. Without this it renders as an empty bubble.
       // Finalize the assistant bubble (resultText fallback + isStreaming off + toolCalls done)
-      setMessages((prev) => applyStreamEvent(prev, event as unknown as StreamEvent, { engine, assistantId: messageId }));
+      setMessages({ event: event as unknown as StreamEvent, engine, assistantId: messageId });
     }
   }, [setMessages, flushStreamBuffer, onSessionId, onFetchTitle, cwd, engine]);
 
   // #10 ws-converge: tail the active detached run over /ws/session-stream and feed every
   // event through the SAME handleStreamEvent the SSE path used — so token usage, title,
   // retry indicators, deltas, tools, result and errors are all reused unchanged.
-  // At most one socket per hook (enabled only while a run is active).
+  // A stopped run keeps this subscription until its writer releases the transcript.
   useWebSocket({
     url: activeRun
-      ? `/ws/session-stream?sessionId=${encodeURIComponent(activeRun.runKey)}`
+      ? `/ws/session-stream?sessionId=${encodeURIComponent(activeRun.runKey)}&subscriber=${encodeURIComponent(subscriptionId)}`
       : '/ws/session-stream',
     enabled: !!activeRun,
     onMessage: (data) => {
@@ -585,14 +646,35 @@ export function useChatStream(
       }
       const ar = activeRunRef.current;
       if (!ar) return;
-      const msg = data as {
+      // A successor may have started while this sender was offline. Finish its
+      // own retained failure first; the viewer will then follow the successor.
+      const envelope = data as { recoveries?: Array<{ runId?: string; startedAt?: number; events?: StreamEvent[]; recoveryDeletions?: RecoveryDeletion[] }> };
+      for (const copy of envelope.recoveries ?? []) {
+        if (copy.runId && copy.runId !== launchTurnIdRef.current) replayRecovery(copy);
+      }
+      const ownRecovery = envelope.recoveries?.find((copy) => copy.runId === launchTurnIdRef.current);
+      const msg = (ownRecovery ?? data) as {
         type?: string;
         status?: string;
         events?: unknown[];
         outputTokens?: number;
+        writerActive?: boolean;
+        recovery?: boolean;
+        recoveryDeletions?: RecoveryDeletion[];
+        runId?: string;
+        startedAt?: number;
         message?: Record<string, unknown>;
       };
       if (msg.type === 'run-snapshot' && Array.isArray(msg.events)) {
+        if (msg.runId && msg.runId !== launchTurnIdRef.current) {
+          // This subscription's authoritative successor proves our writer released.
+          // End only our projection; the viewer subscribes and replays the current run.
+          endRun();
+          return;
+        }
+        if (typeof msg.startedAt === 'number' && launchTurnIdRef.current) {
+          onRunAccepted?.({ id: launchTurnIdRef.current, startedAt: msg.startedAt, recovery: msg.recovery });
+        }
         // A snapshot is an authoritative replay of the ENTIRE in-flight turn. On a mid-turn
         // ws reconnect (HMR / network blip / server restart) the server re-sends the whole
         // turn, so reset this assistant bubble before replaying — handleStreamEvent APPENDS
@@ -603,12 +685,11 @@ export function useChatStream(
           streamFlushTimerRef.current = null;
         }
         streamBufferRef.current = null;
-        // #bg: reset per-run turn tracking and drop any live-created follow-up bubbles / event
-        // bars (id `auto-*`) so this authoritative replay rebuilds them cleanly. Scope the drop
-        // to THIS run's own bubbles (runKey === ar.runKey): the snapshot replays only the current
-        // run's turns, so wiping a PRIOR run's `auto-*` bubbles here would delete continuation
-        // bubbles the replay never rebuilds — they'd vanish until a page reload restored them.
+        // Rebuild this run from its launch messages and the authoritative replay.
+        // The viewer may have rendered the same run before admission reached this
+        // sender; its IDs must not replace the originator's replay targets.
         curAsstIdRef.current = ar.assistantId;
+        consumptionBoundRef.current = false;
         sawResultRef.current = false;
         turnActiveRef.current = false;
         splitPendingRef.current = false;
@@ -621,21 +702,34 @@ export function useChatStream(
           sawServerUsageUpdateRef.current = true;
           setLiveOutputTokens({ outputTokens: snapshotOutputTokens });
         }
-        setMessages((prev) =>
-          prev
-            .filter((m) => !(typeof m.id === 'string' && m.id.startsWith('auto-') && m.runKey === ar.runKey))
-            .map((m) => (m.id === ar.assistantId ? { ...m, content: '', toolCalls: [] } : m))
-        );
+        const timestamp = typeof msg.startedAt === 'number' ? new Date(msg.startedAt).toISOString() : undefined;
+        setMessages(launchMessagesRef.current.map((message) => ({ ...message, turnStartedAt: timestamp ?? message.turnStartedAt })));
         for (const ev of msg.events) handleStreamEvent(ev as Record<string, unknown>, curAsstIdRef.current ?? ar.assistantId);
         // Run already finished before we connected (status idle/error in the snapshot).
-        if (msg.status && msg.status !== 'running') endRun();
+        if (msg.status && msg.status !== 'running') endRun(msg.writerActive === true, msg.status === 'error');
+        for (const deletion of msg.recoveryDeletions ?? []) onRecoveryDeleted?.(deletion);
       } else if (msg.type === 'run-event' && msg.message) {
+        if (msg.message.type === 'recovery-deleted') {
+          onRecoveryDeleted?.(msg.message.deletion as RecoveryDeletion);
+          return;
+        }
         // 'run-ended' is the single definitive end signal (engines may emit several
         // intermediate 'result's — codex = one per turn — so we must NOT end on result).
-        if (msg.message.type === 'run-ended') { endRun(); return; }
+        if (msg.message.type === 'run-ended' || msg.message.type === 'run-settled') {
+          if (typeof msg.message.runId === 'string' && msg.message.runId !== launchTurnIdRef.current) return;
+          endRun(msg.message.type === 'run-ended' && msg.message.writerActive === true, msg.message.status === 'error');
+          return;
+        }
+        if (waitingForWriterRef.current) {
+          if (isRecoverySettlement(msg.message)) {
+            handleStreamEvent(msg.message, curAsstIdRef.current ?? ar.assistantId);
+          }
+          return;
+        }
         handleStreamEvent(msg.message, curAsstIdRef.current ?? ar.assistantId);
       } else if (msg.type === 'run-idle') {
         endRun();
+        for (const deletion of msg.recoveryDeletions ?? []) onRecoveryDeleted?.(deletion);
       }
       // 'ping': ignore
     },
@@ -665,8 +759,23 @@ export function useChatStream(
       }));
 
       // Add user message
+      // A new send can start while the stopped run is still flushing. Its final
+      // notification must not finalize or reconcile this new sender's bubbles.
+      if (waitingForWriterRef.current && activeRunRef.current && launchTurnIdRef.current) {
+        const retained = { id: launchTurnIdRef.current, runKey: activeRunRef.current.runKey };
+        setDrainingRuns(runs => [...runs.filter(run => run.id !== retained.id), retained]);
+      }
+      activeRunRef.current = null;
+      setActiveRun(null);
+      waitingForWriterRef.current = false;
+      const runId = genRunId();
+      launchTurnIdRef.current = runId;
+      onSendStart?.({ id: runId, startedAt: Date.now() });
       const userMessage: ChatMessage = {
-        id: `user-${Date.now()}`,
+        id: `user-${runId}`,
+        liveInputId: runId,
+        liveRunId: runId,
+        turnId: engine === "codex" ? `live-task-${runId}` : undefined,
         role: 'user',
         content,
         images: messageImages,
@@ -686,20 +795,21 @@ export function useChatStream(
       // user bubble by identity instead of by text — required for a repeated
       // prompt ("继续"), where text comparison suppresses the new turn's bubble.
       // It is also the idempotency key for the run registry's test-and-set.
-      const runId = genRunId();
-      launchTurnIdRef.current = runId;
-
       // Create assistant message placeholder
-      const assistantMessageId = `assistant-${Date.now()}`;
+      const assistantMessageId = `assistant-${runId}`;
       const assistantMessage: ChatMessage = {
         id: assistantMessageId,
+        liveRunId: runId,
+        turnId: engine === "codex" ? `live-task-${runId}` : undefined,
         role: 'assistant',
         content: '',
         toolCalls: [],
         isStreaming: true,
       };
+      launchMessagesRef.current = [userMessage, assistantMessage];
       setMessages((prev) => [...prev, assistantMessage]);
       // #bg: bind live rendering to this launching bubble and reset per-run turn tracking.
+      consumptionBoundRef.current = false;
       curAsstIdRef.current = assistantMessageId;
       sawResultRef.current = false;
       turnActiveRef.current = false;
@@ -764,11 +874,17 @@ export function useChatStream(
           );
         }
 
-        const startBody = (await response.json().catch(() => ({}))) as { runKey?: string };
+        const startBody = (await response.json().catch(() => ({}))) as { runKey?: string; startedAt?: number };
+        onRunAccepted?.({ id: runId, startedAt: startBody.startedAt ?? Date.now() });
         // Hand off to the ws consumer; it ends the run on result / run-idle.
+        if (typeof startBody.startedAt === 'number') {
+          const timestamp = new Date(startBody.startedAt).toISOString();
+          setMessages((prev) => prev.map((message) => message.liveRunId === runId ? { ...message, turnStartedAt: timestamp } : message));
+        }
         setActiveRun({ runKey: startBody.runKey || runId, assistantId: assistantMessageId });
         // Arm the connection watchdog: if /ws/session-stream never delivers a message (it sends
-        // a snapshot immediately on connect), the socket failed to connect → unstick the turn.
+        // a snapshot immediately on connect), surface the transport failure without claiming
+        // that the server writer released its lease. Keep the subscription and Stop available.
         wsAliveRef.current = false;
         if (wsWatchdogRef.current) clearTimeout(wsWatchdogRef.current);
         wsWatchdogRef.current = setTimeout(() => {
@@ -780,7 +896,6 @@ export function useChatStream(
                   : m
               )
             );
-            endRun();
           }
         }, 15000);
       } catch (error) {
@@ -791,38 +906,52 @@ export function useChatStream(
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === assistantMessageId
-              ? { ...msg, content: errorMsg, isStreaming: false }
+              ? { ...msg, content: errorMsg, streamError: errorMsg, isStreaming: false }
               : msg
           )
         );
+        onSendFailure?.(runId);
         setIsLoading(false);
         setActiveRun(null);
       }
     },
-    [cwd, engine, planMode, noHistory, outputStyleId, ollamaModel, engineModel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, setMessages, endRun]
+    [cwd, engine, planMode, noHistory, outputStyleId, ollamaModel, engineModel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, setMessages, endRun, onSendStart, onRunAccepted, onSendFailure]
   );
 
   const injectMessage = useCallback(
     async (content: string, images: ImageInfo[] | undefined, targetSessionId: string) => {
       setSuggestion(null);
+      const inputId = genRunId();
+      const startedAt = Date.now();
+      const messageImages = images?.map((image) => ({ type: 'base64' as const, media_type: image.media_type, data: image.data }));
       const isPiProvider = engine === 'ollama' || engine === 'deepseek' || engine === 'kimi' || engine === 'glm';
       await BrowserRuntime.runPromise(injectChatMessage(engine, {
         prompt: content,
         sessionId: targetSessionId,
-        runId: genRunId(),
-        images: images?.map((image) => ({ type: 'base64' as const, media_type: image.media_type, data: image.data })),
+        runId: inputId,
+        images: messageImages,
         cwd,
         language: i18n.language,
         inject: true,
         ...(isPiProvider ? { model: engine === 'ollama' ? ollamaModel : engineModel, noHistory, outputStyleId } : {}),
         ...(engine === 'codex' ? { model: codexModel, codexReasoningEffort, noHistory, outputStyleId } : {}),
         ...(engine === 'grok' ? { model: grokModel && grokModel !== 'grok-build' ? grokModel : GROK_DEFAULT_MODEL, grokReasoningEffort: grokReasoningEffort || GROK_DEFAULT_REASONING, noHistory, outputStyleId } : {}),
-      }));
+      }).pipe(Effect.tapError((error) => Effect.sync(() => {
+        // Rejection owns a copy, never the active run or its writer lifecycle.
+        onInputRejected?.(targetSessionId, { id: inputId, startedAt, messages: [
+          { id: `user-${inputId}`, role: 'user', content, images: messageImages },
+          { id: `error-${inputId}`, role: 'assistant', content: error.message, streamError: error.message },
+        ] });
+      }))));
     },
-    [cwd, engine, ollamaModel, engineModel, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, noHistory, outputStyleId]
+    [cwd, engine, ollamaModel, engineModel, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, noHistory, outputStyleId, onInputRejected]
   );
 
   return {
+    drainingSubscriptions: drainingRuns.map(run => createElement(DrainingRun, {
+      key: run.id, run, update: updateRunMessages, engine, onAccepted: onRunAccepted,
+      onEnd: onRunEnd, onDeleted: onRecoveryDeleted, onSettled: forgetDraining,
+    })),
     isLoading,
     tokenUsage,
     liveOutputTokens,

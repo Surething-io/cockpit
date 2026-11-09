@@ -1,3 +1,4 @@
+import { isRecoverySettlement, type RecoveryDeletion } from '../shared/recoveryCopy';
 /**
  * sessionRunHub — per-session in-flight run registry + live subscription (#10).
  *
@@ -74,14 +75,44 @@ interface RunState {
 
 const GRACE_MS = 60_000;
 
+interface RecoveryJournal {
+  keys: Set<string>;
+  entries: Array<{ order: number; deletion: RecoveryDeletion }>;
+  /** Last link or deletion, for least-recently-used eviction. */
+  touched?: number;
+}
+
+// Bounds for process memory and the per-snapshot payload. Precise evidence is never
+// truncated (a cut remap chain would mis-prune copies): a journal over budget is
+// compacted into one `clearsBefore` marker that invalidates every older copy instead.
+export const MAX_RECOVERY_DELETIONS = 100;
+export const MAX_RECOVERY_IDS_PER_SESSION = 2_000;
+export const MAX_RECOVERY_IDS_TOTAL = 20_000;
+//
+// Known limits, accepted because copies are read-only and never reach the
+// transcript or the model:
+// - Evicting a whole journal (LRU, beyond MAX_RECOVERY_JOURNALS) leaves no marker,
+//   so a client that stayed disconnected through it keeps showing turns deleted
+//   meanwhile in its copy.
+// - `clearsBefore` is wall-clock time compared with run `startedAt`: a run started
+//   in the same millisecond as a compaction, or after the clock steps backwards,
+//   loses its copy on reconnect. Compaction needs the edit lease, so no run of
+//   that session is active at that moment.
+export const MAX_RECOVERY_JOURNALS = 500;
+
 const g = globalThis as unknown as {
   __cockpitRunRegistry?: Map<string, RunState>;
   __cockpitRunListeners?: Map<string, Set<RunListener>>;
   __cockpitRunSeqByKey?: Map<string, number>;
   __cockpitTranscriptEdits?: Map<string, Promise<void>>;
+  __cockpitFailedRuns?: Set<RunState>;
+  __cockpitRecoveryJournal?: { order: number; byKey: Map<string, RecoveryJournal> };
 };
 const registry: Map<string, RunState> =
   g.__cockpitRunRegistry ?? (g.__cockpitRunRegistry = new Map());
+// Failed event buffers survive successor runs for the existing reconnect window.
+// They never retain writer ownership and are not a second transcript.
+const failedRuns = g.__cockpitFailedRuns ?? (g.__cockpitFailedRuns = new Set<RunState>());
 const listeners: Map<string, Set<RunListener>> =
   g.__cockpitRunListeners ?? (g.__cockpitRunListeners = new Map());
 // Last seq seen per key — SURVIVES eviction (registry entries are dropped after the grace
@@ -97,6 +128,80 @@ const seqByKey: Map<string, number> =
 // no turn may start (startRun refuses, waitForWriter waits).
 const edits: Map<string, Promise<void>> =
   g.__cockpitTranscriptEdits ?? (g.__cockpitTranscriptEdits = new Map());
+
+// Mounted copies can outlive every run buffer and a disconnected socket. Retain
+// only edit identities/remaps (never transcript contents), bounded by the caps above.
+const recoveryJournal = g.__cockpitRecoveryJournal ?? (g.__cockpitRecoveryJournal = { order: 0, byKey: new Map<string, RecoveryJournal>() });
+function touchJournal(journal: RecoveryJournal): void {
+  journal.touched = ++recoveryJournal.order;
+}
+
+/** Drop the least recently used journals (with all their aliases) beyond the cap. */
+function evictRecoveryJournals(keep: RecoveryJournal): void {
+  const journals = new Set(recoveryJournal.byKey.values());
+  if (journals.size <= MAX_RECOVERY_JOURNALS) return;
+  const oldest = [...journals].filter(journal => journal !== keep)
+    .sort((a, b) => (a.touched ?? 0) - (b.touched ?? 0))
+    .slice(0, journals.size - MAX_RECOVERY_JOURNALS);
+  for (const journal of oldest) {
+    for (const key of journal.keys) if (recoveryJournal.byKey.get(key) === journal) recoveryJournal.byKey.delete(key);
+  }
+}
+
+function deletionIds(deletion: RecoveryDeletion): number {
+  return deletion.sourceIds.length + deletion.taskIds.length + Object.keys(deletion.sourceRemap ?? {}).length;
+}
+
+function journalIds(journal: RecoveryJournal): number {
+  return journal.entries.reduce((sum, entry) => sum + deletionIds(entry.deletion), 0);
+}
+
+/** Replace a journal's evidence by one marker invalidating every copy that exists now. */
+function compactJournal(journal: RecoveryJournal): void {
+  journal.entries = [{ order: ++recoveryJournal.order, deletion: { sourceIds: [], taskIds: [], clearsBefore: Date.now() } }];
+}
+
+function enforceRecoveryBudget(journal: RecoveryJournal): void {
+  if (journal.entries.length > MAX_RECOVERY_DELETIONS || journalIds(journal) > MAX_RECOVERY_IDS_PER_SESSION) {
+    compactJournal(journal);
+  }
+  const journals = [...new Set(recoveryJournal.byKey.values())]
+    .sort((a, b) => (a.touched ?? 0) - (b.touched ?? 0));
+  let total = journals.reduce((sum, current) => sum + journalIds(current), 0);
+  for (const current of journals) {
+    if (total <= MAX_RECOVERY_IDS_TOTAL) break;
+    const ids = journalIds(current);
+    if (!ids) continue;
+    compactJournal(current);
+    total -= ids;
+  }
+}
+
+function journalFor(key: string): RecoveryJournal {
+  let journal = recoveryJournal.byKey.get(key);
+  if (!journal) {
+    journal = { keys: new Set([key]), entries: [] };
+    recoveryJournal.byKey.set(key, journal);
+    touchJournal(journal);
+    evictRecoveryJournals(journal);
+  }
+  return journal;
+}
+
+/** Preserve alias access and edit order even after both runs have been evicted. */
+function linkRecoveryJournals(oldId: string, newId: string): void {
+  const old = journalFor(oldId);
+  const next = journalFor(newId);
+  touchJournal(next);
+  if (old === next) return;
+  next.entries = [...old.entries, ...next.entries].sort((a, b) => a.order - b.order);
+  for (const key of old.keys) { next.keys.add(key); recoveryJournal.byKey.set(key, next); }
+  enforceRecoveryBudget(next);
+}
+
+export function getRecoveryDeletions(key: string): RecoveryDeletion[] {
+  return recoveryJournal.byKey.get(key)?.entries.map(entry => entry.deletion) ?? [];
+}
 
 /** Advance a run's seq and remember it under every alias so it survives eviction. */
 function bumpSeq(state: RunState): number {
@@ -170,7 +275,7 @@ export function startRun(
   // retained per-key seq when the prior turn has already been evicted from the registry.
   const prevSeq = prev?.seq ?? seqByKey.get(key) ?? 0;
   if (prev) {
-    if (prev.evictTimer) clearTimeout(prev.evictTimer);
+    if (prev.evictTimer && !failedRuns.has(prev)) clearTimeout(prev.evictTimer);
     for (const k of prev.keys) registry.delete(k); // drop the prior turn's aliases
   }
   const startedAt = Date.now();
@@ -208,11 +313,20 @@ export function startRun(
 export function appendRun(key: string, message: unknown): void {
   const r = registry.get(key);
   if (!r) return;
-  // Drop events that arrive after the run reached a terminal state: once run-ended fired,
-  // a viewer has finalized its bubble, so a late engine event (cooperative-abort flush,
-  // a straggler line after stop) must not fan out and mutate it. The run stays in the
-  // registry during the grace window, so the existence check alone is not enough.
-  if (r.status !== 'running') return;
+  // Stop closes model output immediately. Its writer still owns cleanup and may
+  // report native input bindings and inputs it could not deliver; retain that
+  // evidence before release so recovery still respects later native deletion.
+  const frame = message as { type?: string } | null;
+  if (r.status !== 'running') {
+    if (!r.writer || !isRecoverySettlement(message)) return;
+    if (frame?.type === 'error') markRunIdle(key, 'error');
+  }
+  if (typeof message === 'object' && message !== null) {
+    const frame = message as { type?: string; subtype?: string; _ts?: number };
+    if (frame.type === 'system' && frame.subtype === 'init' && frame._ts === undefined) {
+      message = { ...frame, _ts: Date.now() };
+    }
+  }
   bumpSeq(r);
   const outputTokens = getUsageUpdateOutputTokens(message);
   if (outputTokens !== null) {
@@ -237,6 +351,7 @@ export function rekeyRun(oldId: string, newId: string): void {
   // (ollama uses the runId AS its session id, so getRunSessionId must still resolve it;
   // otherwise scheduled ollama tasks never rebind and degrade to a fresh session each round).
   r.sessionId = newId;
+  linkRecoveryJournals(oldId, newId);
   if (oldId !== newId) {
     r.keys.add(newId);
     registry.set(newId, r);
@@ -268,7 +383,7 @@ export function markRunIdle(key: string, status: RunStatus = 'idle'): void {
   // sees status=idle instead, so it must not be replayed).
   {
     bumpSeq(r);
-    fanout(r, { seq: r.seq, message: { type: 'run-ended', status } });
+    fanout(r, { seq: r.seq, message: { type: 'run-ended', status, writerActive: r.writer, runId: r.runId } });
   }
   scheduleEvict(r);
 }
@@ -290,6 +405,7 @@ function scheduleEvict(r: RunState): void {
   r.evictTimer = setTimeout(() => {
     r.evictTimer = undefined;
     if (r.writer) return;
+    failedRuns.delete(r);
     for (const k of r.keys) if (registry.get(k) === r) registry.delete(k);
   }, GRACE_MS);
 }
@@ -301,9 +417,16 @@ function scheduleEvict(r: RunState): void {
 export function releaseRun(key: string): void {
   const r = registry.get(key);
   if (!r || !r.writer) return;
+  if (r.status === 'error') failedRuns.add(r);
   r.writer = false;
   r.releaseWriter();
-  if (r.status !== 'running' && !r.evictTimer) scheduleEvict(r);
+  // Stop can announce the terminal state before the engine finishes flushing.
+  // This second phase is the point at which disk reads may replace live content.
+  if (r.status !== 'running') {
+    bumpSeq(r);
+    fanout(r, { seq: r.seq, message: { type: 'run-settled', status: r.status, runId: r.runId } });
+  }
+  if (r.status !== 'running') scheduleEvict(r);
 }
 
 /**
@@ -336,6 +459,12 @@ export function isSessionBusy(key: string): boolean {
   return edits.has(key) || (!!r && (r.status === 'running' || r.writer));
 }
 
+/** A cheap read marker: unlike a replay snapshot, this never copies event buffers. */
+export function historyReadMarker(key: string): string {
+  const run = registry.get(key);
+  return JSON.stringify([run?.runId, run?.startedAt, run?.seq, run?.writer, edits.has(key)]);
+}
+
 /**
  * Take the writer lease for an edit of `key`'s transcript. Returns null if the session is
  * busy; otherwise a release function, and until it is called no turn can start on `key`.
@@ -355,10 +484,43 @@ export function beginTranscriptEdit(key: string): (() => void) | null {
 /** Snapshot of the current in-flight turn for a freshly connecting client. */
 export function getRunSnapshot(
   key: string
-): { status: RunStatus; seq: number; events: unknown[]; startedAt: number; runId?: string; outputTokens?: number } | null {
+): { status: RunStatus; seq: number; events: unknown[]; startedAt: number; runId?: string; outputTokens?: number; writerActive: boolean; recoveryDeletions?: RecoveryDeletion[] } | null {
   const r = registry.get(key);
   if (!r) return null;
-  return { status: r.status, seq: r.seq, events: r.events.slice(), startedAt: r.startedAt, runId: r.runId, outputTokens: r.outputTokens };
+  return { status: r.status, seq: r.seq, events: r.events.slice(), startedAt: r.startedAt, runId: r.runId, outputTokens: r.outputTokens, writerActive: r.writer, recoveryDeletions: getRecoveryDeletions(key) };
+}
+
+/** Replay older failures before the current snapshot without transferring writer ownership. */
+export function getRunRecoveries(key: string) {
+  return [...failedRuns].filter((run) => run.keys.has(key) && run !== registry.get(key))
+    .map((run) => ({ type: 'run-snapshot' as const, recovery: true, status: 'error' as const,
+      runId: run.runId, startedAt: run.startedAt, events: run.events.slice(), writerActive: false,
+      recoveryDeletions: getRecoveryDeletions(key) }));
+}
+
+/** Successful deletion invalidates copies independently of run-buffer retention. */
+export function deleteRunRecoveryTurns(key: string, deletion: RecoveryDeletion): void {
+  const journal = journalFor(key);
+  journal.entries.push({ order: ++recoveryJournal.order, deletion: {
+    sourceIds: [...deletion.sourceIds], taskIds: [...deletion.taskIds],
+    ...(deletion.sourceRemap ? { sourceRemap: { ...deletion.sourceRemap } } : {}),
+  } });
+  touchJournal(journal);
+  enforceRecoveryBudget(journal);
+  // Alias subscribers can outlive their run too. Use one sequence greater than
+  // every alias watermark, including when the current run has already expired.
+  let seq = 0;
+  for (const alias of journal.keys) seq = Math.max(seq, seqByKey.get(alias) ?? 0, registry.get(alias)?.seq ?? 0);
+  seq += 1;
+  for (const alias of journal.keys) {
+    seqByKey.set(alias, seq);
+    const run = registry.get(alias);
+    if (run) run.seq = seq;
+  }
+  const event = { seq, message: { type: 'recovery-deleted', deletion } };
+  for (const alias of journal.keys) {
+    for (const listener of listeners.get(alias) ?? []) { try { listener(event); } catch { /* Match live fanout isolation. */ } }
+  }
 }
 
 /** True while a turn is actively running (used by the 409 concurrent-run guard). */
@@ -415,7 +577,7 @@ export function injectRun(
   const r = registry.get(key);
   if (!r || r.status !== 'running') return 'idle';
   if (r.input.state === 'unsupported') return 'unsupported';
-  if (r.input.state === 'closed' || !r.input.sink(input)) return 'closed';
+  if (r.input.state === 'closed' || !r.input.sink({ ...input, inputId: runId })) return 'closed';
   appendRun(key, {
     type: 'user',
     _human: true,

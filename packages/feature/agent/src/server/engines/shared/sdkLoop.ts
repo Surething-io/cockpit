@@ -1,6 +1,6 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { randomUUID } from 'crypto';
-import type { RunCtx, ImageData } from '../types';
+import type { RunCtx, ImageData, InjectedInput } from '../types';
 
 type SdkOptions = Record<string, unknown>;
 
@@ -113,6 +113,13 @@ function follow(ctx: RunCtx): AbortController {
  * (env, permissionMode, config dir), injected by the caller.
  */
 export async function runSdkLoop(ctx: RunCtx, buildOptions: BuildSdkOptions): Promise<void> {
+  const unfinished = new Map<string, InjectedInput>();
+  if (ctx.params.runId) unfinished.set(ctx.params.runId, { inputId: ctx.params.runId, text: ctx.prompt, images: ctx.images });
+  // Inputs the CLI has stamped (user_message_uuid[s]) on its output. Only a stamped
+  // input is a persisted user row: one handed over but not yet dequeued survives a
+  // Stop only as a `queue-operation` line, which history does not render. So Stop
+  // reports every unstamped input, whether still queued here or already pulled.
+  const delivered = new Set<string>();
   const firstContent = userContent(ctx.prompt, ctx.images);
 
   // Background-task persistence: run every turn over a STREAMING input so the underlying claude
@@ -138,6 +145,7 @@ export async function runSdkLoop(ctx: RunCtx, buildOptions: BuildSdkOptions): Pr
   const awaitingStart = new Set<string>();
   let resultsSinceStart = 0;
   let turnActive = false;
+  let respondingInputId: string | undefined;
 
   // closeInput() lets the current attempt's input generator return, ending the streaming turn.
   // Held in an outer binding so an abort (user stop) can close whichever gate is live.
@@ -154,145 +162,230 @@ export async function runSdkLoop(ctx: RunCtx, buildOptions: BuildSdkOptions): Pr
   // input is closed the sink refuses, and the orchestrator opens a fresh run instead — a
   // message yielded just before the close is still answered, as the CLI drains its queue
   // before exiting.
-  const injected: Array<{ content: string | ContentBlock[] }> = [];
+  const injected: Array<{ content: string | ContentBlock[]; inputId?: string }> = [];
   let wakeInput: () => void = () => {};
   ctx.acceptInput((input) => {
     if (gateClosed || ctx.signal.aborted) return false;
-    injected.push({ content: userContent(input.text, input.images) });
+    if (input.inputId) unfinished.set(input.inputId, input);
+    injected.push({ content: userContent(input.text, input.images), inputId: input.inputId });
     wakeInput();
     return true;
   });
 
-  for (let attempt = 0; attempt <= MAX_COMPACTION_RETRIES; attempt++) {
-    gateClosed = false;
-    const gateOpen = new Promise<void>((resolve) => {
-      closeInput = () => {
-        if (!gateClosed) {
-          gateClosed = true;
-          resolve();
-        }
-      };
-    });
-    if (ctx.signal.aborted) closeInput();
+  let failed = false;
+  try {
+    for (let attempt = 0; attempt <= MAX_COMPACTION_RETRIES; attempt++) {
+      gateClosed = false;
+      const gateOpen = new Promise<void>((resolve) => {
+        closeInput = () => {
+          if (!gateClosed) {
+            gateClosed = true;
+            resolve();
+          }
+        };
+      });
+      if (ctx.signal.aborted) closeInput();
 
-    const isRetry = attempt > 0;
-    const firstUuid = randomUUID();
-    awaitingStart.clear(); // a retry's 'continue' supersedes whatever the failed attempt sent
-    resultsSinceStart = 0;
-    awaitingStart.add(firstUuid);
-    const firstYield = {
-      type: 'user' as const,
-      uuid: firstUuid,
-      // A compaction retry resumes the same session with 'continue'; the first attempt sends the
-      // user turn (text ∪ images).
-      message: { role: 'user' as const, content: isRetry ? 'continue' : firstContent },
-      parent_tool_use_id: null,
-      session_id: ctx.sessionId || `session-${ctx.currentKey()}`,
-    };
-    const input = (async function* () {
-      yield firstYield;
-      // Keep the process resident until the turn (and any background tasks) drain, passing on
-      // whatever the user sends meanwhile.
-      for (;;) {
-        for (let next = injected.shift(); next; next = injected.shift()) {
-          const uuid = randomUUID();
-          // Sent while the run idles on background tasks → it starts a turn of its own.
-          if (!turnActive) awaitingStart.add(uuid);
-          yield {
-            type: 'user' as const,
-            uuid,
-            message: { role: 'user' as const, content: next.content },
-            parent_tool_use_id: null,
-            session_id: ctx.currentKey(),
-            priority: 'next' as const,
+      const isRetry = attempt > 0;
+      const firstUuid = randomUUID();
+      const inputIds = new Map<string, string>();
+      const firstInputId = isRetry ? respondingInputId ?? ctx.params.runId : ctx.params.runId;
+      if (firstInputId) inputIds.set(firstUuid, firstInputId);
+      awaitingStart.clear(); // a retry's 'continue' supersedes whatever the failed attempt sent
+      resultsSinceStart = 0;
+      awaitingStart.add(firstUuid);
+      const firstYield = {
+        type: 'user' as const,
+        uuid: firstUuid,
+        // A compaction retry resumes the same session with 'continue'; the first attempt sends the
+        // user turn (text ∪ images).
+        message: { role: 'user' as const, content: isRetry ? 'continue' : firstContent },
+        parent_tool_use_id: null,
+        session_id: ctx.sessionId || `session-${ctx.currentKey()}`,
+      };
+      const input = (async function* () {
+        // Once Stop has fired, hand nothing more to the SDK: it would drop the message
+        // unwritten anyway. Delivery itself is confirmed only by the CLI's stamp.
+        if (ctx.signal.aborted) return;
+        if (!isRetry && ctx.params.runId) {
+          ctx.emit({ type: 'system', subtype: 'input_binding', inputId: ctx.params.runId, sourceId: firstUuid });
+        }
+        yield firstYield;
+        // Keep the process resident until the turn (and any background tasks) drain, passing on
+        // whatever the user sends meanwhile.
+        for (;;) {
+          for (let next = ctx.signal.aborted ? undefined : injected.shift(); next;
+            next = ctx.signal.aborted ? undefined : injected.shift()) {
+            const uuid = randomUUID();
+            if (next.inputId) {
+              inputIds.set(uuid, next.inputId);
+              ctx.emit({ type: 'system', subtype: 'input_binding', inputId: next.inputId, sourceId: uuid });
+            }
+            // Sent while the run idles on background tasks → it starts a turn of its own.
+            if (!turnActive) awaitingStart.add(uuid);
+            yield {
+              type: 'user' as const,
+              uuid,
+              message: { role: 'user' as const, content: next.content },
+              parent_tool_use_id: null,
+              session_id: ctx.currentKey(),
+              priority: 'next' as const,
+            };
+          }
+          if (gateClosed || ctx.signal.aborted) return;
+          await new Promise<void>((resolve) => {
+            wakeInput = resolve;
+            void gateOpen.then(resolve);
+          });
+        }
+      })();
+
+      const attemptAbort = follow(ctx);
+      const resume = isRetry ? ctx.currentKey() : ctx.sessionId;
+      const built = isRetry
+        ? { ...buildOptions(attemptAbort, resume, true), resume }
+        : buildOptions(attemptAbort, ctx.sessionId, false);
+      const options = { ...built, stderr: makeStderrForwarder() };
+
+      const response = query({ prompt: input, options });
+
+      const consumed = new Set<string>();
+      try {
+        let receivedResult = false;
+        let resultError: Error | undefined;
+        for await (const message of response) {
+          const stamped = message as { parent_tool_use_id?: string | null; user_message_uuid?: string; user_message_uuids?: string[] };
+          const stamps = stamped.user_message_uuids ?? (stamped.user_message_uuid ? [stamped.user_message_uuid] : []);
+          // The SDK buffers CLI output independently of this loop, so a message read
+          // after Stop may still prove an input was persisted. Record that first.
+          if (stamped.parent_tool_use_id == null) {
+            for (const uuid of stamps) {
+              const admitted = inputIds.get(uuid);
+              if (admitted) delivered.add(admitted);
+            }
+          }
+          if (ctx.signal.aborted) {
+            closeInput();
+            break;
+          }
+
+          const msg = message as {
+            type?: string;
+            subtype?: string;
+            session_id?: string;
+            task_id?: string;
+            ambient?: boolean;
+            tasks?: Array<{ task_id: string; ambient?: boolean }>;
+            is_error?: boolean;
+            errors?: string[];
+            result?: string;
+            parent_tool_use_id?: string | null;
+            user_message_uuid?: string;
+            user_message_uuids?: string[];
           };
+          if (msg.type === 'system' && msg.subtype === 'init') turnActive = true;
+          if (msg.parent_tool_use_id == null) {
+            for (const uuid of msg.user_message_uuids ?? (msg.user_message_uuid ? [msg.user_message_uuid] : [])) {
+              const admitted = inputIds.get(uuid);
+              if (admitted) consumed.add(admitted);
+            }
+            if (msg.type === 'result') {
+              if (!msg.is_error) for (const id of consumed) unfinished.delete(id);
+              consumed.clear();
+            }
+          }
+          for (const uuid of msg.user_message_uuids ?? (msg.user_message_uuid ? [msg.user_message_uuid] : [])) {
+            if (awaitingStart.delete(uuid)) resultsSinceStart = 0;
+          }
+          // The primary stamp owns this reply; the plural list also includes inputs
+          // folded into a typed turn and must not move that turn's earlier output.
+          const inputId = msg.parent_tool_use_id == null && msg.user_message_uuid
+            ? inputIds.get(msg.user_message_uuid) : undefined;
+          if (inputId) {
+            respondingInputId = inputId;
+            ctx.emit({ type: 'system', subtype: 'input_started', inputId });
+          }
+          // New session: the engine reveals its real sessionId in the system.init event.
+          if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
+            ctx.rekey(msg.session_id);
+          }
+          // Track background-task lifecycle to decide when the process may wind down.
+          //
+          // `background_tasks_changed` is a LEVEL signal with REPLACE semantics — the SDK documents it
+          // as the correct input for "is background work running", precisely because pairing the
+          // task_started/task_notification edges lets one missed bookend wedge the set non-empty and
+          // hold this process resident forever. Swap the whole set on every payload. CLIs predating
+          // this event emit nothing here, so the edge bookends below remain as the fallback and those
+          // versions keep today's behaviour verbatim.
+          if (msg.type === 'system' && msg.subtype === 'background_tasks_changed') {
+            pendingTasks.clear();
+            for (const t of msg.tasks ?? []) if (!t.ambient) pendingTasks.add(t.task_id);
+          }
+          // `ambient` marks housekeeping the CLI does not surface as user work (skip_transcript tasks,
+          // auto-started live-update watchers). They can outlive the turn indefinitely, so counting one
+          // would keep every session resident forever — the SDK tells hosts to exclude them.
+          if (msg.type === 'system' && msg.subtype === 'task_started' && msg.task_id && !msg.ambient) {
+            pendingTasks.add(msg.task_id);
+          }
+          if (msg.type === 'system' && msg.subtype === 'task_notification' && msg.task_id) {
+            pendingTasks.delete(msg.task_id);
+          }
+          if (msg.type === 'result') {
+            receivedResult = true;
+            if (msg.is_error) {
+              resultError = new Error(msg.errors?.join('\n') || msg.result || msg.subtype || 'Claude turn failed');
+              // An error result is terminal even without a user stamp or task notification.
+              closeInput();
+            }
+            turnActive = false;
+            if (awaitingStart.size > 0 && ++resultsSinceStart >= MAX_RESULTS_BEFORE_START) awaitingStart.clear();
+          }
+
+          ctx.emit(message as { type: string; [k: string]: unknown });
+
+          // Turn produced a result, nothing is still running in the background, and every message we
+          // sent has had its turn → close the input so the process winds down. If a task is still
+          // pending, stay resident and let the SDK deliver its notification + auto-run the follow-up
+          // turn on this stream.
+          if (msg.type === 'result' && pendingTasks.size === 0 && awaitingStart.size === 0) closeInput();
         }
-        if (gateClosed) return;
-        await new Promise<void>((resolve) => {
-          wakeInput = resolve;
-          void gateOpen.then(resolve);
-        });
-      }
-    })();
+        closeInput(); // ensure the generator can return even if the stream ended on its own
 
-    const attemptAbort = follow(ctx);
-    const resume = isRetry ? ctx.currentKey() : ctx.sessionId;
-    const built = isRetry
-      ? { ...buildOptions(attemptAbort, resume, true), resume }
-      : buildOptions(attemptAbort, ctx.sessionId, false);
-    const options = { ...built, stderr: makeStderrForwarder() };
+        if (resultError && !ctx.signal.aborted) {
+          ctx.acceptInput(null);
+          throw resultError;
+        }
+        if (receivedResult || ctx.signal.aborted) break;
+        if (attempt === MAX_COMPACTION_RETRIES) throw new Error('Claude stream ended without a result after compaction retries.');
 
-    const response = query({ prompt: input, options });
-
-    let receivedResult = false;
-    for await (const message of response) {
-      if (ctx.signal.aborted) {
+        // Stream ended without a result → likely context compaction; loop re-queries with 'continue'.
+      } finally {
         closeInput();
-        break;
+        // The CLI owns persistence until its child exits, including error paths.
+        await waitForSdkChildExit(response);
       }
-
-      const msg = message as {
-        type?: string;
-        subtype?: string;
-        session_id?: string;
-        task_id?: string;
-        ambient?: boolean;
-        tasks?: Array<{ task_id: string; ambient?: boolean }>;
-        user_message_uuid?: string;
-        user_message_uuids?: string[];
-      };
-      if (msg.type === 'system' && msg.subtype === 'init') turnActive = true;
-      for (const uuid of msg.user_message_uuids ?? (msg.user_message_uuid ? [msg.user_message_uuid] : [])) {
-        if (awaitingStart.delete(uuid)) resultsSinceStart = 0;
-      }
-      // New session: the engine reveals its real sessionId in the system.init event.
-      if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
-        ctx.rekey(msg.session_id);
-      }
-      // Track background-task lifecycle to decide when the process may wind down.
-      //
-      // `background_tasks_changed` is a LEVEL signal with REPLACE semantics — the SDK documents it
-      // as the correct input for "is background work running", precisely because pairing the
-      // task_started/task_notification edges lets one missed bookend wedge the set non-empty and
-      // hold this process resident forever. Swap the whole set on every payload. CLIs predating
-      // this event emit nothing here, so the edge bookends below remain as the fallback and those
-      // versions keep today's behaviour verbatim.
-      if (msg.type === 'system' && msg.subtype === 'background_tasks_changed') {
-        pendingTasks.clear();
-        for (const t of msg.tasks ?? []) if (!t.ambient) pendingTasks.add(t.task_id);
-      }
-      // `ambient` marks housekeeping the CLI does not surface as user work (skip_transcript tasks,
-      // auto-started live-update watchers). They can outlive the turn indefinitely, so counting one
-      // would keep every session resident forever — the SDK tells hosts to exclude them.
-      if (msg.type === 'system' && msg.subtype === 'task_started' && msg.task_id && !msg.ambient) {
-        pendingTasks.add(msg.task_id);
-      }
-      if (msg.type === 'system' && msg.subtype === 'task_notification' && msg.task_id) {
-        pendingTasks.delete(msg.task_id);
-      }
-      if (msg.type === 'result') {
-        receivedResult = true;
-        turnActive = false;
-        if (awaitingStart.size > 0 && ++resultsSinceStart >= MAX_RESULTS_BEFORE_START) awaitingStart.clear();
-      }
-
-      ctx.emit(message as { type: string; [k: string]: unknown });
-
-      // Turn produced a result, nothing is still running in the background, and every message we
-      // sent has had its turn → close the input so the process winds down. If a task is still
-      // pending, stay resident and let the SDK deliver its notification + auto-run the follow-up
-      // turn on this stream.
-      if (msg.type === 'result' && pendingTasks.size === 0 && awaitingStart.size === 0) closeInput();
     }
-    closeInput(); // ensure the generator can return even if the stream ended on its own
-    // The CLI writes the transcript: don't return (or retry) while it may still be running.
-    await waitForSdkChildExit(response);
-
-    if (receivedResult || ctx.signal.aborted) break;
-
-    // Stream ended without a result → likely context compaction; loop re-queries with 'continue'.
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    closeInput();
+    ctx.acceptInput(null);
+    // Stop takes precedence over a failure it may have caused (e.g. an AbortError):
+    // a cancelled run reports only inputs that never reached the CLI, while a
+    // failed run cannot confirm completion of anything it accepted.
+    const cancelled = ctx.signal.aborted;
+    const pending = [...unfinished.values()]
+      .filter((input) => !cancelled || !input.inputId || !delivered.has(input.inputId));
+    if (pending.length && (cancelled || failed)) {
+      ctx.emit({ type: 'error',
+        error: cancelled
+          ? 'Input was not delivered because the run was cancelled.'
+          : 'Input completion could not be confirmed because the run failed.',
+        undeliveredInputs: pending,
+      });
+    }
   }
-  ctx.acceptInput(null);
 }
 
 /** A user message's content: images first (so the model sees them before text), then text.

@@ -63,7 +63,7 @@ export const forkPiSession = (path: string, target?: string, scope: 'prefix' | '
 }).pipe(Effect.uninterruptible);
 
 /** Delete only the active path's turn, preserving the rest of the native tree. */
-export const deletePiTurn = (path: string, target: string): Effect.Effect<{ targetMissed: boolean; deletedLineCount: number }, AppError | ValidationError> => Effect.tryPromise({
+export const deletePiTurn = (path: string, target: string): Effect.Effect<{ targetMissed: boolean; deletedLineCount: number; recoveryDeletion?: import('../shared/recoveryCopy').RecoveryDeletion }, AppError | ValidationError> => Effect.tryPromise({
   try: async () => {
     const manager = await Effect.runPromise(openPiSessionForWrite(path));
     const entries = manager.getBranch();
@@ -74,7 +74,8 @@ export const deletePiTurn = (path: string, target: string): Effect.Effect<{ targ
     const lines = [JSON.stringify(manager.getHeader()), ...result.entries.map((entry) => JSON.stringify(entry))];
     await rewriteTranscript(path, lines.join('\n') + '\n');
     await Effect.runPromise(prunePiChildren(path, manager.getSessionId(), result.entries));
-    return { targetMissed: false, deletedLineCount: result.deletedLineCount };
+    return { targetMissed: false, deletedLineCount: result.deletedLineCount,
+      recoveryDeletion: { sourceIds: entries.slice(turn.start, turn.end).map((entry) => entry.id), taskIds: [], sourceRemap: result.sourceRemap } };
   },
   catch: (cause) => cause instanceof ValidationError ? cause : new AppError({ message: 'Cannot delete Pi turn', cause }),
 }).pipe(Effect.uninterruptible);

@@ -13,6 +13,8 @@ import type { WSConnection } from "@cockpit/effect-services"
 import { fromWebSocket } from "@cockpit/effect-runtime/server"
 import {
   getRunSnapshot,
+  getRunRecoveries,
+  getRecoveryDeletions,
   addRunListener,
   type RunEvent,
 } from "@cockpit/feature-agent/server/sessionRunHub"
@@ -45,11 +47,15 @@ export const handleSessionStream = (
 
     // 2. Snapshot of the in-flight turn (consistent backlog), or idle.
     const snap = getRunSnapshot(sessionId)
+    const recoveries = getRunRecoveries(sessionId)
     const snapshotSeq = snap ? snap.seq : -1
     if (snap) {
       yield* conn.send({
         type: "run-snapshot",
+        recoveries,
         status: snap.status,
+        writerActive: snap.writerActive,
+        recoveryDeletions: snap.recoveryDeletions,
         seq: snap.seq,
         // Turn time-boundary: lets clients cut the in-flight turn's disk image by
         // message timestamp instead of by prompt text (see useLiveStream).
@@ -62,7 +68,7 @@ export const handleSessionStream = (
         events: snap.events,
       })
     } else {
-      yield* conn.send({ type: "run-idle" })
+      yield* conn.send({ type: "run-idle", recoveries, recoveryDeletions: getRecoveryDeletions(sessionId) })
     }
 
     // 3. Heartbeat.

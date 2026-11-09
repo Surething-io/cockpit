@@ -59,6 +59,9 @@ const httpPostJson = <A>(
     body: JSON.stringify(body),
   })
 
+export const stopChat = (body: { sessionId?: string | null; runId?: string }): Effect.Effect<{ ok: boolean }, AppError> =>
+  httpPostJson('/api/chat/stop', body)
+
 const httpPutJson = <A>(
   url: string,
   body: unknown
@@ -94,6 +97,7 @@ export const loadSessionEngineState = (
 
 /** One row of a session's user-message index. Mirrors UserMessageIndexEntry. */
 export interface UserMessageIndexEntry {
+  sourceRef?: import("../../shared/historyReference").HistoryReference;
   /** The bubble's `data-message-id` — what a jump queries the DOM for. */
   id: string
   /** Turn cursor: `fromTurnIndex` this to pull the message back on screen. */
@@ -343,7 +347,7 @@ export const forkSession = <A = { sessionId?: string }>(
 export const deleteSessionTurn = (
   sessionId: string,
   body: { cwd: string; messageUuid: string }
-): Effect.Effect<{ success: boolean; deletedLineCount: number }, AppError> =>
+): Effect.Effect<{ success: boolean; deletedLineCount: number; recoveryDeletion?: import('../../shared/recoveryCopy').RecoveryDeletion }, AppError> =>
   httpJson(`/api/session/${encodeURIComponent(sessionId)}/turn`, {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },

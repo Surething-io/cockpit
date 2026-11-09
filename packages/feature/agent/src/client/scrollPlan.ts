@@ -100,6 +100,7 @@ export type ScrollEvent =
   | { type: 'viewport' }
   /** A real gesture — the reader is taking over. */
   | { type: 'release' }
+  | { type: 'jump' }
   /** "Jump to latest": the end of the content, not the end of the scroller. */
   | { type: 'toEnd' }
   /** Return from a background tab at the start of the turn being generated. */
@@ -259,6 +260,9 @@ export function reduceScroll(
       if (spacer <= 0) return follow(g);
       return { owner: { mode: 'pinned', pinTop: event.top }, spacer, scrollTo: event.top, behavior: 'smooth' };
     }
+
+    case 'jump':
+      return { owner: FREE, spacer: requiredSpacer(g.scrollTop, g), scrollTo: null, behavior: 'auto' };
 
     case 'release': {
       // Only an anchored position can be taken over. In follow/free the

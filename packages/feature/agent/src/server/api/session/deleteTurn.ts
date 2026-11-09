@@ -6,7 +6,7 @@ import { Effect } from 'effect';
 import { withFileLock } from '@cockpit/shared-utils';
 import { dynamicHandler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import { FSError, NotFoundError, ValidationError } from '@cockpit/effect-core';
-import { beginTranscriptEdit } from '../../sessionRunHub';
+import { beginTranscriptEdit, deleteRunRecoveryTurns } from '../../sessionRunHub';
 import { resolveSessionPath } from './sessionStore';
 import { rewriteTranscript } from '../../transcriptWrite';
 import { deleteClaudeTurnLines } from './deleteTurnLines';
@@ -66,12 +66,20 @@ export const DELETE = dynamicHandler<
         return deleted;
       }),
       catch: (cause) => new FSError({ path: store.sessionPath, op: 'write', cause }),
-    })).pipe(Effect.ensuring(Effect.sync(endEdit)));
+    })).pipe(
+      Effect.tap((deleted) => Effect.sync(() => {
+        if (!deleted.targetMissed && 'recoveryDeletion' in deleted && deleted.recoveryDeletion) {
+          deleteRunRecoveryTurns(sessionId, deleted.recoveryDeletion);
+        }
+      })),
+      Effect.ensuring(Effect.sync(endEdit)),
+    );
 
     if (result.targetMissed) {
       return yield* Effect.fail(new NotFoundError({ resource: 'message', id: body.messageUuid }));
     }
 
-    return ok({ success: true, deletedLineCount: result.deletedLineCount });
+    return ok({ success: true, deletedLineCount: result.deletedLineCount,
+      recoveryDeletion: 'recoveryDeletion' in result ? result.recoveryDeletion : undefined });
   })
 );

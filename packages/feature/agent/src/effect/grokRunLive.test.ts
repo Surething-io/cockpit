@@ -29,7 +29,7 @@ describe('Grok CLI subscription ACP runner', () => {
     const ctx: RunCtx = {
       prompt: 'Read hello.ts', images: undefined, cwd: home,
       sessionId: resume ? 'grok-test-session' : undefined,
-      params: { model: 'custom-grok-model' }, outputStyle: 'Use concise replies.', signal: controller.signal,
+      params: { model: 'custom-grok-model', runId: 'test-input' }, outputStyle: 'Use concise replies.', signal: controller.signal,
       emit: (event) => events.push(event), rekey: vi.fn(), currentKey: () => 'test-run', acceptInput: vi.fn(),
     };
     const run = () => runGrokTurn(ctx, {
@@ -58,6 +58,9 @@ describe('Grok CLI subscription ACP runner', () => {
     expect(JSON.stringify(test.events)).not.toContain('foreign text');
     expect(test.events.at(-1)).toMatchObject({ type: 'result', subtype: 'success' });
     const parsed = await parseTranscriptFile(grokSessionPath(home, 'grok-test-session'));
+    expect(test.events.find((event) => event.subtype === 'input_binding')).toMatchObject({
+      inputId: 'test-input', sourceId: parsed.messages.findLast((row) => row.role === 'user')?.sourceId,
+    });
     expect(parsed.messages.at(-1)).toMatchObject({ role: 'assistant', content: 'Hello 世界\n\n done', toolCalls: [expect.objectContaining({ id: 'read-1', name: 'Read', result: 'file contents' })] });
     expect(() => process.kill(trace[0].pid, 0)).toThrow();
   });

@@ -2,6 +2,7 @@
 // (vitest) or `npx vitest run <this file>`.
 import { describe, it, expect } from 'vitest';
 import { applyStreamEvent, isSubagentFrame, settleRunningTasks, type StreamEvent } from './applyStreamEvent';
+import { removeRecoveryTurns } from '../shared/recoveryCopy';
 import { deriveContent } from '../shared/assistantText';
 import type { ChatMessage } from './types';
 
@@ -337,4 +338,54 @@ describe('applyStreamEvent (#10 engine-agnostic reducer)', () => {
       expect(after[0].toolCalls).toBe(before);
     });
   });
+});
+
+
+it('keeps incomplete input errors beside their input through repeated settlement and deletion', () => {
+  const image = { type: 'base64' as const, media_type: 'image/png' as const, data: 'image' };
+  const messages: ChatMessage[] = [
+    { id: 'a', role: 'user', content: 'Same text', liveInputId: 'a', sourceId: 'native-a' },
+    { id: 'answer-a', role: 'assistant', content: 'Partial output', liveInputId: 'a' },
+    { id: 'b', role: 'user', content: 'Same text', liveInputId: 'b', images: [image] },
+  ];
+  const event: StreamEvent = { type: 'error', error: 'Input cancelled', undeliveredInputs: [
+    { inputId: 'a', text: 'Same text' }, { inputId: 'b', text: 'Same text', images: [image] },
+  ] };
+  const once = reduce(messages, [event]);
+  expect(reduce(once, [event])).toEqual(once);
+  expect(once.find(row => row.id === 'answer-a')?.content).toBe('Partial output');
+  const remaining = removeRecoveryTurns(once, { sourceIds: ['native-a'], taskIds: [] });
+  expect(remaining.map(row => row.liveInputId)).toEqual(['b', 'b']);
+  expect(remaining[0].images).toEqual([image]);
+  expect(remaining[1].streamError).toBe('Input cancelled');
+});
+
+it('reuses a consumed input after another init without retaining an orphan placeholder', () => {
+  const messages: ChatMessage[] = [
+    { id: 'a', role: 'user', content: 'Input', liveInputId: 'a' },
+    { id: ID, role: 'assistant', content: 'Earlier output', liveInputId: 'a' },
+    { id: 'retry-placeholder', role: 'assistant', content: '', isStreaming: true },
+  ];
+  const bound = reduce(messages, [{ type: 'system', subtype: 'input_started', inputId: 'a' }]);
+  expect(bound.map(row => row.id)).toEqual(['a', ID]);
+  expect(reduce(bound, [delta(' continuation')])[1].content).toBe('Earlier output continuation');
+});
+
+
+it('keeps unconfirmed Codex input when its former task group is deleted', () => {
+  const image = { type: 'base64' as const, media_type: 'image/png' as const, data: 'image' };
+  const rows: ChatMessage[] = [
+    { id: 'launch', role: 'user', content: 'same', turnId: 'task', sourceTaskId: 'native-task' },
+    { id: 'answer', role: 'assistant', content: 'partial', turnId: 'task', sourceTaskId: 'native-task' },
+    { id: 'queued', role: 'user', content: 'same', images: [image], liveInputId: 'queued', turnId: 'task', sourceTaskId: 'native-task' },
+  ];
+  const failure: StreamEvent = { type: 'error', error: 'Not delivered', undeliveredInputs: [{ inputId: 'queued', text: 'same', images: [image] }] };
+  const settled = applyStreamEvent(rows, failure, { engine: 'codex', assistantId: 'answer' });
+  expect(applyStreamEvent(settled, failure, { engine: 'codex', assistantId: 'answer' })).toEqual(settled);
+  const kept = removeRecoveryTurns(settled, { sourceIds: [], taskIds: ['native-task'] });
+  expect(kept.map(row => row.liveInputId)).toEqual(['queued', 'queued']);
+  expect(kept[0].images).toEqual([image]);
+  // A later native identity binding still makes explicit deletion authoritative.
+  const bound = applyStreamEvent(kept, { type: 'system', subtype: 'input_binding', inputId: 'queued', sourceId: 'native-input' }, { engine: 'codex', assistantId: '' });
+  expect(removeRecoveryTurns(bound, { sourceIds: ['native-input'], taskIds: [] })).toEqual([]);
 });

@@ -22,6 +22,7 @@
  *  TranscriptMessage interfaces satisfy it without importing a shared type. */
 export interface InjectionFields {
   type?: string;
+  attachment?: { type?: string; commandMode?: string; prompt?: unknown; timestamp?: string; source_uuid?: string };
   isMeta?: boolean;
   isCompactSummary?: boolean;
   origin?: { kind?: string };
@@ -54,16 +55,17 @@ export function injectionKind(
  * Three conditions, each load-bearing:
  *  - `type: 'user'` — assistant/system rows never open a turn.
  *  - not harness-injected — see injectionKind.
- *  - carries actual text — a user entry whose blocks are only `tool_result` is the tail of
+ *  - carries text or an image — a user entry whose blocks are only `tool_result` is the tail of
  *    the PREVIOUS turn (the engine reporting a tool's output), not the start of a new one.
  */
 export function isHumanTurnStart(entry: InjectionFields): boolean {
+  entry = queuedPromptAsUserEntry(entry) ?? entry;
   if (entry.type !== 'user') return false;
   if (injectionKind(entry) !== null) return false;
   const content = entry.message?.content;
   if (typeof content === 'string') return content.length > 0;
   if (!Array.isArray(content)) return false;
-  return content.some((block) => block?.type === 'text');
+  return content.some((block) => block?.type === 'text' || (block?.type === 'image' && block.source));
 }
 
 /**
@@ -81,8 +83,8 @@ export function queuedPromptAsUserEntry(entry: {
   uuid?: string;
   timestamp?: string;
   sessionId?: string;
-  attachment?: { type?: string; commandMode?: string; prompt?: unknown; timestamp?: string };
-}): { type: 'user'; uuid?: string; timestamp?: string; sessionId?: string; message: { role: 'user'; content: string | unknown[] } } | null {
+  attachment?: { type?: string; commandMode?: string; prompt?: unknown; timestamp?: string; source_uuid?: string };
+}): { type: 'user'; uuid?: string; sourceId?: string; timestamp?: string; sessionId?: string; message: { role: 'user'; content: string | unknown[] } } | null {
   const a = entry.attachment;
   if (entry.type !== 'attachment' || a?.type !== 'queued_command' || a.commandMode !== 'prompt') return null;
   // String, or content blocks when the message carried images.
@@ -90,6 +92,8 @@ export function queuedPromptAsUserEntry(entry: {
   return {
     type: 'user',
     uuid: entry.uuid,
+    // Keep the journal wrapper for edit targets, and the original input for live binding.
+    ...(a.source_uuid ? { sourceId: a.source_uuid } : {}),
     timestamp: entry.timestamp ?? a.timestamp,
     sessionId: entry.sessionId,
     message: { role: 'user', content: a.prompt },

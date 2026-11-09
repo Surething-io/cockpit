@@ -891,7 +891,10 @@ async function runCodexAppServerWithInput(ctx: RunCtx, input: CodexRunInput): Pr
     ctx.signal.removeEventListener('abort', abortStartup);
     // Needed to stop this turn by name later; see `interruptTurns`.
     const turnId = (startedTurn.turn as { id?: string } | undefined)?.id;
-    if (turnId) shim.noteOwnTurn(threadId, turnId);
+    if (turnId) {
+      shim.noteOwnTurn(threadId, turnId);
+      ctx.emit({ type: 'system', subtype: 'task_binding', taskId: turnId });
+    }
     if (turnId && !terminal && !ctx.signal.aborted) input.open(async (message) => {
       const files = message.images?.length ? writeImagesToTemp(message.images) : [];
       // Codex may read images after acknowledging steer; retain them until the turn exits.

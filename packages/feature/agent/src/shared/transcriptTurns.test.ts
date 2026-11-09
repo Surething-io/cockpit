@@ -100,6 +100,7 @@ describe('queuedPromptAsUserEntry', () => {
       message: { role: 'user', content: 'also tell me BANANA' },
     });
     expect(isHumanTurnStart(entry!)).toBe(true);
+    expect(isHumanTurnStart(folded)).toBe(true);
   });
 
   it('leaves queued task notifications and other entries alone', () => {

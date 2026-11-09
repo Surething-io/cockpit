@@ -90,6 +90,17 @@ describe('deleteCodexTurnLines', () => {
     expect(result.newLines.join('\n')).not.toContain('beta prompt');
   });
 
+  it('reports native task identity for recovery deletion without using ordinal bubble ids', () => {
+    let task = 0;
+    const native = rollout.map((line) => {
+      const entry = JSON.parse(line);
+      if (entry.payload?.type === 'task_started') entry.payload.turn_id = `native-task-${task++}`;
+      return JSON.stringify(entry);
+    });
+    const result = deleteCodexTurnLines(native, 'codex-user-2');
+    expect(result.recoveryDeletion).toEqual({ sourceIds: [], taskIds: ['native-task-1'] });
+  });
+
   it('reports a missing visible message without returning a partial rollout', () => {
     expect(deleteCodexTurnLines(rollout, 'codex-user-99')).toEqual({
       newLines: [],

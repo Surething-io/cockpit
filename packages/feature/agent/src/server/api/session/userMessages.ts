@@ -56,7 +56,7 @@ export const POST = handler((req) =>
 
     const index = yield* readLogicalTranscript(sessionPath, engine, (view) => view.source.pipe(
       Effect.flatMap((source) => Effect.tryPromise({
-        try: () => parseUserMessageIndex(source, engine),
+        try: () => parseUserMessageIndex(source, engine, view.coordinateEpoch),
         catch: (cause) => new AppError({ message: 'parseUserMessageIndex failed', cause }),
       })),
     ));

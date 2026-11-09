@@ -1098,3 +1098,65 @@ describe('session-by-path codex tool types', () => {
     expect((await read(body.fingerprint)).notModified).toBeUndefined();
   });
 });
+
+it('distinguishes an empty file from a temporary empty read while the writer is held', async () => {
+  const { startRun, markRunIdle, releaseRun } = await import('../sessionRunHub');
+  const { chatHistoryReducer, emptyChatHistory } = await import('../../client/chatHistoryState');
+  const sessionId = `empty-history-${crypto.randomUUID()}`;
+  const path = writeCodexTranscript(sessionId, [
+    { type: 'event_msg', payload: { type: 'task_started', turn_id: 'task' } },
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Question' }] } },
+  ]);
+  const read = async (extra = {}) => {
+    const response = await POST(new Request('http://test.local/api/session-by-path', {
+      method: 'POST', body: JSON.stringify({ cwd: '/tmp', sessionId, ...extra }),
+    }));
+    expect(response.status).toBe(200);
+    return response.json();
+  };
+  try {
+    const first = await read();
+    const loaded = chatHistoryReducer(emptyChatHistory, { type: 'page', sessionId, mode: 'replace', page: first });
+    expect(startRun(sessionId, '/tmp', undefined, 'empty-test-run')).toBe(true);
+    const inode = fs.statSync(path).ino;
+    fs.writeFileSync(path, '');
+    expect(fs.statSync(path).ino).toBe(inode);
+    const temporary = await read({ fromTurnIndex: 0, expectedStartProof: first.beforeProof });
+    expect(temporary.stable).toBe(false);
+    expect(chatHistoryReducer(loaded, { type: 'page', sessionId, mode: 'incremental', page: temporary }).messages).toEqual(loaded.messages);
+    markRunIdle(sessionId); releaseRun(sessionId);
+    const empty = await read({ fromTurnIndex: 0, expectedStartProof: first.beforeProof });
+    expect(empty.stable).toBe(true);
+    const final = chatHistoryReducer(loaded, { type: 'page', sessionId, mode: 'incremental', page: empty });
+    expect(final.messages).toEqual([]);
+    expect(final.totalTurns).toBe(0);
+  } finally {
+    markRunIdle(sessionId); releaseRun(sessionId);
+    fs.rmSync(join(path, '..'), { recursive: true, force: true });
+    sessionPaths.delete(sessionId);
+  }
+});
+
+
+it('reports writer stability even when the cached fingerprint matches', async () => {
+  const hub = await import('../sessionRunHub');
+  const id = 'not-modified-writer';
+  const path = writeCodexTranscript(id, [{ type: 'response_item', payload: {
+    type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Old' }],
+  } }]);
+  const read = async (extra = {}) => (await POST(new Request('http://test.local/api/session-by-path', {
+    method: 'POST', body: JSON.stringify({ cwd: '/tmp', sessionId: id, ...extra }),
+  }))).json();
+  try {
+    const first = await read(); expect(first.stable).toBe(true);
+    expect(hub.startRun(id, '/tmp', 'New', 'unobserved')).toBe(true);
+    expect(await read({ ifFingerprint: first.fingerprint })).toMatchObject({ notModified: true, stable: false });
+    hub.markRunIdle(id);
+    expect(await read({ ifFingerprint: first.fingerprint })).toMatchObject({ notModified: true, stable: false });
+    hub.releaseRun(id);
+    expect(await read({ ifFingerprint: first.fingerprint })).toMatchObject({ notModified: true, stable: true });
+  } finally {
+    hub.markRunIdle(id); hub.releaseRun(id);
+    fs.rmSync(join(path, '..'), { recursive: true, force: true }); sessionPaths.delete(id);
+  }
+});

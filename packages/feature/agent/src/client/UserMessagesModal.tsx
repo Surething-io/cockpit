@@ -15,6 +15,8 @@ import { loadUserMessageIndex, type UserMessageIndexEntry } from './effect/agent
 // has no node. Each row therefore carries its `turnIndex`, and selecting one
 // hands that back so the chat can page the turn in before jumping.
 
+import type { NavigationResult } from './useMessageNavigation';
+
 interface UserMessagesModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -26,7 +28,7 @@ interface UserMessagesModalProps {
    */
   sessionId?: string | null;
   /** Bring the message on screen. Awaited so the row can show a pending state. */
-  onSelectMessage: (entry: UserMessageIndexEntry) => void | Promise<void>;
+  onSelectMessage: (entry: UserMessageIndexEntry) => Promise<NavigationResult>;
 }
 
 // Format an ISO timestamp to a human-readable label.
@@ -73,6 +75,8 @@ export function UserMessagesModal({ isOpen, onClose, cwd, sessionId, onSelectMes
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState('');
   const [jumpingId, setJumpingId] = useState<string | null>(null);
+  const selection = useRef(0);
+  useEffect(() => () => { ++selection.current; }, [isOpen, cwd, sessionId]);
   const listRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -133,13 +137,14 @@ export function UserMessagesModal({ isOpen, onClose, cwd, sessionId, onSelectMes
   }, [isOpen, isFiltered, entries]);
 
   const handleSelect = useCallback(async (entry: UserMessageIndexEntry) => {
+    const token = ++selection.current;
     setJumpingId(entry.id);
     try {
-      await onSelectMessage(entry);
+      const result = await onSelectMessage(entry);
+      if (token === selection.current && result.status === 'scrolled') onClose();
     } finally {
-      setJumpingId(null);
+      if (token === selection.current) setJumpingId(null);
     }
-    onClose();
   }, [onSelectMessage, onClose]);
 
   if (!isOpen) return null;

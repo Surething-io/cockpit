@@ -31,7 +31,7 @@ const labelsOf = (entries: SessionEntry[]): Map<string, LabelEntry> => {
 /** Edit one path while preserving every node required by the other native branches. */
 export function deletePiBranchTurn(all: SessionEntry[], active: SessionEntry[], target: string,
   options: { newId: () => string; timestamp: string },
-): { entries: SessionEntry[]; deletedLineCount: number } | undefined {
+): { entries: SessionEntry[]; deletedLineCount: number; sourceRemap: Record<string, string> } | undefined {
   const turn = piTurn(active, target);
   if (!turn) return undefined;
   const byId = new Map(all.map((entry) => [entry.id, entry]));
@@ -139,5 +139,6 @@ export function deletePiBranchTurn(all: SessionEntry[], active: SessionEntry[], 
     }
     for (const id of path) validated.add(id);
   }
-  return { entries, deletedLineCount: active.length - keptActive.length };
+  return { entries, deletedLineCount: active.length - keptActive.length,
+    sourceRemap: Object.fromEntries([...remap].filter(([from, to]) => from !== to)) };
 }

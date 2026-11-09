@@ -1,9 +1,11 @@
-import { isHumanTurnStart } from '../../../shared/transcriptTurns';
+import { isHumanTurnStart, queuedPromptAsUserEntry } from '../../../shared/transcriptTurns';
+import type { RecoveryDeletion } from '../../../shared/recoveryCopy';
 
 export interface DeleteTurnResult {
   newLines: string[];
   deletedLineCount: number;
   targetMissed: boolean;
+  recoveryDeletion?: RecoveryDeletion;
 }
 
 /**
@@ -42,13 +44,19 @@ export function deleteClaudeTurnLines(
   }
 
   const deletedUuids = new Set<string>();
+  const deletedSources = new Set<string>();
   let deletedLineCount = 0;
   let replacementParent: string | null = null;
   for (let i = 0; i < originalLines.length; i += 1) {
     const entry = parsed[i];
     if (turnByLine[i] === targetTurn) {
       deletedLineCount += 1;
-      if (typeof entry?.uuid === 'string') deletedUuids.add(entry.uuid);
+      if (typeof entry?.uuid === 'string') {
+        deletedUuids.add(entry.uuid);
+        deletedSources.add(entry.uuid);
+      }
+      const sourceId = entry && queuedPromptAsUserEntry(entry)?.sourceId;
+      if (sourceId) deletedSources.add(sourceId);
     } else if (turnByLine[i] < targetTurn && typeof entry?.uuid === 'string') {
       replacementParent = entry.uuid;
     }
@@ -66,5 +74,6 @@ export function deleteClaudeTurnLines(
     }
   }
 
-  return { newLines, deletedLineCount, targetMissed: false };
+  return { newLines, deletedLineCount, targetMissed: false,
+    recoveryDeletion: { sourceIds: [...deletedSources], taskIds: [] } };
 }

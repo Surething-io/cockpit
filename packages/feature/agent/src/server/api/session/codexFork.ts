@@ -266,14 +266,24 @@ function partitionCodexTurns(
 export function deleteCodexTurnLines(
   originalLines: string[],
   targetMessageUuid: string,
-): { newLines: string[]; deletedLineCount: number; targetMissed: boolean } {
+): import('./deleteTurnLines').DeleteTurnResult {
   const { metaLine, turns, targetTurn } = partitionCodexTurns(originalLines, targetMessageUuid);
   if (!metaLine || targetTurn < 0) {
     return { newLines: [], deletedLineCount: 0, targetMissed: true };
+  }
+  const sourceIds: string[] = [];
+  const taskIds: string[] = [];
+  for (const line of turns[targetTurn]) {
+    try {
+      const entry = JSON.parse(line);
+      if (entry.type === 'response_item' && typeof entry.payload?.id === 'string') sourceIds.push(entry.payload.id);
+      if (entry.type === 'event_msg' && entry.payload?.type === 'task_started' && typeof entry.payload.turn_id === 'string') taskIds.push(entry.payload.turn_id);
+    } catch { /* Preserve the parser's handling of malformed transcript lines. */ }
   }
   return {
     newLines: [metaLine, ...turns.filter((_, index) => index !== targetTurn).flat()],
     deletedLineCount: turns[targetTurn].length,
     targetMissed: false,
+    recoveryDeletion: { sourceIds, taskIds },
   };
 }

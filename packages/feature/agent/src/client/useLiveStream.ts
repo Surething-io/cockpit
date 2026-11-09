@@ -1,13 +1,14 @@
 'use client';
 
-import type React from 'react';
-import { useRef } from 'react';
+import { isRecoverySettlement, type RecoveryDeletion } from '../shared/recoveryCopy';
+import { useRef, useCallback, useId } from 'react';
 import { useWebSocket } from '@cockpit/shared-ui';
 import { estimateOutputUnits } from '@cockpit/shared-utils/outputProgress';
 import type { ChatMessage, ChatEngine, LiveOutputTokens, BackgroundTaskInfo } from './types';
-import { applyStreamEvent, isSubagentFrame, isTaskEvent, settleRunningTasks, type StreamEvent } from './applyStreamEvent';
+import { isSubagentFrame, isTaskEvent, settleRunningTasks, type StreamEvent } from './applyStreamEvent';
 import { buildNoticeMessage } from './systemNotice';
 import type { TaskStore } from './taskStore';
+import type { LiveHistoryRun, RunMessageUpdate, HistoryMessageUpdate } from './chatHistoryState';
 
 // #10 viewer hook: tail /ws/session-stream for `sessionId` and render live through the
 // SAME reducer the originator uses (applyStreamEvent) → engine-agnostic, zero per-engine
@@ -20,16 +21,22 @@ import type { TaskStore } from './taskStore';
 // shared connection): connect whenever this tab is viewing the session, and let the
 // snapshot's `status` decide. An idle snapshot → render nothing (disk history is
 // authoritative); a running snapshot → replay + tail. opts.onRunningChange drives the
-// "thinking" indicator / input lock; opts.onComplete fires on the turn's result so the
-// caller can reconcile from disk.
+// "thinking" indicator / input lock; opts.onRunEnd reports writer ownership
+// so the caller can replace live content with a final disk read.
+// The returned callback replays archived snapshots; null session + disabled uses
+// the same projection without a transport or live-progress callbacks.
 export function useLiveStream(
   sessionId: string | null,
-  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
+  updateRunMessages: RunMessageUpdate,
   enabled: boolean,
   engine?: ChatEngine,
   opts?: {
+    onlyRunId?: string;
+    onRecoveryDeleted?: (deletion: RecoveryDeletion) => void;
     onRunningChange?: (running: boolean) => void;
-    onComplete?: () => void;
+    onSnapshotStart?: (run: LiveHistoryRun) => void;
+    onWriterIdle?: (sessionId: string) => void;
+    onRunEnd?: (writerActive: boolean, runId: string, failed?: boolean) => void;
     onLiveOutputTokens?: (tokens: LiveOutputTokens | null) => void;
     onRunStartedAt?: (startedAt: number | null) => void;
     /** Live set of non-ambient background tasks (REPLACE semantics), mirroring useChatStream. */
@@ -37,9 +44,26 @@ export function useLiveStream(
     /** Sink for `system/task_*` events at every spawn depth — see taskStore.ts. */
     taskStore?: TaskStore;
   }
-): void {
+): (snapshot: object) => void {
+  // Each subscriber needs its own initial snapshot, including a sender/viewer handoff.
+  const subscriptionId = useId();
   const curAssistantId = useRef<string | null>(null);
   const seq = useRef(0);
+  const liveRun = useRef<(LiveHistoryRun & { active: boolean }) | null>(null);
+  const setMessages = useCallback<(update: HistoryMessageUpdate) => void>((update) => {
+    if (liveRun.current) updateRunMessages(liveRun.current.id, update);
+  }, [updateRunMessages]);
+  const waitingForWriter = useRef(false);
+  const taskNumber = useRef(0);
+  const taskTime = useRef(0);
+  const taskSeeded = useRef(false);
+  const sourceTaskId = useRef<string | undefined>(undefined);
+  const liveMetadata = () => ({
+    liveRunId: liveRun.current?.id,
+    sourceTaskId: sourceTaskId.current,
+    turnStartedAt: new Date(taskTime.current || liveRun.current?.startedAt || Date.now()).toISOString(),
+    ...(engine === 'codex' ? { turnId: `live-task-${liveRun.current?.id}-${taskNumber.current}` } : {}),
+  });
   const fallbackOutputTokens = useRef(0);
   const sawServerUsageUpdate = useRef(false);
   const sawResult = useRef(false);
@@ -48,22 +72,40 @@ export function useLiveStream(
   // subagent's (arrives mid-turn, already shown as its tool call).
   const turnActive = useRef(false);
 
-  // Identity of the turn being watched, taken from the seeded `_human` event
-  // (startRun stamps it as `_turnId`, and that event precedes the engine's
-  // `system.init`). Used to dedup this turn's live user bubble by identity
-  // rather than by text — see the dedup layers in `apply`.
-  const curTurnId = useRef<string | undefined>(undefined);
-
   // Set by a message sent into the run after it started (mid-turn, or while resident on
   // background tasks): the model's next message opens a fresh bubble below that user bubble.
   const splitPending = useRef(false);
+  const consumptionBound = useRef(false);
+
+  // Snapshot replay and event-only handoff both start a fresh run projection.
+  const beginRun = (run: LiveHistoryRun) => {
+    liveRun.current = { ...run, active: true };
+    waitingForWriter.current = false;
+    sourceTaskId.current = undefined;
+    taskNumber.current = 0;
+    taskTime.current = run.startedAt;
+    taskSeeded.current = false;
+    curAssistantId.current = null;
+    seq.current = 0;
+    fallbackOutputTokens.current = 0;
+    sawServerUsageUpdate.current = false;
+    sawResult.current = false;
+    turnActive.current = false;
+    splitPending.current = false;
+    consumptionBound.current = false;
+    opts?.onSnapshotStart?.(run);
+    opts?.onLiveOutputTokens?.(null);
+    opts?.onRunStartedAt?.(run.startedAt);
+    opts?.onBackgroundTasks?.([]);
+  };
 
   const newPlaceholder = (): string => {
-    const id = `live-asst-${++seq.current}`;
+    const id = `live-asst-${liveRun.current?.id}-${++seq.current}`;
     curAssistantId.current = id;
+    const metadata = liveMetadata();
     setMessages((prev) => [
       ...prev,
-      { id, role: 'assistant', content: '', isStreaming: true } as ChatMessage,
+      { id, role: 'assistant', content: '', isStreaming: true, timestamp: metadata.turnStartedAt, ...metadata } as ChatMessage,
     ]);
     return id;
   };
@@ -86,6 +128,9 @@ export function useLiveStream(
 
     if (ev.type === 'system' && ev.subtype === 'init') {
       const isFollowUpTurn = sawResult.current;
+      if (engine === 'codex' && isFollowUpTurn && !taskSeeded.current) taskNumber.current++;
+      if (typeof ev._ts === 'number' && Number.isFinite(ev._ts)) taskTime.current = ev._ts;
+      taskSeeded.current = false;
       turnActive.current = true;
       if (!isFollowUpTurn) {
         fallbackOutputTokens.current = 0;
@@ -120,6 +165,24 @@ export function useLiveStream(
     // The live background-task set (REPLACE semantics — swap, never pair start/stop edges).
     // The originator gets this through useChatStream; without it here the viewer's loading
     // bubble cannot say what a resident run is still waiting on.
+    if (ev.type === 'system' && ev.subtype === 'input_started' && ev.inputId) {
+      consumptionBound.current = true;
+      splitPending.current = false;
+      const id = `input-asst-${ev.inputId}`;
+      curAssistantId.current = id;
+      setMessages({ event: ev, engine, assistantId: id });
+      return;
+    }
+    if (ev.type === 'system' && ev.subtype === 'input_binding') {
+      setMessages({ event: ev, engine, assistantId: '' });
+      return;
+    }
+    if (ev.type === 'system' && ev.subtype === 'task_binding' && typeof ev.taskId === 'string') {
+      sourceTaskId.current = ev.taskId;
+      setMessages((prev) => prev.map((message) => message.liveRunId === liveRun.current?.id
+        ? { ...message, sourceTaskId: sourceTaskId.current } : message));
+      return;
+    }
     if (ev.type === 'system' && ev.subtype === 'background_tasks_changed') {
       const live = ev.tasks ?? [];
       opts?.onBackgroundTasks?.(
@@ -133,7 +196,7 @@ export function useLiveStream(
     if (isTaskEvent(ev)) {
       // Both sinks — see the same call in useChatStream.
       opts?.taskStore?.applyEvent(ev);
-      setMessages((prev) => applyStreamEvent(prev, ev, { engine, assistantId: curAssistantId.current ?? '' }));
+      setMessages({ event: ev, engine, assistantId: curAssistantId.current ?? '' });
       if (ev.subtype !== 'task_notification') return;
     }
     // Background task reporting back. When it arrives while idle (after a result, before the next
@@ -151,9 +214,11 @@ export function useLiveStream(
           (ev.summary ? `<summary>${ev.summary}</summary>\n` : '') +
           (ev.output_file ? `<output-file>${ev.output_file}</output-file>\n` : '') +
           `</task-notification>`;
+        const metadata = liveMetadata();
         setMessages((prev) => [
           ...prev,
           {
+            ...metadata,
             id,
             role: 'system',
             content: ev.summary || '',
@@ -168,18 +233,12 @@ export function useLiveStream(
     // because the session id it is tailing is exactly what such a notice reports on.
     if (ev.type === 'system' && ev.subtype === 'notice') {
       const row = buildNoticeMessage(ev, `live-notice-${++seq.current}`);
-      if (row) setMessages((prev) => [...prev, row]);
+      const metadata = liveMetadata();
+      if (row) setMessages((prev) => [...prev, { ...row, ...metadata }]);
       return;
     }
-    // Synthetic human-prompt event → render the new user bubble live. (Seeded by
-    // startRun; the prompt is on no engine's SSE stream.) Two dedup layers, both
-    // identity/time-based — NOT text-based, so repeated identical prompts ("继续")
-    // can never suppress a genuinely new turn's bubble:
-    //   1. `_turnId` (the dispatch runId): this turn's live bubble already exists → skip.
-    //   2. `_ts` (startedAt) vs the most-recent user bubble's disk timestamp: written
-    //      at/after run start ⇒ it IS this turn's disk copy (originator refreshed
-    //      mid-run, or a scheduled task raced the incremental load) → skip.
-    // Text equality remains only as the fallback for untimestamped transcripts (codex).
+    // A run projection owns its complete input sequence. Deduplicate only this
+    // input's identity; disk/live reconciliation belongs to the history owner.
     if (ev.type === 'user' && ev._human) {
       const c = ev.message?.content;
       const text = typeof c === 'string'
@@ -188,32 +247,18 @@ export function useLiveStream(
           ? c.map((b) => (b as { text?: string })?.text || '').join('')
           : '';
       const turnId = typeof ev._turnId === 'string' ? ev._turnId : null;
-      if (turnId) curTurnId.current = turnId;
       // A turn of this run already happened → this message was sent into the live run.
-      if (turnActive.current || sawResult.current) splitPending.current = true;
-      const startedAt = typeof ev._ts === 'number' ? ev._ts : null;
-      const id = turnId ? `live-user-${turnId}` : `live-user-${++seq.current}`;
+      if (!consumptionBound.current && (turnActive.current || sawResult.current)) splitPending.current = true;
+      const startedAt = typeof ev._ts === 'number' && Number.isFinite(ev._ts) ? ev._ts : null;
+      if (engine === 'codex' && !turnActive.current && sawResult.current) taskNumber.current++;
+      if (engine !== 'codex' || !turnActive.current) taskTime.current = startedAt ?? liveRun.current?.startedAt ?? Date.now();
+      taskSeeded.current = true;
+      const metadata = liveMetadata();
+      const id = turnId ? `live-user-${turnId}` : `live-user-${liveRun.current?.id}-${++seq.current}`;
       setMessages((prev) => {
         // Layer 1 — identity: this turn's live bubble was already rendered.
-        if (turnId && prev.some((m) => m.id === id)) return prev;
-        // Layer 2 — disk copy: check the MOST-RECENT user bubble (scanning past trailing
-        // assistant placeholders). Only SUPPRESSES a duplicate add; never deletes, so it
-        // can't wipe real history.
-        for (let i = prev.length - 1; i >= 0; i--) {
-          if (prev[i].role !== 'user') continue;
-          // Another live turn's bubble: layer 1 already ruled out identity, and a repeated
-          // prompt sent into the same run must not read as its disk copy.
-          if (typeof prev[i].id === 'string' && prev[i].id.startsWith('live-user-')) break;
-          const ts = prev[i].timestamp ? Date.parse(prev[i].timestamp as string) : NaN;
-          if (startedAt !== null && !Number.isNaN(ts)) {
-            if (ts >= startedAt) return prev; // this turn's disk copy → skip
-            // older than this run → a prior turn (even if the text matches) → render
-          } else if (prev[i].content === text) {
-            return prev; // no timestamp to classify by → legacy text fallback
-          }
-          break;
-        }
-        return [...prev, { id, role: 'user', content: text, ...(ev._images?.length ? { images: ev._images } : {}) } as ChatMessage];
+        if (turnId && prev.some((m) => m.id === id || m.liveInputId === turnId)) return prev;
+        return [...prev, { id, role: 'user', content: text, ...metadata, liveInputId: turnId ?? undefined, ...(startedAt !== null ? { timestamp: new Date(startedAt).toISOString() } : {}), ...(ev._images?.length ? { images: ev._images } : {}) } as ChatMessage];
       });
       return;
     }
@@ -235,163 +280,50 @@ export function useLiveStream(
     }
     // content events need a current bubble (init normally comes first; be safe)
     const assistantId = curAssistantId.current ?? newPlaceholder();
-    setMessages((prev) => applyStreamEvent(prev, ev, { engine, assistantId }));
+    setMessages({ event: ev, engine, assistantId });
   };
 
-  useWebSocket({
-    url: sessionId ? `/ws/session-stream?sessionId=${encodeURIComponent(sessionId)}` : '/ws/session-stream',
-    enabled: enabled && !!sessionId,
-    onMessage: (data) => {
-      const msg = data as {
-        type?: string;
-        status?: string;
-        startedAt?: number;
-        runId?: string;
-        events?: unknown[];
-        outputTokens?: number;
-        message?: Record<string, unknown>;
-      };
-      if (msg.type === 'run-snapshot' && Array.isArray(msg.events)) {
-        // Authoritative turn identity, also for a snapshot whose `_human` event
-        // carries none. Set before the replay below so the bubbles it creates
-        // dedup against it.
-        if (typeof msg.runId === 'string' && msg.runId) curTurnId.current = msg.runId;
-        // Idle run → nothing to stream; the disk history already loaded is authoritative.
-        if (msg.status !== 'running') {
-          opts?.onRunningChange?.(false);
-          opts?.onLiveOutputTokens?.(null);
-          opts?.onRunStartedAt?.(null);
-          opts?.onBackgroundTasks?.([]);
-          setMessages(settleRunningTasks);
-          opts?.taskStore?.settleRunning();
-          fallbackOutputTokens.current = 0;
-          sawServerUsageUpdate.current = false;
-          sawResult.current = false;
-          return;
-        }
-        // Authoritative replay of the in-flight turn. The snapshot owns this turn, so drop:
-        //   • any prior temp live bubbles (handles reconnect), and
-        //   • the in-flight turn's DISK version when a viewer joined mid-run and the initial
-        //     history load already rendered it — this is what prevents the "2 user + 2
-        //     assistant" double-render. Identify it precisely by the synthetic _human prompt
-        //     so a reconnect (where the in-flight turn is live-*, and base's last turn is a
-        //     COMPLETED prior turn) does NOT wipe a real prior turn.
-        const humanEv = msg.events.find(
-          (e) => (e as StreamEvent)?.type === 'user' && (e as StreamEvent)?._human
-        ) as StreamEvent | undefined;
-        const hc = humanEv?.message?.content;
-        const humanText = typeof hc === 'string' ? hc : '';
-        // Fingerprint THIS turn from the snapshot. The registry buffers only the current
-        // in-flight turn (a fresh events[] per startRun), so its top-level uuids and tool_use
-        // ids uniquely identify the turn's disk image — a prior completed turn that merely
-        // shares the prompt text carries different uuids/tool ids and won't match.
-        const snapUuids = new Set<string>();
-        const snapToolIds = new Set<string>();
-        for (const e of msg.events as StreamEvent[]) {
-          const u = (e as { uuid?: string })?.uuid;
-          if (typeof u === 'string') snapUuids.add(u);
-          if (e?.type === 'assistant' && Array.isArray(e.message?.content)) {
-            for (const b of e.message.content as Array<{ name?: string; id?: string }>) {
-              if (b?.name && typeof b.id === 'string') snapToolIds.add(b.id);
-            }
-          }
-        }
-        const startedAt = typeof msg.startedAt === 'number' ? msg.startedAt : null;
-        setMessages((prev) => {
-          const base = prev.filter((m) => !(typeof m.id === 'string' && m.id.startsWith('live-')));
-          // Drop the in-flight turn's DISK image when a viewer joined mid-run and the initial
-          // history load already rendered it — this is what prevents the "2 user + 2 assistant"
-          // double-render. The snapshot then re-renders that turn from live events.
-          //
-          // PRIMARY — time boundary: the in-flight turn's disk image is exactly the trailing
-          // messages stamped at/after the run's startedAt (same machine, same clock; the
-          // engine flushes the user line only after startRun). Content-independent, so a
-          // repeated "继续" prompt can never cut a prior turn, and it needs no in-memory ids
-          // — it survives a mid-run refresh. Only applies when the tail is timestamped
-          // (claude/deepseek/codex/new-ollama transcripts all are).
-          const lastMsg = base[base.length - 1];
-          const lastTs = lastMsg?.timestamp ? Date.parse(lastMsg.timestamp) : NaN;
-          if (startedAt !== null && !Number.isNaN(lastTs)) {
-            let cut = base.length;
-            while (cut > 0) {
-              const m = base[cut - 1];
-              const ts = m.timestamp ? Date.parse(m.timestamp) : NaN;
-              if (!Number.isNaN(ts) && ts >= startedAt) cut--;
-              else break;
-            }
-            // cut === base.length ⇒ the in-flight turn isn't on disk → nothing to remove.
-            return cut < base.length ? base.slice(0, cut) : base;
-          }
-          // FALLBACK — untimestamped tail (codex transcripts): locate by prompt text, confirm
-          // by snapshot fingerprint (pre-startedAt behavior, unchanged).
-          if (!humanText) return base;
-          // Only the MOST-RECENT user bubble can be this turn's prompt. If it doesn't match the
-          // in-flight prompt text, the in-flight user isn't on disk → nothing to cut. (This also
-          // skips a repeated "continue"/"go on" whose matching user is an OLDER completed turn.)
-          let ui = -1;
-          for (let i = base.length - 1; i >= 0; i--) {
-            if (base[i].role === 'user') {
-              if (base[i].content === humanText) ui = i;
-              break;
-            }
-          }
-          if (ui === -1) return base;
-          // Cut [matching user … end] ONLY when everything after that user is THIS turn's
-          // already-flushed assistant — verified by uuid / tool_use id membership in the
-          // snapshot (which holds only the current turn). A Claude turn flushes its
-          // "text + tool_use" assistant message to the jsonl BEFORE the run ends, so the disk
-          // tail mid-run is `user → assistant(+tools)`, not just a bare trailing user; the old
-          // last-only check missed that assistant and double-rendered it. Anything that does NOT
-          // match the snapshot is real prior history → left untouched (the live turn still
-          // renders fresh, and onComplete reconciles any transient overlap).
-          const after = base.slice(ui + 1);
-          const isInflightTail = after.every(
-            (m) =>
-              m.role === 'assistant' &&
-              ((typeof m.id === 'string' && snapUuids.has(m.id)) ||
-                (!!m.toolCalls?.length && m.toolCalls.every((tc) => snapToolIds.has(tc.id))))
-          );
-          return isInflightTail ? base.slice(0, ui) : base;
-        });
-        curAssistantId.current = null;
-        seq.current = 0;
-        fallbackOutputTokens.current = 0;
-        sawServerUsageUpdate.current = false;
-        sawResult.current = false;
-        turnActive.current = false;
-        splitPending.current = false;
-        const snapshotOutputTokens = typeof msg.outputTokens === 'number' && Number.isFinite(msg.outputTokens)
-          ? Math.max(0, Math.round(msg.outputTokens))
-          : null;
-        if (snapshotOutputTokens !== null) {
-          fallbackOutputTokens.current = snapshotOutputTokens;
-          sawServerUsageUpdate.current = true;
-          opts?.onLiveOutputTokens?.({ outputTokens: snapshotOutputTokens });
-        }
-        for (const ev of msg.events) {
-          apply(ev as StreamEvent);
-        }
-        opts?.onRunningChange?.(true);
-        opts?.onRunStartedAt?.(typeof msg.startedAt === 'number' ? msg.startedAt : Date.now());
-      } else if (msg.type === 'run-event' && msg.message) {
-        // 'run-ended' is the single definitive end signal — engines may emit several
-        // intermediate 'result's (codex = one per turn), so end only on run-ended.
-        if (msg.message.type === 'run-ended') {
-          opts?.onRunningChange?.(false);
-          opts?.onLiveOutputTokens?.(null);
-          opts?.onRunStartedAt?.(null);
-          opts?.onBackgroundTasks?.([]);
-          setMessages(settleRunningTasks);
-          opts?.taskStore?.settleRunning();
-          fallbackOutputTokens.current = 0;
-          sawServerUsageUpdate.current = false;
-          sawResult.current = false;
-          opts?.onComplete?.();
-          return;
-        }
-        apply(msg.message as StreamEvent);
-        opts?.onRunningChange?.(true);
-      } else if (msg.type === 'run-idle') {
+  const detachedFinished = useRef(false);
+  const receive = (data: unknown) => {
+    if (opts?.onlyRunId && detachedFinished.current) return;
+    const msg = data as {
+      type?: string;
+      status?: string;
+      startedAt?: number;
+      runId?: string;
+      events?: unknown[];
+      outputTokens?: number;
+      writerActive?: boolean;
+      recovery?: boolean;
+      recoveryDeletions?: RecoveryDeletion[];
+      message?: Record<string, unknown>;
+    };
+    if (opts?.onlyRunId && msg.type === 'run-snapshot' && msg.runId !== opts.onlyRunId) {
+      if (msg.recovery) return;
+      detachedFinished.current = true;
+      opts.onRunEnd?.(false, opts.onlyRunId);
+      return;
+    }
+    if (msg.type === 'run-snapshot' && Array.isArray(msg.events)) {
+      // This ordered subscription has moved to another run. Its preceding
+      // writer must have released, even if every intervening terminal event
+      // was missed. Retire only the run this viewer actually observed: a
+      // separate optimistic/accepted sender must keep its own ownership.
+      if (!msg.recovery && liveRun.current && msg.runId && msg.runId !== liveRun.current.id) {
+        opts?.onRunEnd?.(false, liveRun.current.id);
+      }
+      // An idle run may still be flushing. Reconcile an observed run only
+      // after release, including release learned through a reconnect snapshot.
+      const draining = msg.status !== 'running' && msg.writerActive === true && msg.events.length > 0;
+      // Failed runs may never reach persistence (for example, init/auth errors).
+      // Replay their retained events even after release so reconnect sees the error.
+      const failed = msg.status === 'error';
+      if (msg.status !== 'running' && !draining && !(failed && msg.events.length)) {
+        waitingForWriter.current = msg.writerActive === true;
+        if (liveRun.current) liveRun.current.active = false;
+        const endedId = typeof msg.runId === "string" ? msg.runId : liveRun.current?.id;
+        if (endedId) opts?.onRunEnd?.(waitingForWriter.current, endedId, failed);
+        if (!waitingForWriter.current && sessionId) opts?.onWriterIdle?.(sessionId);
         opts?.onRunningChange?.(false);
         opts?.onLiveOutputTokens?.(null);
         opts?.onRunStartedAt?.(null);
@@ -401,8 +333,97 @@ export function useLiveStream(
         fallbackOutputTokens.current = 0;
         sawServerUsageUpdate.current = false;
         sawResult.current = false;
+        for (const deletion of msg.recoveryDeletions ?? []) opts?.onRecoveryDeleted?.(deletion);
+        return;
       }
-      // ping: nothing to do
+      const startedAt = typeof msg.startedAt === 'number' ? msg.startedAt : null;
+      const run = { id: msg.runId || `${sessionId}:${startedAt}`, startedAt: startedAt ?? Date.now(), recovery: msg.recovery };
+      beginRun(run);
+      const snapshotOutputTokens = typeof msg.outputTokens === 'number' && Number.isFinite(msg.outputTokens)
+        ? Math.max(0, Math.round(msg.outputTokens))
+        : null;
+      if (snapshotOutputTokens !== null) {
+        fallbackOutputTokens.current = snapshotOutputTokens;
+        sawServerUsageUpdate.current = true;
+        opts?.onLiveOutputTokens?.({ outputTokens: snapshotOutputTokens });
+      }
+      for (const ev of msg.events) {
+        apply(ev as StreamEvent);
+      }
+      if (draining || failed) {
+        waitingForWriter.current = msg.writerActive === true;
+        liveRun.current!.active = false;
+        opts?.onRunEnd?.(waitingForWriter.current, run.id, failed);
+        setMessages(settleRunningTasks);
+      }
+      for (const deletion of msg.recoveryDeletions ?? []) opts?.onRecoveryDeleted?.(deletion);
+      opts?.onRunningChange?.(!draining && !failed);
+      opts?.onRunStartedAt?.(failed ? null : typeof msg.startedAt === 'number' ? msg.startedAt : Date.now());
+    } else if (msg.type === 'run-event' && msg.message) {
+      if (msg.message.type === 'recovery-deleted') {
+        opts?.onRecoveryDeleted?.(msg.message.deletion as RecoveryDeletion);
+        return;
+      }
+      // 'run-ended' is the single definitive end signal — engines may emit several
+      // intermediate 'result's (codex = one per turn), so end only on run-ended.
+      if (msg.message.type === 'run-ended' || msg.message.type === 'run-settled') {
+        if (typeof msg.message.runId === 'string' && liveRun.current && msg.message.runId !== liveRun.current.id) return;
+        waitingForWriter.current = msg.message.type === 'run-ended' && msg.message.writerActive === true;
+        if (liveRun.current) liveRun.current.active = false;
+        const endedId = typeof msg.message.runId === "string" ? msg.message.runId : liveRun.current?.id;
+        if (endedId) opts?.onRunEnd?.(waitingForWriter.current, endedId, msg.message.status === 'error');
+        opts?.onRunningChange?.(false);
+        opts?.onLiveOutputTokens?.(null);
+        opts?.onRunStartedAt?.(null);
+        opts?.onBackgroundTasks?.([]);
+        setMessages(settleRunningTasks);
+        opts?.taskStore?.settleRunning();
+        fallbackOutputTokens.current = 0;
+        sawServerUsageUpdate.current = false;
+        sawResult.current = false;
+        return;
+      }
+      if (waitingForWriter.current) {
+        if (isRecoverySettlement(msg.message)) apply(msg.message as StreamEvent);
+        return;
+      }
+      const event = msg.message as StreamEvent;
+      const startsRun = !liveRun.current?.active;
+      if (startsRun) {
+        const run = { id: typeof event._turnId === 'string' ? event._turnId : `${sessionId}:${event._ts ?? Date.now()}`, startedAt: event._ts ?? Date.now() };
+        beginRun(run);
+      }
+      apply(event);
+      opts?.onRunningChange?.(true);
+    } else if (msg.type === 'run-idle') {
+      for (const deletion of msg.recoveryDeletions ?? []) opts?.onRecoveryDeleted?.(deletion);
+      if (sessionId) opts?.onWriterIdle?.(sessionId);
+      waitingForWriter.current = false;
+      if (liveRun.current) liveRun.current.active = false;
+      if (liveRun.current) opts?.onRunEnd?.(false, liveRun.current.id);
+      opts?.onRunningChange?.(false);
+      opts?.onLiveOutputTokens?.(null);
+      opts?.onRunStartedAt?.(null);
+      opts?.onBackgroundTasks?.([]);
+      setMessages(settleRunningTasks);
+      opts?.taskStore?.settleRunning();
+      fallbackOutputTokens.current = 0;
+      sawServerUsageUpdate.current = false;
+      sawResult.current = false;
+    }
+    // ping: nothing to do
+  };
+
+  useWebSocket({
+    url: sessionId ? `/ws/session-stream?sessionId=${encodeURIComponent(sessionId)}&subscriber=${encodeURIComponent(subscriptionId)}` : '/ws/session-stream',
+    enabled: enabled && !!sessionId,
+    onMessage: (data) => {
+      // One transport frame contains recovery and current ownership, so React commits
+      // the current run's indicators rather than an intermediate archived failure.
+      for (const recovery of (data as { recoveries?: unknown[] }).recoveries ?? []) receive(recovery);
+      receive(data);
+      if (opts?.onlyRunId && liveRun.current?.id === opts.onlyRunId && !waitingForWriter.current && !liveRun.current.active) detachedFinished.current = true;
     },
   });
+  return (snapshot) => receive({ ...snapshot, recovery: true });
 }

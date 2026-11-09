@@ -6,6 +6,8 @@ import { ENGINE_LABELS, EngineIcon, isEngineAccentId } from './engineAccents';
 import { BotBadge } from './BotBadge';
 import type { ChatMessage, ApiRetryInfo, BackgroundTaskInfo, ChatEngine, ToolCallInfo, LiveOutputTokens } from './types';
 import { MessageBubble } from './MessageBubble';
+import { RecoveryCopies } from './RecoveryCopies';
+import type { HistoryFailure } from './chatHistoryState';
 // Tech debt: cross-package imports into the main shell.
 //   - useChatSearch / useComments / useAllComments: hooks living in
 //     src/hooks/, candidates for either feature-agent (if chat-only) or
@@ -68,6 +70,7 @@ const RECENT_USER_MESSAGE_LIMIT = 10;
 
 interface MessageListProps {
   messages: ChatMessage[];
+  recoveryCopies?: HistoryFailure[];
   isLoading?: boolean;
   cwd?: string;
   sessionId?: string | null;
@@ -168,7 +171,7 @@ export interface MessageListHandle {
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
-  { messages, isLoading, cwd, sessionId, engine, botName, apiRetryInfo, backgroundTasks, liveOutputTokens, runningStartedAt, hasMoreHistory, isLoadingMore, onLoadMore, onFork, onDeleteTurn, onSendToPeer, peerSide, isActive = true, onContentSearch, onShowFileDiff, onOpenFileLink, onApprovePlan, onShowUserMessages },
+  { messages, recoveryCopies, isLoading, cwd, sessionId, engine, botName, apiRetryInfo, backgroundTasks, liveOutputTokens, runningStartedAt, hasMoreHistory, isLoadingMore, onLoadMore, onFork, onDeleteTurn, onSendToPeer, peerSide, isActive = true, onContentSearch, onShowFileDiff, onOpenFileLink, onApprovePlan, onShowUserMessages },
   ref
 ) {
   const { t, i18n } = useTranslation();
@@ -763,7 +766,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     // to what this new position needs. Without it the pin would keep deriving
     // from the offset the reader just left, and would eventually converge and
     // haul them back down to the tail.
-    dispatchScroll({ type: 'release' });
+    dispatchScroll({ type: 'jump' });
 
     // Flash the target. The class goes on the ROW — the only anchor we have —
     // and `.flash-turn .chat-turn` in globals.css projects it onto the bubble
@@ -1023,6 +1026,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
 
   return (
     <div ref={outerRef} className="relative flex-1 min-h-0 overflow-hidden flex flex-col outline-none" tabIndex={-1} onMouseUp={handleSelectionMouseUp} onMouseDown={handleSelectionMouseDown}>
+      {recoveryCopies && <RecoveryCopies copies={recoveryCopies} />}
       {/* Search bar */}
       {isSearchVisible && (
         <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-b border-border">

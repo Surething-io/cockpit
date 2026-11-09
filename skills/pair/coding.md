@@ -6,7 +6,20 @@ Use this guide while writing code, discussing how an implementation should be ex
 
 Understand the required behavior, accepted design and relevant callers before editing. Read the project's language, framework, IO, error-handling and performance conventions. Reuse existing capabilities only when their semantics fit; do not introduce a competing implementation style merely because it is familiar.
 
-Work on a coherent behavior through its relevant path, including necessary failure and cleanup behavior. Keep dependencies between changes visible and the intermediate state understandable. Investigate a contradicted design assumption rather than silently implementing a different contract.
+Work on a coherent behavior through its relevant path, including necessary failure and cleanup behavior. Keep dependencies and remaining responsibilities visible during intermediate steps. Investigate a contradicted design assumption rather than silently implementing a different contract; revise the affected implementation and verification together when the approach changes.
+
+## Establish state and ownership contracts
+
+For changes involving persistence, asynchronous work, cancellation, retries or concurrency, establish the following before choosing or changing the mechanism. Use a short working note, timeline or state model; no separate document is required:
+
+- Identify every writer of the affected state, its readers, and the ordering actually enforced between them, including work already in flight.
+- Define when an operation becomes visible and complete, which invariant must hold at each partial state, and which observed version its decisions depend on.
+- Define when a participant gains and loses authority to write, what enforces that boundary at the write itself, and what happens to outstanding work after cancellation or ownership transfer.
+- Define how partial work reaches a valid terminal state after failure, permanent cancellation or re-entry, including who can recover it and whether later work can proceed.
+
+Check dependency source or authoritative contracts wherever this reasoning relies on cancellation, retry, locking or atomicity behavior. Treat a new guard, checkpoint or recovery record as another participant in this model. Use Design when the contracts require a different responsibility or storage boundary.
+
+Map affected guarantees to the decisions that enforce them, including relevant creation, update, replacement, cleanup and recovery paths. When a new mechanism takes responsibility, check whether existing paths can bypass or contradict it. Remove superseded branches once the transfer is supported; retain compatibility for identifiable callers or conditions. Recheck the combined paths after a model change and use Verification to challenge them. This concerns the affected behavior, not an inventory of the whole system.
 
 ## Make meaning and flow readable
 
@@ -36,8 +49,6 @@ Avoid repeated IO, redundant computation and unconditional no-op updates on rele
 
 ## Complete the behavior and check the result
 
-Remove superseded branches and representations once their responsibilities have moved; keep compatibility still required by legitimate callers. Limit cleanup to the task and direct effects, preserving the user's unrelated work.
-
 Use [Verification](verification.md) to check the required behavior and necessary existing guarantees at the appropriate boundary. Add or update tests when they protect a meaningful contract or failure mode; avoid tests that merely restate the implementation or compulsory tests for every new helper. Keep computation separable from effects when that improves the actual design and evidence, not by exposing internals solely for tests.
 
-Inspect the resulting diff for unintended behavior, redundant state, unclear ownership and unnecessary machinery. Use [Review](review.md) for a substantive independent assessment; do not repeat a full review ceremony for every edit. Stop when the agreed behavior is supported and the implementation is understandable within its scope, rather than continuing with aesthetic rewrites.
+Inspect the resulting diff for unintended behavior, redundant state, unclear ownership and unnecessary machinery. Use [Review](review.md) for a substantive independent assessment; do not repeat a full review ceremony for every edit. Apply the entrypoint's completion criteria to the agreed outcome, not just the latest implementation step, and keep aesthetic rewrites outside the task.

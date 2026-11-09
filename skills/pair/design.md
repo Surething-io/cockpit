@@ -6,7 +6,7 @@ Use this guide when choosing domain concepts, data and state models, responsibil
 
 Identify the intended outcome and necessary guarantees, then inspect the existing implementation and affected callers. Use a concrete scenario to connect the proposed model to observable behavior. Distinguish required behavior from an implementation assumption or a hypothetical future extension.
 
-Identify operational constraints that could change the decision: expected data volume and concurrency, latency, availability, recovery needs, cost, delivery time and the team's ability to maintain the solution. Use observed baselines or explicit requirements where available; keep estimates and unknowns visible. A local feature need not acquire distributed-system requirements, caches or queues merely because those are common design topics.
+Identify conditions that could change the decision: expected data volume and concurrency, latency, availability, recovery needs, cost, delivery time and team capabilities. Distinguish required constraints from objectives open to tradeoffs; keep estimates and unknowns visible. Include the effort to understand, diagnose and safely change the design in its maintenance cost. A local feature need not acquire distributed-system requirements, caches or queues merely because those are common design topics.
 
 Consider existing functions, native capabilities and dependencies before designing a replacement. Verify semantic and boundary fit rather than choosing reuse from a similar name. Compare meaningful alternatives on correctness, ownership, compatibility and total change cost. A bounded repair or keeping the current design can be appropriate.
 
@@ -18,17 +18,18 @@ Give each rule and resource a clear owner. Define interfaces around what a calle
 
 ## Preserve responsibilities through change
 
-
 Look for concrete pressure: scattered business knowledge, contradictory state, recurring exceptions, leaked details, unclear ownership or changes that require unrelated modules to coordinate. Examine the underlying concepts and legal states rather than treating each symptom as an independent branch to add.
 
-For a substantial removal, consolidation or replacement, establish:
+When a change affects the meaning of state, responsibility, observable completion or data lifetime, assess the affected guarantees regardless of patch size or whether a mechanism is added, modified or removed. Establish:
 
-- What the current mechanism is responsible for and which guarantees remain necessary.
-- How a bounded repair or replacement meets those responsibilities, including who owns them afterward.
-- What code, contracts or observations support that transfer, and what boundary paths could invalidate it.
+- Which necessary behaviors are affected.
+- Who will enforce them, using which information, and what code, contracts or observations support that decision.
+- Which existing mechanisms are replaced or remain, and how any coexistence avoids conflicting decisions or bypasses.
 - Which unknowns remain and how they affect the strength of the recommendation.
 
-Finding a defect in the old implementation does not prove a candidate replacement works. Resolve technical uncertainty through focused investigation or verification. If the evidence is incomplete, keep the proposal conditional and identify the next check; do not make removal of the old mechanism an unconditional action. Clarify a genuine conflict in the user's goals or constraints before implementing around it.
+When a decision relies on a flag, observation or stored evidence, establish exactly what it proves, for which object and version or lifetime. Distinguish unavailable evidence from a negative result. Retain enough information for necessary later decisions without assuming that more retained state is always better.
+
+Finding a defect in the old implementation does not prove a candidate works. Resolve consequential uncertainty through focused investigation or [Verification](verification.md). Keep unsupported conditions and the next check explicit; do not recommend an unconditional change whose correctness depends on them. Apply the entrypoint's scope and constraint rules when a conflict remains.
 
 Prefer clear concepts, explicit state and meaningful boundaries. Unify the same knowledge without forcing different policies or lifecycles into one configurable mechanism. An interface with one implementation, a function with one caller, a long file or a small diff does not by itself establish design quality or a defect.
 
@@ -42,8 +43,8 @@ Respect an explicitly chosen pattern or ordinary style preference. Raise an alte
 
 ## Deliver the design decision
 
-Explain the recommended model, responsibility boundaries and the concrete behavior it supports. Include material tradeoffs, applicability limits and unresolved evidence. Use a small example or diagram where relationships carry the decision; keep it consistent with the actual dependencies and guarantees.
+Explain the recommended model, responsibility boundaries and supported behavior, including the key causal relationships, assumptions and tradeoffs a maintainer needs. Use existing code structure and documentation where sufficient; do not require exhaustive user specifications, line-by-line explanations or duplicate documents. A small example or diagram can clarify relationships; keep it consistent with actual dependencies and guarantees.
 
-For consequential choices, explain what becomes easier, what becomes harder and which observed change in workload, requirements or operating conditions would justify revisiting the decision. Include migration and operational burden where relevant. Use the project's ADR format when a decision record is requested or required; an ordinary design discussion can stay in the conversation.
+For consequential choices under uncertainty, compare benefits and costs in the current context, the consequences of wrong assumptions, reversibility, migration burden and the ability to detect and recover from failure. Identify observable conditions that would justify revisiting the decision. Preserving options also has a cost: do not add abstractions or operational machinery solely for hypothetical futures. Use the project's ADR format when requested or required; an ordinary design discussion can stay in the conversation.
 
-A design recommendation is ready when necessary responsibilities have a supported owner and its conditions are clear. Use [Planning](planning.md) when sequencing work is itself a meaningful problem and [Coding](coding.md) when translating the chosen design into implementation. Do not add either as a mandatory ceremony for a local decision.
+A design recommendation is ready when the affected responsibilities have supported owners and the proposal's conditions and evidence limits are clear. This establishes a recommendation, not verified implementation. Use [Planning](planning.md) when sequencing work matters and [Coding](coding.md) when implementing; neither is a mandatory ceremony for a local decision.

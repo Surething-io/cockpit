@@ -10,11 +10,11 @@ Ask about consequential ambiguity in goals, preferences or constraints that curr
 
 ## Make the work executable
 
-Organize the recommended approach into meaningful changes with concrete outcomes. Identify affected files or boundaries, existing capabilities to reuse, dependencies between changes and the evidence that will establish success. Separate work that must happen in order from genuinely independent work; task decomposition does not itself authorize delegation.
+Organize the recommended approach into meaningful changes with concrete outcomes. Distinguish the final outcome from the current implementation step and make remaining responsibilities clear. Identify affected boundaries, existing capabilities to reuse, dependencies and the evidence needed. Separate sequential work from genuinely independent work; decomposition does not authorize delegation.
 
 Keep the plan proportional: a short change may need only a few sentences, while a migration may need intermediate compatibility and verification steps. Preserve necessary behavior during intermediate states and state when a temporary mechanism can be removed. Do not expand a local request into an unrelated improvement programme.
 
-Update the plan when discoveries change its premises. Reconcile changes with the intended outcome and constraints; do not accumulate steps merely to preserve an unsuitable approach. Distinguish an unresolved condition, an optional opportunity and a committed task.
+Across iterations, retain the accepted outcome and constraints alongside unfinished work, following the entrypoint's continuity rules. New evidence may invalidate the approach: revise its dependencies and steps, comparing repair, replacement or withdrawal where warranted instead of accumulating patches to preserve it. Distinguish an unresolved condition, an optional opportunity and a committed task. Existing conversation or project notes suffice; no separate record is required.
 
 ## Converge
 

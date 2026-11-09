@@ -14,13 +14,27 @@ Use meaningful existing tests, builds and static checks where they support the c
 
 For runtime claims, reach the relevant real interface and compare output with expectations. Passing pieces in isolation may miss their integration. For a purely static document or type change, use the appropriate content, contract or build evidence rather than forcing a browser or a runtime demonstration that cannot exercise it.
 
-Choose counterexamples from the actual risk: changed error paths, malformed or boundary inputs, repeated operations, concurrent state changes, interruption, stale persistence or adjacent unaffected behavior. Do not impose one probe per file or an exhaustive catalogue. Inspect mocks and substitutes for assumptions that bypass the boundary being claimed.
+Choose counterexamples from the actual risk: changed error paths, malformed or boundary inputs, repeated operations, concurrent state changes, interruption, stale persistence or adjacent unaffected behavior. Do not impose one probe per file or an exhaustive catalogue.
+
+Check which conclusions a test double supplies rather than verifies. Supplied intermediate results can establish consumer behavior, but not that production code produces those results correctly. Exercise the producer or dependency boundary when the claim depends on it. Unit tests, controlled models and integration checks remain useful; full end-to-end testing is not automatically required.
+
+When observations contradict a prior conclusion or related failures recur, identify the assumption or boundary earlier evidence did not establish. Change the verification method to address that gap rather than only adding the latest example. Keep uncertain causes as hypotheses.
+
+## Challenge state and ownership guarantees
+
+For persistence, asynchronous work, cancellation, retries or concurrency, derive counterexamples from the state and ownership contracts in Coding before selecting tests. At consequential boundaries, consider interruption after a partial effect, cancellation that never resumes, re-entry with different inputs, and an old participant continuing after ownership or state has changed. Establish which interleavings the implementation permits; a guard's presence or a successful retry does not establish that all reachable states can recover.
+
+For a guarantee that must persist beyond one transition, follow the relevant subsequent behavior: for example, retry after partial failure, reopen after saving, or a late callback after cancellation. Select sequences from the actual contract rather than exhaustively combining operations. Correct state immediately after the repaired branch does not prove it remains valid afterward.
+
+Exercise the boundary that enforces each material guarantee. Use controlled barriers or fault injection where ordering matters, and real storage or dependency integration where a substitute would hide the property under test. Check assumptions about atomic writes, locks and cancellation against the real dependency. A deterministic model can supplement unavailable integration evidence; state the remaining gap.
+
+Map the material guarantees to observed evidence, supported static reasoning or unresolved assumptions. Recheck affected conclusions when the repair changes. This supports the entrypoint's completion criteria without requiring a formal matrix, full audit or unrelated infrastructure changes.
 
 ## Choose a testing strategy when needed
 
 When asked how to test, or when existing coverage leaves a material risk unresolved, choose test layers by where a failure can occur. Unit tests can exercise domain rules and boundary values; integration tests can expose IO, persistence and component interactions; contract tests can protect producer-consumer expectations; end-to-end tests can check critical user flows across the assembled system. Combine layers when they cover different risks rather than duplicating the same assertion everywhere.
 
-Weigh confidence against feedback time, environment dependence, flakiness and maintenance cost. Keep setup representative and failures diagnosable. Prioritize business-critical behavior, authorization and data integrity where relevant; choose tests for a small script by its consequences, not its size. Coverage percentages or a prescribed testing pyramid do not establish adequate evidence. A requested test plan should connect important risks, cases, test layers and remaining gaps without imposing arbitrary targets.
+Prioritize checks that can expose unacceptable consequences, challenge a material assumption or change the implementation or recommendation. Weigh their evidence value against feedback time, environment dependence, flakiness and maintenance cost; keep setup representative and failures diagnosable. Cost alone does not establish correctness or waive required checks. Tests cannot settle value tradeoffs or establish every future condition. A requested test plan should connect risks, cases, test layers and remaining gaps without treating coverage counts or a prescribed testing pyramid as proof.
 
 ## Exercise the relevant surface
 
@@ -36,6 +50,6 @@ Use available project launch and verification methods. Isolate test data, ports,
 
 Capture enough command output, responses, observations or artifact locations to make the important result reviewable. Report what ran, expected versus observed behavior, the supported conclusion and material limits. Never claim a command ran or an interface was exercised when it was not.
 
-Before reporting failure, check whether another part of the flow handles the case or the behavior is intentional. Before reporting success, check whether the evidence covered the actual outcome and necessary preserved guarantees. Uncertainty is an evidence gap to resolve or disclose, not an automatic PASS or FAIL. Keep unrelated discoveries separate from the verdict on the requested change.
+Before reporting failure, check whether another part of the flow handles the case or the behavior is intentional. Before reporting success, check whether the evidence covers the agreed outcome and necessary preserved guarantees. Distinguish a known violation from missing evidence material to that conclusion and uncertainty outside the agreed conditions. Investigate material gaps or limit the conclusion when evidence is unavailable; uncertainty alone is not an automatic PASS or FAIL. Keep unrelated discoveries separate from the verdict.
 
-Stop when evidence is sufficient for the requested claim and risk. If authorized implementation remains incomplete or caused a regression, continue resolving it; otherwise deliver the assessment without an automatic repair cycle.
+Stop when the agreed claims have suitable support and material remaining uncertainty is explicit; do not pursue every hypothetical risk. A known violation remains unresolved unless the relevant requirement is explicitly revised within the user's authority. If authorized implementation remains incomplete or caused a regression, continue resolving it; otherwise deliver the assessment without an automatic repair cycle.

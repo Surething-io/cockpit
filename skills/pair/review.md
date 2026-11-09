@@ -19,7 +19,9 @@ For a claimed defect, identify its trigger, location, expected behavior and cons
 
 ## Assess incoming feedback independently
 
-Check the reviewer's premises and the current code. Explain whether the finding is supported, what it affects and whether it is necessary for the current goal. A true pre-existing issue can block the goal; a newly noticed issue can be independent. Neither age nor reviewer confidence settles that question. Do not treat accepting a review report as authorization to implement all of its suggestions.
+Check the reviewer's premises and the current code. Explain whether the finding is supported, what it affects and whether it is necessary for the current goal. A true pre-existing issue can block the goal; a newly noticed issue can be independent. Neither age nor reviewer confidence settles that question. When origin matters, state the comparison baseline and compare relevant versions or behavior. A regression in the cumulative diff was not necessarily introduced by the latest edit; leave unsupported attribution unresolved. Accepting a finding does not authorize all suggested changes or add independent improvements to the task's completion criteria.
+
+For multiple findings, examine whether they concern the same guarantee, share a cause or involve interacting mechanisms. Use those relationships to organize authorized repair and verification rather than assuming one patch per finding. Similar symptoms alone do not establish a common cause. When related findings recur, identify which assumption or earlier evidence failed to establish the required behavior; finding counts alone do not show progress or deterioration.
 
 When prioritization or technical-debt assessment is requested, compare observed user or development impact, the likelihood and consequence of leaving the issue, repair effort, dependencies and migration risk. Separate work necessary for the current outcome from independent improvements. Explain the ordering and uncertainty; do not turn labels such as duplication, low coverage or an old dependency into automatic defects, or use an unsupported scoring formula to imply precision.
 

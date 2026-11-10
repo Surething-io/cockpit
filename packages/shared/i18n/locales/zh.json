@@ -1387,6 +1387,36 @@
     "removeFailed": "移除机器人失败"
   },
   "decisions": {
+    "review": {
+      "title": "任务审阅",
+      "acceptedTitle": "已接受的审阅",
+      "goalPlaceholder": "这次任务的目标",
+      "range": "第 {{a}}–{{b}} 轮",
+      "changes": "改动",
+      "loadFailed": "审阅加载失败",
+      "noChanges": "这些轮次没有文件改动",
+      "snapshotsExpired": "原始快照已过期，只保留了文件清单。",
+      "truncated": "文件过多，列表已截断。",
+      "notViewable": "二进制文件或文件过大，无法显示",
+      "pickFile": "选择一个文件",
+      "acceptHint": "接受后，这个区间和其中文件的内容会被固定下来。",
+      "accept": "接受此区间",
+      "accepted": "已接受审阅",
+      "acceptFailed": "接受审阅失败",
+      "sinceAccepted": "自上次接受以来：{{turns}} 轮 · {{files}} 个文件",
+      "loadedOnly": "（仅含已加载的轮次）",
+      "open": "审阅",
+      "upToDate": "上次接受之后的改动都已审阅",
+      "history": "已接受的审阅",
+      "fileCount": "{{count}} 个文件",
+      "category": {
+        "task": "本任务",
+        "mixed": "与其他会话交叉修改",
+        "task-maybe": "Bash 产生，可能含外部改动",
+        "non-agent": "非 Agent 改动",
+        "other-session": "同期其他会话"
+      }
+    },
     "mode": "决策模式",
     "modeDesc": "审阅改动 · 留住决策 · 按项目生效",
     "toggleFailed": "无法切换决策模式",

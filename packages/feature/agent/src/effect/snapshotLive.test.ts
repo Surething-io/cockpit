@@ -459,3 +459,44 @@ describe('SnapshotServiceLive', () => {
     await rm(work2, { recursive: true, force: true });
   });
 });
+
+describe('SnapshotServiceLive window queries (decision-mode review)', () => {
+  it('lists every session\'s commits in a window with their own files, and blob ids at a revision', async () => {
+    const w = await mkdtemp(join(tmpdir(), 'cockpit-snap-window-'));
+    await writeFile(join(w, 'seed.txt'), 'seed\n');
+    await svc((s) => s.baseline(w, 'S1', 'claude'));
+
+    await writeFile(join(w, 'mine.ts'), 'mine\n');
+    await svc((s) => s.record({ cwd: w, sessionKey: 'S1', provider: 'claude', toolId: 'w1', toolName: 'Write', toolFiles: [join(w, 'mine.ts')] }));
+    await writeFile(join(w, 'theirs.ts'), 'theirs\n');
+    await svc((s) => s.record({ cwd: w, sessionKey: 'S2', provider: 'codex', toolId: 'w2', toolName: 'Bash' }));
+    await writeFile(join(w, 'mine.ts'), 'mine 2\n');
+    await writeFile(join(w, 'with space.ts'), 'x\n');
+    await svc((s) => s.record({ cwd: w, sessionKey: 'S1', provider: 'claude', toolId: 'w3', toolName: 'Edit', toolFiles: [join(w, 'mine.ts')] }));
+
+    const own = await svc((s) => s.listByToolIds(w, ['w1', 'w3']));
+    const first = own[0];
+    const last = own[own.length - 1];
+    const win = await svc((s) => s.listWindow(w, first.parent, last.hash));
+    expect(win.map((c) => c.toolId)).toEqual(['w1', 'w2', 'w3']);
+    expect(win.map((c) => [...c.files].sort())).toEqual([['mine.ts'], ['theirs.ts'], ['mine.ts', 'with space.ts']]);
+    expect(win[1].sessionKey).toBe('S2');
+
+    // Window from the beginning includes the parentless baseline, which reports no files.
+    const all = await svc((s) => s.listWindow(w, null, last.hash));
+    expect(all[0].baseline).toBe(true);
+    expect(all[0].files).toEqual([]);
+
+    const blobs = await svc((s) => s.blobIds(w, last.hash, ['mine.ts', 'with space.ts', 'gone.ts']));
+    const expected = await new Promise<string>((res, rej) =>
+      execFile('git', ['hash-object', join(w, 'mine.ts')], (e, out) => (e ? rej(e) : res(out.trim()))),
+    );
+    expect(blobs.get('mine.ts')).toBe(expected);
+    expect(blobs.has('with space.ts')).toBe(true);
+    expect(blobs.has('gone.ts')).toBe(false);
+
+    const bad = await runtime.runPromiseExit(Effect.flatMap(SnapshotService, (s) => s.listWindow(w, null, 'not-a-hash')));
+    expect(bad._tag).toBe('Failure');
+    await rm(w, { recursive: true, force: true });
+  });
+});

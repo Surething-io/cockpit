@@ -49,6 +49,7 @@ import { COLUMN_HEADER_ROW } from './columnHeaderRow';
 import type { ApiKeyEngine, UserMessageIndexEntry } from './effect/agentClient';
 import { CommentsListModal, useHasComments } from '@cockpit/feature-comments';
 import { DecisionModeToggle } from '@cockpit/feature-decisions';
+import { ReviewStatusBar } from './review/ReviewStatusBar';
 import { useTranslation } from 'react-i18next';
 
 // Migrated from src/components/project/Chat.tsx.
@@ -984,6 +985,16 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
 
         {/* Token Usage Display */}
         {tokenUsage && <TokenUsageBar tokenUsage={tokenUsage} rateLimitInfo={rateLimitInfo} />}
+
+        {/* Decision mode (docs/DECISION_MODE.md §4.1): changes since the last accepted
+            review + the way into the review. Renders nothing while the mode is off. */}
+        <ReviewStatusBar
+          cwd={initialCwd}
+          sessionId={sessionId}
+          messages={messages}
+          running={isLoading || liveRunning}
+          hasMoreHistory={hasMoreHistory}
+        />
 
         {/* Input. In side-by-side the focused pane portals its composer into a
             slot below BOTH panes, so one composer spans the panel and neither

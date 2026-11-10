@@ -1390,6 +1390,36 @@
     "removeFailed": "Failed to remove bot"
   },
   "decisions": {
+    "review": {
+      "title": "Task review",
+      "acceptedTitle": "Accepted review",
+      "goalPlaceholder": "Goal of this task",
+      "range": "Turns {{a}}–{{b}}",
+      "changes": "Changes",
+      "loadFailed": "Could not load the review",
+      "noChanges": "No file changes in these turns",
+      "snapshotsExpired": "The original snapshots have expired; only the file list is kept.",
+      "truncated": "Too many files — the list is capped.",
+      "notViewable": "Binary or too large to show",
+      "pickFile": "Select a file",
+      "acceptHint": "Accepting freezes this range and the content of its files.",
+      "accept": "Accept this range",
+      "accepted": "Review accepted",
+      "acceptFailed": "Could not accept this review",
+      "sinceAccepted": "Since last accepted: {{turns}} turns · {{files}} files",
+      "loadedOnly": "(loaded turns only)",
+      "open": "Review",
+      "upToDate": "Everything since the last accepted review is reviewed",
+      "history": "Accepted reviews",
+      "fileCount": "{{count}} files",
+      "category": {
+        "task": "This task",
+        "mixed": "Mixed with another session",
+        "task-maybe": "Produced by Bash (may include outside changes)",
+        "non-agent": "Not by the agent",
+        "other-session": "Other sessions"
+      }
+    },
     "mode": "Decision mode",
     "modeDesc": "review changes · keep decisions · per project",
     "toggleFailed": "Could not change decision mode",

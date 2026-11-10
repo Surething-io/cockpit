@@ -4,6 +4,7 @@
 import { Effect } from 'effect';
 import { AppError } from '@cockpit/effect-core';
 import type { DecisionProjectResolution } from '../../shared/types';
+import type { AcceptedTask, AcceptedTaskSummary, ReviewResult, ReviewTurn } from '../../shared/review';
 
 const httpJson = <A>(url: string, init?: RequestInit): Effect.Effect<A, AppError> =>
   Effect.tryPromise({
@@ -29,3 +30,24 @@ export const bindDecisionProject = (cwd: string, choice: string): Effect.Effect<
   postJson('/api/decisions/project', { cwd, bind: choice });
 
 export const decisionsExportUrl = (cwd: string): string => `/api/decisions/export?cwd=${encodeURIComponent(cwd)}`;
+
+// ─────────────────────────────────────────────────────────
+// Task review (docs/DECISION_MODE.md §3–§4)
+// ─────────────────────────────────────────────────────────
+
+/** Deterministic review of the range spanned by `toolIds`; `summary` omits file contents. */
+export const loadReview = (cwd: string, toolIds: ReadonlyArray<string>, summary: boolean): Effect.Effect<ReviewResult, AppError> =>
+  postJson('/api/decisions/review', { cwd, toolIds, summary });
+
+export const loadSessionTasks = (cwd: string, sessionId: string): Effect.Effect<{ tasks: AcceptedTaskSummary[] }, AppError> =>
+  httpJson(`/api/decisions/tasks?cwd=${encodeURIComponent(cwd)}&sessionId=${encodeURIComponent(sessionId)}`);
+
+export const loadAcceptedTask = (cwd: string, id: string): Effect.Effect<{ task: AcceptedTask }, AppError> =>
+  httpJson(`/api/decisions/tasks?cwd=${encodeURIComponent(cwd)}&id=${encodeURIComponent(id)}`);
+
+export const acceptReview = (
+  cwd: string,
+  sessionId: string,
+  goal: string,
+  turns: ReadonlyArray<ReviewTurn>,
+): Effect.Effect<{ task: AcceptedTask }, AppError> => postJson('/api/decisions/tasks', { cwd, sessionId, goal, turns });

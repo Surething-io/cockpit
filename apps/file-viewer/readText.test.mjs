@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, truncateSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import vm from 'node:vm';
 import { transformSync } from 'esbuild';
@@ -43,7 +43,7 @@ describe('file-viewer public SDK text reads', () => {
     const file = join(directory, 'home-notes');
     writeFileSync(file, 'resolved home document');
     const resolved = context.resolveViewerPathProbe('~/notes/home-notes');
-    expect(resolved).toBe(file);
+    expect(resolve(resolved)).toBe(file);
     expect(await readText(resolved)).toBe('resolved home document');
   });
 

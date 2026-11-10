@@ -238,9 +238,8 @@ describe.skipIf(!browser)('history ownership through real HTTP and WebSocket bou
     }
     const browserDir = join(directory, scenario); await mkdir(browserDir);
     const url = `http://127.0.0.1:${port}/?mode=${scenario}&session=${session}`;
-    await writeFile(join(browserDir, 'index.html'), `<script>location.href=${JSON.stringify(url)}</script>`);
     try {
-      const dom = await captureBrowserDom(browser!, browserDir);
+      const dom = await captureBrowserDom(browser!, browserDir, url);
       const output = /<pre id="result">([\s\S]*?)<\/pre>/.exec(dom)![1];
       const result = JSON.parse(output.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));
       expect(result.error, JSON.stringify(result)).toBeUndefined();

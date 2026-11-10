@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
 import { codexFilePath, codexItemBubble, extractCodexImageAttachments, normalizeCodexToolInput } from './codexTools';
 import { findCodexUploadImage } from './codexUploadImage';
 
@@ -10,7 +11,7 @@ const row = (content: unknown[], role = 'user') => JSON.stringify({ type: 'respo
 
 describe('Codex file path boundary', () => {
   it('normalizes encoded file URLs in current and legacy image tools', () => {
-    const path = '/tmp/截图 with space.png';
+    const path = resolve('/tmp/截图 with space.png');
     const uri = pathToFileURL(path).href;
     for (const type of ['ImageView', 'image_view']) {
       expect(codexItemBubble({ type, id: 'img', path: uri })?.input).toEqual({ file_path: path });
@@ -43,9 +44,11 @@ describe('Codex upload associations', () => {
   });
 
   it('finds earlier and steered uploads across the full transcript and ignores other roles', () => {
-    const transcript = [row(upload('/tmp/a.png')), row([text('later prompt')]), row(upload('/tmp/b.png', 'ZGVm')), row(upload('/tmp/a.png', 'wrong'), 'assistant')].join('\n');
-    expect(findCodexUploadImage(transcript, 'file:///tmp/a.png')?.data).toBe('YWJj');
-    expect(findCodexUploadImage(transcript, '/tmp/b.png')?.data).toBe('ZGVm');
+    const first = resolve('/tmp/a.png');
+    const second = resolve('/tmp/b.png');
+    const transcript = [row(upload(first)), row([text('later prompt')]), row(upload(second, 'ZGVm')), row(upload(first, 'wrong'), 'assistant')].join('\n');
+    expect(findCodexUploadImage(transcript, pathToFileURL(first).href)?.data).toBe('YWJj');
+    expect(findCodexUploadImage(transcript, second)?.data).toBe('ZGVm');
     expect(findCodexUploadImage(transcript, '/elsewhere/a.png')).toBeNull();
   });
 

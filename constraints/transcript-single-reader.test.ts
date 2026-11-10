@@ -14,7 +14,7 @@
  *
  * Detection: in the scan-style modules, no createReadStream, no readline, no import of
  * the display parsers (transcriptParsers). The index itself is the one exception, and
- * delegationLive reads a single session's last reply on demand.
+ * delegationLive and grokSubagentTranscript read a single session on demand.
  */
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join, relative, sep } from 'path';
@@ -32,6 +32,7 @@ const SCAN_MODULES = [
 const ALLOWED = new Set([
   `${AGENT}/effect/transcriptIndexLive.ts`, // the single reader
   `${AGENT}/effect/delegationLive.ts`, // one session's last reply, on demand
+  `${AGENT}/effect/grokSubagentTranscript.ts`, // one delegated session's display, on demand
 ]);
 const SOURCE = /\.tsx?$/;
 const TEST = /\.test\.tsx?$/;

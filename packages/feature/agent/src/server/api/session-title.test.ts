@@ -197,7 +197,7 @@ describe('session title API and projections', () => {
     { origin: { kind: 'task-notification' } },
     { origin: { kind: 'system' } },
   ])('keeps Claude command titles and ignores injected metadata %j', async (injection) => {
-    const sessionId = `claude-command-title-${JSON.stringify(injection)}`;
+    const sessionId = `claude-command-title-${Buffer.from(JSON.stringify(injection)).toString('hex')}`;
     const file = join(root, `${sessionId}.jsonl`);
     writeFileSync(file, [
       { type: 'user', ...injection, message: { role: 'user', content: 'Injected skill instructions' } },

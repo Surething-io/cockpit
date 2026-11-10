@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /** Real compositor frames are required to test viewport acknowledgements. */
-export async function captureBrowserDom(browser: string, directory: string): Promise<string> {
+export async function captureBrowserDom(browser: string, directory: string, url = pathToFileURL(join(directory, 'index.html')).href): Promise<string> {
   const profile = join(directory, 'profile');
   const child = spawn(browser, ['--headless', '--disable-gpu', '--no-sandbox', '--no-first-run', '--disable-background-networking', '--password-store=basic', '--use-mock-keychain',
     '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore' });
@@ -38,7 +38,18 @@ export async function captureBrowserDom(browser: string, directory: string): Pro
       if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
       return result.result.value;
     };
-    await command('Page.navigate', { url: pathToFileURL(join(directory, 'index.html')).href });
+    await command('Page.enable', {});
+    // Navigation returns before the new execution context is ready for evaluation.
+    const loaded = new Promise<void>((resolve) => {
+      const onMessage = (event: MessageEvent) => {
+        if (JSON.parse(String(event.data)).method !== 'Page.loadEventFired') return;
+        socket!.removeEventListener('message', onMessage);
+        resolve();
+      };
+      socket!.addEventListener('message', onMessage);
+    });
+    await command('Page.navigate', { url });
+    await loaded;
     for (;;) {
       const result = await evaluate('document.getElementById("result")?.textContent');
       if (result && result !== 'RUNNING') return (await evaluate('document.documentElement.outerHTML'))!;

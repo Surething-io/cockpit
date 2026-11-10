@@ -30,8 +30,8 @@ import type { CodeIndex } from '../projectGraph/codeIndex';
 // codeIndex only reaches back into this module via dynamic import.
 import {
   ANALYTICS_SYMBOLS_PER_NODE,
+  admitAnalytics,
   countIndexSymbols,
-  enforceCodeMapBudget,
   registerAnalyticsResidency,
 } from '../projectGraph/codeIndex';
 import type { AnalyticsGraph, NodeId } from './types';
@@ -104,6 +104,8 @@ export interface AnalyticsEntry {
   builtAt: number;
   /** Total build time (excluding the underlying CodeIndex parse). */
   buildMs: number;
+  /** ms epoch of the last read — what makes an entry "in use" for eviction. */
+  lastUsedAt: number;
 }
 
 /** Canonical cache key for a PPR query. Order-independent in seeds:
@@ -141,12 +143,29 @@ export function cachedPPR(
 const cache = new Map<string, AnalyticsEntry>();
 let versionCounter = 0;
 
+/**
+ * How long a read keeps an entry from being dropped to admit another
+ * project's analytics. Long enough to cover the gaps in an agent's work on a
+ * project (several cg calls a few minutes apart), short enough that a project
+ * nobody is using hands its memory over within one coffee break.
+ */
+export const ANALYTICS_IN_USE_MS = 10 * 60_000;
+
+/** cwds refused for lack of budget, so the degraded reason can say so. */
+const overBudget = new Set<string>();
+
 registerAnalyticsResidency({
   nodes: (cwd) => cache.get(cwd)?.graph.nodes.size ?? 0,
   drop: (cwd) => {
     cache.delete(cwd);
   },
+  lastUsedAt: (cwd) => cache.get(cwd)?.lastUsedAt ?? 0,
 });
+
+function touch(entry: AnalyticsEntry): AnalyticsEntry {
+  entry.lastUsedAt = Date.now();
+  return entry;
+}
 
 /**
  * Symbol ceiling above which analytics are SKIPPED, not merely slow.
@@ -212,17 +231,19 @@ export function isAnalyticsOversized(index: CodeIndex): boolean {
  * moment", `analytics-skipped-oversized` means "this will never arrive, do
  * not wait for it". Reporting the former for a permanent skip would send
  * every consumer (the `cg` skill explicitly documents retry-on-warming)
- * into an endless poll.
+ * into an endless poll. `analytics-over-budget` sits between them: other
+ * projects in active use hold the memory; it clears once they go idle.
  */
 export function analyticsDegradedReason(index: CodeIndex): string {
-  return isAnalyticsOversized(index)
-    ? 'analytics-skipped-oversized'
-    : 'analytics-warming';
+  if (isAnalyticsOversized(index)) return 'analytics-skipped-oversized';
+  if (overBudget.has(index.cwd)) return 'analytics-over-budget';
+  return 'analytics-warming';
 }
 
 /** Read the cached entry; returns null if not yet built / invalidated. */
 export function getAnalytics(cwd: string): AnalyticsEntry | null {
-  return cache.get(cwd) ?? null;
+  const hit = cache.get(cwd);
+  return hit ? touch(hit) : null;
 }
 
 /** Drop the cached entry — wired to the same lifecycle hook that
@@ -231,10 +252,12 @@ export function invalidateAnalytics(cwd?: string): void {
   if (!cwd) {
     cache.clear();
     oversizedReported.clear();
+    overBudget.clear();
     return;
   }
   cache.delete(cwd);
   oversizedReported.delete(cwd);
+  overBudget.delete(cwd);
 }
 
 /**
@@ -268,7 +291,19 @@ function buildAnalyticsEntry(cwd: string, index: CodeIndex): AnalyticsEntry {
   // The entry being replaced must not count against — or survive — its own
   // rebuild; then make room for the new one BEFORE the passes allocate.
   cache.delete(cwd);
-  enforceCodeMapBudget(cwd, countIndexSymbols(index) * ANALYTICS_SYMBOLS_PER_NODE);
+  const reserve = countIndexSymbols(index) * ANALYTICS_SYMBOLS_PER_NODE;
+  if (!admitAnalytics(cwd, reserve, Date.now() - ANALYTICS_IN_USE_MS)) {
+    if (!overBudget.has(cwd)) {
+      console.warn(
+        `[analytics] not building ${cwd}: Code Map budget is held by projects in use ` +
+          `within the last ${ANALYTICS_IN_USE_MS / 60_000} min. context / related / risk ` +
+          `answer degraded until one goes idle.`,
+      );
+    }
+    overBudget.add(cwd);
+    throw new Error(ANALYTICS_OVER_BUDGET);
+  }
+  overBudget.delete(cwd);
   const t0 = Date.now();
   versionCounter += 1;
   const version = versionCounter;
@@ -286,10 +321,14 @@ function buildAnalyticsEntry(cwd: string, index: CodeIndex): AnalyticsEntry {
     pprCache: new PPRLruCache(PPR_CACHE_CAP),
     builtAt: Date.now(),
     buildMs: Date.now() - t0,
+    lastUsedAt: Date.now(),
   };
   cache.set(cwd, entry);
   return entry;
 }
+
+/** Rejection message for a build refused by `admitAnalytics`. Expected, not an error. */
+export const ANALYTICS_OVER_BUDGET = 'analytics-over-budget';
 
 /** Convenience for routes: if analytics are ready use them; otherwise
  *  trigger an async build and return null so the caller can degrade. */
@@ -298,13 +337,16 @@ export function getOrTriggerAnalytics(
   index: CodeIndex,
 ): AnalyticsEntry | null {
   const hit = cache.get(cwd);
-  if (hit) return hit;
+  if (hit) return touch(hit);
   // Oversized: return null WITHOUT triggering. Triggering here would re-enter
   // the size check on every /context, /related and /risk request forever —
   // and before this guard existed, it re-ran the 83s / 10GB passes instead.
   if (isAnalyticsOversized(index)) return null;
   // Kick off build in the background; don't await.
+  // An over-budget refusal is decided before any allocation, so retrying it on
+  // each request is cheap and lets the build start as soon as room appears.
   precomputeAnalytics(cwd, index).catch((err) => {
+    if (err instanceof Error && err.message === ANALYTICS_OVER_BUDGET) return;
     console.error('[analytics] precompute failed:', err);
   });
   return null;

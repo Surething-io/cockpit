@@ -15,6 +15,7 @@ import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { spawnSync } from 'child_process';
 import { missingAgentBinaries } from '../scripts/agentBinaries.mjs';
+import { heapArgs } from './heapLimit.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..');
@@ -244,5 +245,5 @@ if (projectDir) {
 }
 
 console.log('Starting Cockpit...');
-const args = isDev ? ['--import', 'tsx', 'server.mjs'] : ['server.mjs'];
+const args = [...heapArgs(), ...(isDev ? ['--import', 'tsx', 'server.mjs'] : ['server.mjs'])];
 spawnSync('node', args, { cwd: PROJECT_ROOT, stdio: 'inherit' });

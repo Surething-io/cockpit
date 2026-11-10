@@ -22,6 +22,7 @@ import { appendFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileS
 import { createServer } from 'http';
 import { createRequire } from 'module';
 import { dirname, join } from 'path';
+import { totalmem } from 'os';
 
 const PKG = '@surething/cockpit';
 const EXIT_WAIT_MS = 30_000;
@@ -283,11 +284,21 @@ function runNpm(args) {
  * here, so there is nothing to hand it back to. The UI states this outright
  * before starting, rather than silently changing how the user stops cockpit.
  */
+// Inline copy of heapArgs() in bin/heapLimit.mjs — this script must stay
+// self-contained (see the header). Keep the two in step.
+function heapArgs(env = process.env) {
+  if (/--max-old-space-size/.test(env.NODE_OPTIONS ?? '')) return [];
+  const override = Number(env.COCKPIT_MAX_HEAP_MB);
+  const quarter = Math.floor(totalmem() / 4 / 1024 / 1024);
+  const mb = override > 0 ? Math.floor(override) : quarter > 4096 ? Math.min(quarter, 16384) : null;
+  return mb ? [`--max-old-space-size=${mb}`] : [];
+}
+
 function startServer() {
   try {
     mkdirSync(join(cockpitHome, 'logs'), { recursive: true });
     const fd = openSync(join(cockpitHome, 'logs', 'server.log'), 'a');
-    const child = spawn(process.execPath, ['server.mjs'], {
+    const child = spawn(process.execPath, [...heapArgs(), 'server.mjs'], {
       cwd: installRoot,
       env: {
         ...process.env,

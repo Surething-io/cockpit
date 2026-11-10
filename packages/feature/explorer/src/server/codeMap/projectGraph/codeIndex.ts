@@ -36,6 +36,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { getHeapStatistics } from 'node:v8';
 import { getServerParser, grammarForExtension } from './serverTreeSitter';
 import { SUPPORTED_GRAMMARS } from '../languageMap';
 import {
@@ -821,10 +822,26 @@ export function countIndexSymbols(index: CodeIndex): number {
  *
  * This bound is best-effort: it cannot make two oversized projects coexist,
  * it only decides which one is dropped, and whether that happens as an
- * eviction or as an OOM. Users who genuinely need several large projects
- * resident should raise the heap instead.
+ * eviction or as an OOM.
+ *
+ * Derived from the heap the process actually got rather than fixed: the
+ * launcher raises the limit on machines with RAM to spare (bin/heapLimit.mjs),
+ * and a fixed 1M would leave that headroom unused. At Node's default ~4.2 GB
+ * this comes out at the original ~1M.
  */
-export const MAX_CACHED_SYMBOLS = 1_000_000;
+export function codeMapBudgetForHeap(heapLimitBytes: number): number {
+  return Math.max(
+    MIN_CACHED_SYMBOLS,
+    Math.floor((heapLimitBytes - HEAP_RESERVED_BYTES) / BYTES_PER_SYMBOL),
+  );
+}
+/** Measured index density; see above. */
+const BYTES_PER_SYMBOL = 3_300;
+/** Heap left to everything that is not the Code Map. */
+const HEAP_RESERVED_BYTES = 1024 ** 3;
+/** Floor for tiny heaps, so the cache never degenerates to "evict everything". */
+const MIN_CACHED_SYMBOLS = 250_000;
+export const MAX_CACHED_SYMBOLS = codeMapBudgetForHeap(getHeapStatistics().heap_size_limit);
 
 /**
  * What one resident analytics node costs, in index symbols — the unit
@@ -851,6 +868,8 @@ export interface AnalyticsResidency {
   nodes(cwd: string): number;
   /** Drop `cwd`'s analytics synchronously. */
   drop(cwd: string): void;
+  /** ms epoch of the last read of `cwd`'s analytics, 0 when nothing is cached. */
+  lastUsedAt(cwd: string): number;
 }
 let analyticsResidency: AnalyticsResidency | null = null;
 export function registerAnalyticsResidency(residency: AnalyticsResidency | null): void {
@@ -913,6 +932,40 @@ export const __indexCacheTesting = {
  * `reserve` exists for the analytics build itself: its peak lands before the
  * entry is cached, so evicting only afterwards is evicting too late.
  */
+/**
+ * Make room for `reserve` symbol-equivalents of analytics for `cwd`, or report
+ * that there is none. Unlike `enforceCodeMapBudget` this never thrashes:
+ *
+ *   - it only drops OTHER projects' analytics that have not been read since
+ *     `hotSince` — a project being worked on keeps its analytics;
+ *   - it never drops an index (tens of seconds to rebuild) to fit analytics
+ *     (seconds to rebuild, and optional — routes degrade without them);
+ *   - it decides before dropping anything, so a refusal costs nothing.
+ *
+ * Two agents alternating between two large projects therefore settle into one
+ * of them having analytics and the other answering degraded, instead of each
+ * request evicting the other's entry and rebuilding its own on the main thread.
+ */
+export function admitAnalytics(cwd: string, reserve: number, hotSince: number): boolean {
+  const cost = (c: string) => (analyticsResidency?.nodes(c) ?? 0) * ANALYTICS_SYMBOLS_PER_NODE;
+  let total = reserve;
+  for (const [c, idx] of indexCache) total += countIndexSymbols(idx) + cost(c);
+  if (total <= MAX_CACHED_SYMBOLS) return true;
+  const cold = [...indexCache.keys()]
+    .filter((c) => c !== cwd && cost(c) > 0 && (analyticsResidency?.lastUsedAt(c) ?? 0) < hotSince)
+    .sort((a, b) => (analyticsResidency?.lastUsedAt(a) ?? 0) - (analyticsResidency?.lastUsedAt(b) ?? 0));
+  const reclaimable = cold.reduce((sum, c) => sum + cost(c), 0);
+  if (total - reclaimable > MAX_CACHED_SYMBOLS) return false;
+  for (const c of cold) {
+    if (total <= MAX_CACHED_SYMBOLS) break;
+    const n = cost(c);
+    analyticsResidency?.drop(c);
+    total -= n;
+    console.log(`[codeIndex] dropped idle analytics for ${c} (${n} symbol-equivalents) to admit ${cwd}`);
+  }
+  return true;
+}
+
 export function enforceCodeMapBudget(keep: string, reserve = 0): void {
   const analyticsCost = (cwd: string) =>
     (analyticsResidency?.nodes(cwd) ?? 0) * ANALYTICS_SYMBOLS_PER_NODE;
@@ -1107,6 +1160,8 @@ export async function getCodeIndex(cwd: string, opts: GetIndexOptions = {}): Pro
     import('../analytics/cache')
       .then((m) => m.precomputeAnalytics(cwd, index))
       .catch((err) => {
+        // Refused for budget: logged once by the analytics module, not a failure.
+        if (err instanceof Error && err.message === 'analytics-over-budget') return;
         console.error('[codeIndex] analytics precompute failed:', err);
       });
     return index;

@@ -207,7 +207,7 @@ curl -fsS "{{BASE_URL}}/api/projectGraph/affected?cwd=$PWD&files=<a.ts>&format=p
 
 - `score` / `risk.score` are for ranking only; absolute values have no meaning
 - `signals` / `relations` / `tags` explain WHY each result is relevant — feel free to cite them to the user
-- `degraded: true` means results are still usable but lower precision; `degradedReason` gives the cause (`analytics-warming` = backing index warming up, retry later; `coedit-unavailable` = git history signal unavailable, fall back to manually picking tests). The reason can flip between calls while the index warms.
+- `degraded: true` means results are still usable but lower precision; `degradedReason` gives the cause (`analytics-warming` = backing index warming up, retry later; `analytics-over-budget` = memory is held by other projects in active use, do not poll — use the degraded result, it clears once they go idle; `analytics-skipped-oversized` = project too large, will never arrive; `coedit-unavailable` = git history signal unavailable, fall back to manually picking tests). The reason can flip between calls while the index warms.
 - **risk / related responses already include a `coedit` field** (target file's coedit history) — DO NOT issue a separate /coedit request for the same file.
 - If related returns `ambiguousIn`, the same qname exists in multiple files — retry with `&filePath=<rel>`
 - These four endpoints also return coordinates only; fetch source with Read

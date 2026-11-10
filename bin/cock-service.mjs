@@ -16,6 +16,7 @@ import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { SERVER_JSON_PATH, LOG_DIR, SERVER_LOG_PATH, COCKPIT_HOME_DIR } from './cockpitHome.mjs';
 import { rotateIfLarge } from './rotateLog.mjs';
+import { heapArgs } from './heapLimit.mjs';
 import { missingAgentBinaries } from '../scripts/agentBinaries.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -139,7 +140,7 @@ export async function start({ quiet = false } = {}) {
   // and doing so on every `cockpit start` would be surprising.
   env.COCKPIT_NO_OPEN = '1';
 
-  const child = spawn(process.execPath, ['server.mjs'], {
+  const child = spawn(process.execPath, [...heapArgs(), 'server.mjs'], {
     cwd: PROJECT_ROOT,
     env,
     // POSIX: new session, so closing the terminal does not take the server

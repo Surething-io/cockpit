@@ -52,6 +52,8 @@ import type { ApiKeyEngine, UserMessageIndexEntry } from './effect/agentClient';
 import { CommentsListModal, useHasComments } from '@cockpit/feature-comments';
 import { DecisionModeToggle } from '@cockpit/feature-decisions';
 import { ReviewStatusBar } from './review/ReviewStatusBar';
+import { buildDecisionContext, stripDecisionContext } from '../shared/decisionContext';
+import { DecisionContextBar, useDecisionContext } from './review/DecisionContextBar';
 import { useTranslation } from 'react-i18next';
 
 // Migrated from src/components/project/Chat.tsx.
@@ -408,6 +410,10 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     return streamHandleSend(content, images, overrides);
   }, [streamHandleSend, injectMessage, acceptsMidRunInput, isLoading, loadedSessionId, sessionId]);
 
+  // Decision mode: related decisions shown before sending, removable, attached to the next send (§7.2).
+  const decisionCtx = useDecisionContext(initialCwd, draft, messages);
+  const { picksRef: decisionPicksRef, reset: resetDecisionCtx } = decisionCtx;
+
   const wrappedHandleSend = useCallback(async (content: string, images?: ImageInfo[]) => {
     const firstLine = content.split('\n')[0];
 
@@ -459,8 +465,11 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       }
       return;
     }
-    handleSend(content, images);
-  }, [handleSend, initialCwd, t, isClaudeEngine, setPlanMode]);
+    // Plain sends only: /plan and !command are Cockpit controls, not requests to the agent.
+    const decisionPrefix = buildDecisionContext(decisionPicksRef.current);
+    handleSend(decisionPrefix + content, images);
+    if (decisionPrefix) resetDecisionCtx();
+  }, [handleSend, initialCwd, t, isClaudeEngine, setPlanMode, decisionPicksRef, resetDecisionCtx]);
 
   // Plan-card "approve & run": the user's approval for the presented plan. Persistent off —
   // the Plan toggle visibly turns off and stays off for subsequent turns (mirrors native
@@ -571,7 +580,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       let lastUserMessage: string | undefined;
       for (let i = messages.length - 1; i >= 0; i--) {
         if (messages[i].role === 'user' && messages[i].content) {
-          lastUserMessage = messages[i].content.slice(0, 100);
+          lastUserMessage = stripDecisionContext(messages[i].content).slice(0, 100);
           break;
         }
       }
@@ -1012,6 +1021,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           sessionModel={reviewSessionModel}
           onFillInput={fillDraft}
         />
+        <DecisionContextBar shown={decisionCtx.shown} onRemove={decisionCtx.remove} />
 
         {/* Input. In side-by-side the focused pane portals its composer into a
             slot below BOTH panes, so one composer spans the panel and neither

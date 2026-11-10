@@ -25,6 +25,7 @@ import { TextPreviewModal } from './TextPreviewModal';
 import { readFileForPreview } from './effect/agentClient';
 import { useTranslation } from 'react-i18next';
 import { parseLocalFileLink, getFilePreviewKind, type FilePreviewRequest } from './filePreview';
+import { splitDecisionContext } from '../shared/decisionContext';
 
 // Migrated from src/components/project/MessageBubble.tsx.
 
@@ -649,9 +650,15 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   // Messages without it — user bubbles, optimistically inserted sends, system
   // rows — degrade to a single non-aside segment, i.e. exactly the DOM this
   // component rendered before parts existed.
+  // Decision-mode context Cockpit put in front of a user message: folded, never shown as the user's text.
+  const decisionContext = useMemo(
+    () => (isUser && message.content ? splitDecisionContext(message.content) : null),
+    [isUser, message.content],
+  );
   const textParts = useMemo(() => {
     const parts = message.parts;
-    if (!parts?.length) return message.content ? [{ text: message.content, isAside: false }] : [];
+    const plain = decisionContext ? decisionContext.body : message.content;
+    if (!parts?.length) return plain ? [{ text: plain, isAside: false }] : [];
     let lastToolIndex = -1;
     parts.forEach((p, i) => { if (p.type === 'tool') lastToolIndex = i; });
     const out: Array<{ text: string; isAside: boolean }> = [];
@@ -659,7 +666,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
       if (p.type === 'text') out.push({ text: p.text, isAside: i < lastToolIndex });
     });
     return out;
-  }, [message.parts, message.content]);
+  }, [message.parts, message.content, decisionContext]);
 
   // Whether the FileDiff icon should show at all. We resolve emptiness at
   // RENDER time (not on click) so a message with zero real changes never shows
@@ -829,7 +836,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   // Copy message content
   const handleCopy = () => {
     if (message.content) {
-      navigator.clipboard.writeText(message.content);
+      navigator.clipboard.writeText(decisionContext ? decisionContext.body : message.content);
       toast(t('toast.copiedMessage'));
     }
   };
@@ -1045,6 +1052,19 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                 </div>
               ))}
             </div>
+          )}
+
+          {decisionContext && decisionContext.items.length > 0 && (
+            <details className="mb-2 text-xs text-muted-foreground" data-testid="decision-context">
+              <summary className="cursor-pointer select-none">
+                {t('decisions.context.attached', { defaultValue: '{{count}} related decisions attached', count: decisionContext.items.length })}
+              </summary>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                {decisionContext.items.map((it) => (
+                  <li key={it.key}>{it.text}</li>
+                ))}
+              </ul>
+            </details>
           )}
 
           {/* Text content — one row per segment. space-y-3 reproduces the gap the

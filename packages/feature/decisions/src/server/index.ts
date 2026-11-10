@@ -6,6 +6,7 @@ export * from './review';
 export * from './tasks';
 export * from './checks';
 export * from './derived';
+export * from './relevance';
 export * from '../shared/checks';
 export type * from '../shared/types';
 export type * from '../shared/review';

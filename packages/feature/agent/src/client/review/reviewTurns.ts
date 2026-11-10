@@ -9,6 +9,7 @@
 import type { ExtractionMessage, ReviewTurn } from '@cockpit/feature-decisions';
 import type { ChatMessage, ToolCallInfo } from '../types';
 import { extractRuns, isShellTool, resolveExit, type CommandRun } from '../../shared/commandRuns';
+import { stripDecisionContext } from '../../shared/decisionContext';
 
 const firstLine = (s: string): string => (s.split('\n').find((l) => l.trim()) ?? '').trim().slice(0, 120);
 
@@ -17,7 +18,7 @@ export function buildReviewTurns(messages: readonly ChatMessage[]): ReviewTurn[]
   let cur: ReviewTurn | null = null;
   for (const m of messages) {
     if (m.role === 'user') {
-      cur = { id: m.id, text: firstLine(m.content), toolIds: [], ...(m.timestamp ? { at: m.timestamp } : {}) };
+      cur = { id: m.id, text: firstLine(stripDecisionContext(m.content)), toolIds: [], ...(m.timestamp ? { at: m.timestamp } : {}) };
       turns.push(cur);
     } else if (m.role === 'assistant' && cur && m.toolCalls) {
       for (const tc of m.toolCalls) if (tc.id) cur.toolIds.push(tc.id);
@@ -113,7 +114,8 @@ export function extractionMessages(messages: readonly ChatMessage[], turnIds: Re
   for (const m of messages) {
     if (m.role === 'user') {
       inRange = turnIds.has(m.id);
-      if (inRange) out.push({ id: m.id, role: 'user', text: m.content, tools: [] });
+      // Strip injected decision context: a quote from it must never be attributed to the user.
+      if (inRange) out.push({ id: m.id, role: 'user', text: stripDecisionContext(m.content), tools: [] });
       continue;
     }
     if (!inRange || m.role !== 'assistant') continue;

@@ -61,3 +61,20 @@ export const setCheckOverride = (cwd: string, command: string, isCheck: boolean)
 /** Remember the review-extraction model for this project (§9). */
 export const saveExtractionModel = (cwd: string, engine: string, model: string): Effect.Effect<DecisionProjectResolution, AppError> =>
   postJson('/api/decisions/project', { cwd, extractionModel: { engine, model } });
+
+export interface RelevantDecision {
+  id: string;
+  /** Decision updatedAt — part of the injected key, so an edit is injected again. */
+  rev: number;
+  choice: string;
+  premises: string[];
+  reasons: Array<'mentioned' | 'changed' | 'keywords'>;
+}
+
+/** Decisions worth putting in front of the message being typed (§7.2). */
+export const loadRelevantDecisions = (
+  cwd: string,
+  text: string,
+  files: ReadonlyArray<string>,
+  exclude: ReadonlyArray<string>,
+): Effect.Effect<{ decisions: RelevantDecision[] }, AppError> => postJson('/api/decisions/relevant', { cwd, text, files, exclude });

@@ -1387,6 +1387,16 @@
     "removeFailed": "移除机器人失败"
   },
   "decisions": {
+    "context": {
+      "attached": "附带了 {{count}} 条相关决策",
+      "willAttach": "将附带 {{count}} 条相关决策",
+      "remove": "不附带这条",
+      "reason": {
+        "mentioned": "提到了相关文件",
+        "changed": "本次任务改过相关文件",
+        "keywords": "内容相关"
+      }
+    },
     "review": {
       "touchedTitle": "这次改动涉及的既有决策——接受前需逐条处理",
       "touchedDirect": "改动了：{{paths}}",

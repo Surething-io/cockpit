@@ -1390,6 +1390,16 @@
     "removeFailed": "Failed to remove bot"
   },
   "decisions": {
+    "context": {
+      "attached": "{{count}} related decisions attached",
+      "willAttach": "{{count}} related decisions will be attached",
+      "remove": "Do not attach",
+      "reason": {
+        "mentioned": "file named",
+        "changed": "file changed in this task",
+        "keywords": "related words"
+      }
+    },
     "review": {
       "touchedTitle": "Existing decisions this change touches — answer each before accepting",
       "touchedDirect": "changed: {{paths}}",

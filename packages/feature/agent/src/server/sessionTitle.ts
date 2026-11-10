@@ -19,9 +19,12 @@
  * Cockpit custom titles are applied by the session-title metadata layer after
  * deriving this native fallback.
  */
+import { stripDecisionContext } from '../shared/decisionContext';
 
 /** Filter command/system tags and extract the meaningful user text. */
-export function filterCommandTags(text: string): string {
+export function filterCommandTags(rawText: string): string {
+  // Decision-mode context is Cockpit's own preamble, never the user's words.
+  const text = stripDecisionContext(rawText);
   // First try to extract command-args (the user's actual input).
   const argsMatch = text.match(/<command-args>([^<]*)<\/command-args>/);
   if (argsMatch && argsMatch[1].trim()) {

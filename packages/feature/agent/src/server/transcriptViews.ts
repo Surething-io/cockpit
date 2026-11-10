@@ -13,6 +13,7 @@
 import type { CodexSessionEntry, TranscriptSnapshot, TranscriptStats, TranscriptModelUsage } from '@cockpit/effect-services';
 import { generateCodexTitle, generateTitle } from './sessionTitle';
 import { codexPromptText } from '../shared/codexPrompt';
+import { stripDecisionContext } from '../shared/decisionContext';
 
 /**
  * Dictionaries keyed by transcript content (session ids, model names, dates) must never
@@ -42,7 +43,8 @@ export function isCodexSubagent(entry: CodexSessionEntry): boolean {
 
 /** Strip <command-*> / <local-command-*> tags and their content. */
 export function filterCommandTags(text: string): string {
-  let filtered = text.replace(/<command-[^>]*>[\s\S]*?<\/command-[^>]*>/g, '');
+  // Decision-mode context is Cockpit's own preamble, never the user's words.
+  let filtered = stripDecisionContext(text).replace(/<command-[^>]*>[\s\S]*?<\/command-[^>]*>/g, '');
   filtered = filtered.replace(/<local-command-[^>]*>[\s\S]*?<\/local-command-[^>]*>/g, '');
   return filtered.trim();
 }

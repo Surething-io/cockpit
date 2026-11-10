@@ -39,6 +39,14 @@ async function act(work: () => unknown | Promise<unknown>) {
   await reactAct(async () => { await work(); });
   while (transportReads.size) await reactAct(async () => { await Promise.all([...transportReads]); });
 }
+async function waitForNavigation(settled: () => boolean): Promise<void> {
+  const deadline = performance.now() + 5000;
+  while (!settled()) {
+    check(performance.now() < deadline, `Navigation did not finish: ${document.body.dataset.scenario}`);
+    // Keep flushing React while waiting for the browser's viewport acknowledgement.
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 16)));
+  }
+}
 async function readWindow(request: object, index = false): Promise<object> {
   const reading = nativeFetch(__HISTORY_ENDPOINT__, { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ fixture: Object.keys(fixtures).find((key) => fixtures[key] === fixture), request, index }),
@@ -822,7 +830,7 @@ async function main() {
     await act(async () => { check((await current.ensureTurnLoaded(target.turnIndex, target.sourceRef)).status === 'ready', 'The old index reference must resolve after steering is appended'); });
     let outcome: { status: string } | undefined;
     await act(async () => { void navigate(target).then((result) => { outcome = result; }); });
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 60)); });
+    await waitForNavigation(() => outcome !== undefined);
     check(outcome?.status === 'scrolled' && scrolls.at(-1)?.text?.includes('Q19'), 'Navigation must reach the same human input after the new page commits');
   });
   await run('cancelled-navigation-preserves-new-refresh-owner', async () => {
@@ -938,14 +946,15 @@ async function main() {
     await act(async () => { beforeReleases.forEach((release) => release()); await pending; });
     check(current.messages.filter((row) => row.role === 'user').length === 20, 'Requested prefix must still be loaded');
   });
-  for (const stage of ['inactive', 'frame']) for (const kind of ['legacy', 'native-deleted', 'native-moved']) {
+  for (const stage of ['inactive', 'frame', 'delayed-frame']) for (const kind of ['legacy', 'native-deleted', 'native-moved']) {
     await run(`navigation-identity-${stage}-${kind}`, async () => {
       realList = true; navigationActive = stage !== 'inactive';
       await mount(`navigation-identity-${stage}-${kind}`, kind === 'legacy' ? fixtures.ordinary20 : fixtures.native20);
       const target = current.messages.find((row) => row.content === 'Q18')!;
       const raf = globalThis.requestAnimationFrame, caf = globalThis.cancelAnimationFrame;
       const frames = new Map<number, FrameRequestCallback>(); let frameId = 1000000;
-      if (stage === 'frame') {
+      let delayedFrame: ReturnType<typeof setTimeout> | undefined;
+      if (stage !== 'inactive') {
         globalThis.requestAnimationFrame = (callback) => { frames.set(++frameId, callback); return frameId; };
         globalThis.cancelAnimationFrame = (id) => { frames.delete(id); };
       }
@@ -956,13 +965,18 @@ async function main() {
         await refresh(false);
         navigationActive = true;
         await act(async () => root!.render(<StrictMode><Harness /></StrictMode>));
-        if (stage === 'frame') await act(async () => { const batch = [...frames.values()]; frames.clear(); batch.forEach((callback) => callback(performance.now())); });
-        else await act(async () => { await new Promise((resolve) => setTimeout(resolve, 60)); });
+        const flushFrames = () => { const batch = [...frames.values()]; frames.clear(); batch.forEach((callback) => callback(performance.now())); };
+        if (stage === 'frame') await act(flushFrames);
+        else if (stage === 'delayed-frame') {
+          // Exercise a busy runner delivering its frame after a short assertion delay.
+          delayedFrame = setTimeout(flushFrames, 150);
+        }
+        await waitForNavigation(() => outcome !== undefined);
         const expected = kind === 'legacy' ? 'stale' : kind === 'native-deleted' ? 'missing' : 'scrolled';
         check(outcome?.status === expected, `Expected ${expected}, got ${JSON.stringify({ outcome, scrolls })}`);
         if (expected === 'scrolled') check(scrolls.length === 1 && scrolls[0].text?.includes('Q18'), 'Native identity must resolve its new rendered ID');
         else check(scrolls.length === 0, 'An invalid target must never reach the scroll callback');
-      } finally { globalThis.requestAnimationFrame = raf; globalThis.cancelAnimationFrame = caf; }
+      } finally { clearTimeout(delayedFrame); globalThis.requestAnimationFrame = raf; globalThis.cancelAnimationFrame = caf; }
     });
   }
   await run('prepend-after-live-first-persist', async () => {
@@ -1206,7 +1220,7 @@ async function main() {
     await act(async () => { (document.querySelector('button[data-tooltip="Q0"]') as HTMLButtonElement).click(); });
     holdJump = false;
     await act(async () => { (document.querySelector('button[data-tooltip="Q1"]') as HTMLButtonElement).click(); });
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+    await waitForNavigation(() => selections.length === 2);
     check(selections.join(',') === 'cancelled,scrolled', 'Only the latest selection may complete or close: ' + selections.join(','));
     check(!document.querySelector('button[data-tooltip="Q1"]'), 'Successful selection must close the actual modal');
     await act(async () => jumpReleases.forEach((release) => release()));
@@ -1221,7 +1235,7 @@ async function main() {
     await act(async () => { void navigate({ id: target.id, turnIndex: 19, sourceRef: target.sourceRef }).then((result) => { outcome = result; }); });
     check(!outcome, 'An active overlay cannot claim a hidden canonical target is ready');
     await finishRun();
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+    await waitForNavigation(() => outcome !== undefined);
     check(outcome?.status === 'scrolled', 'The target must become navigable after its own run is reconciled');
   });
   for (const end of ['release', 'cancel', 'unmount'] as const) await run(`waiter-cleanup-${end}`, async () => {
@@ -1288,7 +1302,7 @@ async function main() {
     await act(async () => jumpReleases.forEach((release) => release()));
     check(!outcome, 'An earlier released run in the requested window must not complete the active target');
     await finishRun('/ws/session-stream?sessionId=new-sender-run');
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+    await waitForNavigation(() => outcome !== undefined);
     check(outcome?.status === 'scrolled', 'Navigation must wait for the owner of the target, independently of the response start');
   });
   await run('navigation-survives-refresh', async () => {
@@ -1300,7 +1314,7 @@ async function main() {
     holdJump = false;
     await refresh();
     await act(async () => jumpReleases.forEach((release) => release()));
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+    await waitForNavigation(() => outcome !== undefined);
     check(outcome?.status === 'scrolled', 'Background data supersession must not cancel the navigation intent');
   });
   await run('navigation-cancel-before-release', async () => {
@@ -1323,7 +1337,7 @@ async function main() {
     await act(async () => { void navigate({ id: fixture.full.messages.find((row) => row.content === 'Q19')!.id, turnIndex: 19 }).then((result) => { outcome = result; }); });
     check(!outcome, 'Navigation must remain pending while the target is unavailable');
     await act(async () => deliverSessionMessage(writerFrame('run-settled')));
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+    await waitForNavigation(() => outcome !== undefined);
     check(outcome?.status === 'scrolled', 'Navigation must acknowledge the real MessageList scroll: '+JSON.stringify(outcome));
     const row = document.querySelector(`[data-message-id="${fixture.full.messages.find((row) => row.content === 'Q19')!.id}"]`)!;
     const container = row.parentElement!.closest('.overflow-y-auto')!;

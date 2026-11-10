@@ -22,6 +22,8 @@ interface Block {
 interface ToolResultBlock {
   tool_use_id?: string;
   content?: unknown;
+  is_error?: boolean;
+  exit_code?: number | null;
 }
 export interface StreamEvent {
   taskId?: string;
@@ -313,9 +315,15 @@ export function applyStreamEvent(
       if (b.tool_use_id) {
         const tid = b.tool_use_id;
         const result = typeof b.content === 'string' ? b.content : JSON.stringify(b.content);
+        // Keep the engine's own failure / exit signal: decision-mode review reads it as
+        // verification evidence (docs/DECISION_MODE.md §5). Absent stays absent — never guessed.
+        const outcome = {
+          ...(typeof b.is_error === 'boolean' ? { isError: b.is_error } : {}),
+          ...(typeof b.exit_code === 'number' ? { exitCode: b.exit_code } : {}),
+        };
         out = out.map((m) =>
           m.toolCalls?.some((tc) => tc.id === tid)
-            ? { ...m, toolCalls: m.toolCalls.map((tc) => (tc.id === tid ? { ...tc, result, isLoading: false } : tc)) }
+            ? { ...m, toolCalls: m.toolCalls.map((tc) => (tc.id === tid ? { ...tc, result, isLoading: false, ...outcome } : tc)) }
             : m
         );
       }

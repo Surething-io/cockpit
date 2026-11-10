@@ -158,6 +158,8 @@ export function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMes
   // Kept in lockstep with the live reducer's pendingTextBreak (assistantText.ts).
   let toolSinceText = false;
   const toolResults = new Map<string, string>();
+  // Failure / exit signal per tool call — verification evidence for decision-mode review.
+  const toolOutcomes = new Map<string, { isError?: boolean; exitCode?: number }>();
   const skillContents = new Map<string, string>();
   // Background tasks a tool call spawned, keyed by that call — kept in lockstep with
   // session-by-path.ts and with the live reducer's task events (shared/subagentTask.ts).
@@ -169,6 +171,13 @@ export function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMes
       for (const block of msg.message.content) {
         if (block.type === 'tool_result' && block.tool_use_id) {
           toolResults.set(block.tool_use_id, block.content || '');
+          {
+            const outcome: { isError?: boolean; exitCode?: number } = {};
+            if (typeof block.is_error === 'boolean') outcome.isError = block.is_error;
+            const exit = (block as { exit_code?: unknown }).exit_code;
+            if (typeof exit === 'number') outcome.exitCode = exit;
+            if (outcome.isError !== undefined || outcome.exitCode !== undefined) toolOutcomes.set(block.tool_use_id, outcome);
+          }
           const taskId = asyncLaunchTaskId(msg.toolUseResult);
           // 'unknown', never 'running': this is a receipt, not a heartbeat. See TaskStatus.
           if (taskId) spawnedTasks.set(block.tool_use_id, { status: 'unknown', id: taskId });
@@ -316,6 +325,7 @@ export function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMes
               input: tool.input || {},
               result: toolResults.get(tool.id),
               isLoading: false,
+              ...toolOutcomes.get(tool.id),
               ...(spawnedTasks.has(tool.id) ? { task: spawnedTasks.get(tool.id) } : {}),
               ...(skillContents.has(tool.id) ? { skillContent: skillContents.get(tool.id) } : {}),
             });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '../types';
-import { buildReviewTurns, defaultRangeStart } from './reviewTurns';
+import { buildReviewTurns, defaultRangeStart, rangeEvidence } from './reviewTurns';
 
 const user = (id: string, content: string, timestamp?: string): ChatMessage => ({ id, role: 'user', content, ...(timestamp ? { timestamp } : {}) });
 const assistant = (id: string, toolIds: string[]): ChatMessage => ({
@@ -47,5 +47,30 @@ describe('defaultRangeStart', () => {
     expect(defaultRangeStart(turns, new Set(), Date.parse('2026-11-09T11:30:00Z'))).toBe(2);
     expect(defaultRangeStart(turns, new Set(), Date.parse('2026-11-10T00:00:00Z'))).toBe(4);
     expect(defaultRangeStart(turns, new Set(), undefined)).toBe(0);
+  });
+});
+
+describe('rangeEvidence', () => {
+  it('collects runs and pass claims of the selected turns only', () => {
+    const msgs: ChatMessage[] = [
+      user('u1', 'first'),
+      { id: 'a1', role: 'assistant', content: 'All tests pass now.', toolCalls: [{ id: 'x1', name: 'Bash', input: { command: 'npm test' }, isError: false, result: 'ok' }] },
+      user('u2', 'second'),
+      { id: 'a2', role: 'assistant', content: '改好了，测试全部通过', timestamp: '2026-11-10T01:00:00Z', toolCalls: [
+        { id: 'e', name: 'Edit', input: {} },
+        { id: 'x2', name: 'Bash', input: { command: 'npm run lint' }, isError: true, result: 'Exit code 1\nerr' },
+      ] },
+    ];
+    const ev = rangeEvidence(msgs, new Set(['u2']));
+    expect(ev.orderedToolIds).toEqual(['e', 'x2']);
+    expect(ev.runs.map((r) => [r.toolId, r.order, r.outcome, r.at])).toEqual([['x2', 1, { kind: 'exit', code: 1 }, '2026-11-10T01:00:00Z']]);
+    expect(ev.claimedPass).toBe(true);
+    expect(rangeEvidence(msgs, new Set(['u1'])).claimedPass).toBe(true);
+    const claim = (content: string) => rangeEvidence([user('u', 'x'), { id: 'a', role: 'assistant', content, toolCalls: [] }], new Set(['u'])).claimedPass;
+    expect(claim('I could not make the tests pass')).toBe(false);
+    expect(claim("The tests don't pass yet")).toBe(false);
+    expect(claim('测试没有通过')).toBe(false);
+    expect(claim('Fixed it — all tests pass.')).toBe(true);
+    expect(claim('测试已经通过')).toBe(true);
   });
 });

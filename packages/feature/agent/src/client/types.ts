@@ -13,6 +13,11 @@ export interface ToolCallInfo {
   input: Record<string, unknown>;
   result?: string;
   isLoading?: boolean;
+  /** The tool reported failure (tool_result `is_error`). Absent when the engine did not say. */
+  isError?: boolean;
+  /** Numeric exit code when the engine reports one structurally (Codex, Grok). For Claude /
+   *  Pi it lives in the result text — see shared/commandRuns.ts resolveExit. */
+  exitCode?: number;
   // Skill body loaded by this call (e.g. the Skill tool). Folded into the tool
   // call's expanded view instead of appearing as a separate user bubble.
   skillContent?: string;

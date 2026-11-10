@@ -7,7 +7,8 @@
  * accepted" is decided by tool ids rather than by turn ids.
  */
 import type { ReviewTurn } from '@cockpit/feature-decisions';
-import type { ChatMessage } from '../types';
+import type { ChatMessage, ToolCallInfo } from '../types';
+import { extractRuns, type CommandRun } from '../../shared/commandRuns';
 
 const firstLine = (s: string): string => (s.split('\n').find((l) => l.trim()) ?? '').trim().slice(0, 120);
 
@@ -44,4 +45,45 @@ export function defaultRangeStart(
   if (enabledAt === undefined) return 0;
   const i = turns.findIndex((t) => !t.at || Date.parse(t.at) >= enabledAt);
   return i < 0 ? turns.length : i;
+}
+
+/**
+ * The agent saying tests pass. Only used to flag a claim with NO test run on
+ * record (§5) — never as evidence that something passed.
+ */
+const PASS_CLAIM = /\b(all )?(the )?tests? (are |now )*(pass(ing|ed|es)?|green|succeed(ed|s)?)\b|测试(已经|已|都|全部|均)*(通过|过了)/gi;
+/** "could not make the tests pass", "测试没有通过" — a negation just before the match. */
+const NEGATED = /(\b(not|never|cannot|can't|couldn't|didn't|don't|doesn't|won't|unable|fail(ed|s)?)\b[^.!?\n]{0,24}|(没有|没|未|不|无法)[^。！？\n]{0,4})$/i;
+
+function claimsPass(text: string): boolean {
+  for (const m of text.matchAll(PASS_CLAIM)) {
+    const before = text.slice(Math.max(0, m.index - 40), m.index);
+    const inside = m[0];
+    if (!NEGATED.test(before) && !/(没有|没|未|不)(通过|过了)/.test(inside)) return true;
+  }
+  return false;
+}
+
+export interface RangeEvidence {
+  /** Every tool call of the selected turns, in order. */
+  orderedToolIds: string[];
+  runs: CommandRun[];
+  claimedPass: boolean;
+}
+
+/** Command runs and pass claims of the turns in `turnIds` (user message ids). */
+export function rangeEvidence(messages: readonly ChatMessage[], turnIds: ReadonlySet<string>): RangeEvidence {
+  const ordered: Array<{ call: ToolCallInfo; at?: string }> = [];
+  let inRange = false;
+  let claimedPass = false;
+  for (const m of messages) {
+    if (m.role === 'user') {
+      inRange = turnIds.has(m.id);
+      continue;
+    }
+    if (!inRange || m.role !== 'assistant') continue;
+    if (claimsPass(m.content)) claimedPass = true;
+    for (const tc of m.toolCalls ?? []) ordered.push({ call: tc, ...(m.timestamp ? { at: m.timestamp } : {}) });
+  }
+  return { orderedToolIds: ordered.map((o) => o.call.id), runs: extractRuns(ordered), claimedPass };
 }

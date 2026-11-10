@@ -3,6 +3,7 @@
 
 export type * from '../shared/types';
 export type * from '../shared/review';
+export type * from '../shared/verification';
 export { useDecisionMode, type DecisionModeState } from './useDecisionMode';
 export { DecisionModeToggle } from './DecisionModeToggle';
-export { decisionsExportUrl, loadReview, loadSessionTasks, loadAcceptedTask, acceptReview } from './effect/decisionsClient';
+export { decisionsExportUrl, loadReview, loadSessionTasks, loadAcceptedTask, acceptReview, setCheckOverride } from './effect/decisionsClient';

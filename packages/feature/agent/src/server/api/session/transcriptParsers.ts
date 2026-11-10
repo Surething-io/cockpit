@@ -400,6 +400,8 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
   // See history.ts / assistantText.ts: paragraph-break only across a tool_use.
   let toolSinceText = false;
   const toolResults = new Map<string, string>();
+  // Failure / exit signal per tool call — verification evidence for decision-mode review.
+  const toolOutcomes = new Map<string, { isError?: boolean; exitCode?: number }>();
   // Skill bodies, keyed by the tool call (sourceToolUseID) that loaded them — folded
   // into that tool call instead of being rendered as a user bubble.
   const skillContents = new Map<string, string>();
@@ -416,6 +418,13 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
       for (const block of msg.message.content) {
         if (block.type === 'tool_result' && block.tool_use_id) {
           toolResults.set(block.tool_use_id, block.content || '');
+          {
+            const outcome: { isError?: boolean; exitCode?: number } = {};
+            if (typeof block.is_error === 'boolean') outcome.isError = block.is_error;
+            const exit = (block as { exit_code?: unknown }).exit_code;
+            if (typeof exit === 'number') outcome.exitCode = exit;
+            if (outcome.isError !== undefined || outcome.exitCode !== undefined) toolOutcomes.set(block.tool_use_id, outcome);
+          }
           const taskId = asyncLaunchTaskId(msg.toolUseResult);
           // 'unknown', never 'running': this is a receipt, not a heartbeat. See TaskStatus.
           if (taskId) spawnedTasks.set(block.tool_use_id, { status: 'unknown', id: taskId });
@@ -564,6 +573,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
               input: tool.input || {},
               result: toolResults.get(tool.id),
               isLoading: false,
+              ...toolOutcomes.get(tool.id),
               ...(spawnedTasks.has(tool.id) ? { task: spawnedTasks.get(tool.id) } : {}),
               ...(skillContents.has(tool.id) ? { skillContent: skillContents.get(tool.id) } : {}),
             });
@@ -979,6 +989,7 @@ export async function parseCodexTranscriptFile(
           input: bubble.input,
           result: bubble.result,
           isLoading: false,
+          ...(typeof bubble.exitCode === 'number' ? { exitCode: bubble.exitCode } : {}),
         });
         toolSinceText = true;
       }

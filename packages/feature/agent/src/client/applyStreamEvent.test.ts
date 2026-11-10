@@ -389,3 +389,16 @@ it('keeps unconfirmed Codex input when its former task group is deleted', () => 
   const bound = applyStreamEvent(kept, { type: 'system', subtype: 'input_binding', inputId: 'queued', sourceId: 'native-input' }, { engine: 'codex', assistantId: '' });
   expect(removeRecoveryTurns(bound, { sourceIds: ['native-input'], taskIds: [] })).toEqual([]);
 });
+
+describe('applyStreamEvent keeps the engine outcome of a tool call (decision-mode verification)', () => {
+  const withTool = (): ChatMessage[] => [
+    { id: ID, role: 'assistant', content: '', isStreaming: true, toolCalls: [{ id: 't1', name: 'Bash', input: { command: 'npm test' }, isLoading: true }] },
+  ];
+  it('copies is_error and a numeric exit_code; leaves them absent when not sent', () => {
+    const failed = reduce(withTool(), [{ type: 'user', message: { content: [{ tool_use_id: 't1', content: 'x', is_error: true, exit_code: 2 }] } } as StreamEvent]);
+    expect(failed[0].toolCalls?.[0]).toMatchObject({ isError: true, exitCode: 2, isLoading: false });
+    const silent = reduce(withTool(), [{ type: 'user', message: { content: [{ tool_use_id: 't1', content: 'x' }] } } as StreamEvent]);
+    expect(silent[0].toolCalls?.[0]).not.toHaveProperty('isError');
+    expect(silent[0].toolCalls?.[0]).not.toHaveProperty('exitCode');
+  });
+});

@@ -545,7 +545,7 @@ function createCodexEventAdapter(ctx: RunCtx, initialRolloutPath: string | null)
           emitOutputProgress(bubble.result, `tool-result:${bubble.id}`);
           ctx.emit({
             type: 'user',
-            message: { content: [{ tool_use_id: bubble.id, content: bubble.result }] },
+            message: { content: [{ tool_use_id: bubble.id, content: bubble.result, ...(typeof bubble.exitCode === 'number' ? { exit_code: bubble.exitCode } : {}) }] },
           });
           pendingToolCalls.delete(bubble.id);
         }

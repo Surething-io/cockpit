@@ -3,7 +3,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Effect } from 'effect';
-import { ChevronDown, ChevronRight, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, ShieldCheck, X } from 'lucide-react';
 import { useEffectQuery } from '@cockpit/effect-react';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { Portal, blurActiveElement, toast } from '@cockpit/shared-ui';
@@ -12,12 +12,18 @@ import {
   acceptReview,
   loadAcceptedTask,
   loadReview,
+  setCheckOverride,
   type AcceptedTask,
+  type VerificationResult,
+  type VerificationState,
   type FileCategory,
   type ReviewFile,
   type ReviewResult,
   type ReviewTurn,
 } from '@cockpit/feature-decisions';
+import type { ChatMessage } from '../types';
+import { loadVerification } from '../effect/verificationClient';
+import { rangeEvidence } from './reviewTurns';
 
 /**
  * Decision-mode task review (docs/DECISION_MODE.md §4.2) — the deterministic
@@ -28,7 +34,9 @@ import {
  * spans the whole task, so it does not belong to any one of the three panels.
  */
 
-export type ReviewModalMode = { kind: 'live'; turns: ReviewTurn[]; initialStart: number } | { kind: 'accepted'; taskId: string };
+export type ReviewModalMode =
+  | { kind: 'live'; turns: ReviewTurn[]; initialStart: number; messages: ChatMessage[] }
+  | { kind: 'accepted'; taskId: string };
 
 interface ReviewModalProps {
   cwd: string;
@@ -49,6 +57,30 @@ const CATEGORY_STYLE: Record<FileCategory, string> = {
 };
 
 const EMPTY_TOOL_IDS: string[] = [];
+
+/** Colour of a verification state badge. */
+export const STATE_STYLE: Record<VerificationState, string> = {
+  verified: 'text-green-11',
+  failed: 'text-red-11',
+  'needs-rerun': 'text-amber-11',
+  'no-tests': 'text-amber-11',
+  unknown: 'text-muted-foreground',
+  running: 'text-muted-foreground',
+  unverified: 'text-amber-11',
+  claimed: 'text-red-11',
+};
+
+const STATE_DEFAULT: Record<VerificationState, string> = {
+  verified: 'Verified',
+  failed: 'Failed',
+  'needs-rerun': 'Needs rerun',
+  'no-tests': 'No test actually ran',
+  unknown: 'Result unknown',
+  running: 'Running',
+  unverified: 'Not run',
+  claimed: 'Claimed, no record',
+};
+const KIND_DEFAULT = { test: 'Tests', typecheck: 'Type check', lint: 'Lint', custom: 'Custom check' } as const;
 
 export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onClose, onAccepted }: ReviewModalProps) {
   const { t } = useTranslation();
@@ -93,6 +125,28 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
   );
   const review = reviewQ.status === 'success' ? reviewQ.data : null;
 
+  // ── Verification (live only: accepted tasks keep no transcript evidence) ──
+  const [checksTick, setChecksTick] = useState(0);
+  const evidence = useMemo(
+    () => (live ? rangeEvidence(mode.messages, new Set(selected.map((tr) => tr.id))) : null),
+    [live, mode, selected],
+  );
+  const verificationQ = useEffectQuery(
+    evidence ? loadVerification(cwd, evidence.orderedToolIds, evidence.runs, evidence.claimedPass) : Effect.succeed(null as VerificationResult | null),
+    [cwd, evidence, checksTick],
+  );
+  const verification = verificationQ.status === 'success' ? verificationQ.data : null;
+  const correctCheck = useCallback(
+    async (command: string, isCheck: boolean) => {
+      const exit = await BrowserRuntime.runPromiseExit(setCheckOverride(cwd, command, isCheck));
+      if (exit._tag === 'Success') setChecksTick((n) => n + 1);
+      else toast(t('decisions.review.checkOverrideFailed', { defaultValue: 'Could not save the correction' }), 'error');
+    },
+    [cwd, t],
+  );
+  const stateLabel = useCallback((st: VerificationState) => t(`decisions.review.state.${st}`, { defaultValue: STATE_DEFAULT[st] }), [t]);
+  const kindLabel = useCallback((k: keyof typeof KIND_DEFAULT) => t(`decisions.review.kind.${k}`, { defaultValue: KIND_DEFAULT[k] }), [t]);
+
   const groups = useMemo(() => {
     const files = review && !review.empty ? review.files : [];
     return CATEGORY_ORDER.map((c) => ({ category: c, files: files.filter((f) => f.category === c) })).filter((g) => g.files.length > 0);
@@ -103,6 +157,11 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
   );
 
   const [activePath, setActivePath] = useState<string | null>(null);
+  const [showVerification, setShowVerification] = useState(false);
+  const openFile = useCallback((p: string) => {
+    setShowVerification(false);
+    setActivePath(p);
+  }, []);
   const [showOthers, setShowOthers] = useState(false);
   useEffect(() => {
     const first = groups.find((g) => g.category !== 'other-session')?.files[0];
@@ -202,6 +261,29 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
                 </div>
               )}
 
+              {live && (
+                <div className="border-b border-border p-2">
+                  <button
+                    onClick={() => setShowVerification(true)}
+                    className={`mb-1 flex w-full items-center gap-1 rounded px-1 text-left font-medium ${showVerification ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-hover'}`}
+                  >
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    {t('decisions.review.verification', { defaultValue: 'Verification' })}
+                  </button>
+                  {verificationQ.status === 'loading' && <div className="px-1 text-muted-foreground">{t('common.loading', { defaultValue: 'Loading…' })}</div>}
+                  {verificationQ.status === 'error' && <div className="px-1 text-red-11">{t('decisions.review.loadFailed', { defaultValue: 'Could not load the review' })}</div>}
+                  {verification && verification.kinds.length === 0 && (
+                    <div className="px-1 text-muted-foreground">{t('decisions.review.noChecks', { defaultValue: 'No checks defined or run' })}</div>
+                  )}
+                  {verification?.kinds.map((k) => (
+                    <button key={k.kind} onClick={() => setShowVerification(true)} className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-hover">
+                      <span className="text-foreground">{kindLabel(k.kind)}</span>
+                      <span className={`ml-auto ${STATE_STYLE[k.state]}`}>{stateLabel(k.state)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <div className="p-2">
                 <div className="mb-1 font-medium text-muted-foreground">
                   {t('decisions.review.changes', { defaultValue: 'Changes' })}
@@ -234,9 +316,9 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
                         g.files.map((f) => (
                           <button
                             key={f.path}
-                            onClick={() => setActivePath(f.path)}
+                            onClick={() => openFile(f.path)}
                             title={f.otherSessions.length ? `${f.path}\n${f.otherSessions.join(', ')}` : f.path}
-                            className={`flex w-full items-center gap-2 rounded px-1 py-0.5 text-left ${f.path === activePath ? 'bg-accent text-foreground' : 'text-foreground hover:bg-hover'}`}
+                            className={`flex w-full items-center gap-2 rounded px-1 py-0.5 text-left ${f.path === activePath && !showVerification ? 'bg-accent text-foreground' : 'text-foreground hover:bg-hover'}`}
                           >
                             <span className="min-w-0 flex-1 truncate">{f.path}</span>
                             <span className="shrink-0 text-green-11">+{f.additions}</span>
@@ -252,9 +334,59 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
               </div>
             </div>
 
-            {/* Right: diff of the selected file */}
+            {/* Right: verification details, or the diff of the selected file */}
             <div className="flex min-w-0 flex-1 flex-col">
-              {active ? (
+              {showVerification ? (
+                <div className="flex-1 overflow-y-auto p-3 text-xs">
+                  {verification?.runs.length === 0 && (
+                    <div className="mb-2 text-muted-foreground">{t('decisions.review.noRuns', { defaultValue: 'The agent ran no checks in these turns.' })}</div>
+                  )}
+                  {verification?.runs.map((r) => (
+                    <div key={r.toolId} className="mb-3 rounded border border-border p-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`shrink-0 font-medium ${STATE_STYLE[r.state]}`}>{stateLabel(r.state)}</span>
+                        <span className="shrink-0 text-foreground-subtle">{kindLabel(r.kind)}</span>
+                        {r.exitCode !== undefined && <span className="shrink-0 text-foreground-subtle">exit {r.exitCode}</span>}
+                        {r.filtered && <span className="shrink-0 text-foreground-subtle">{t('decisions.review.partial', { defaultValue: 'partial run' })}</span>}
+                        <button
+                          onClick={() => void correctCheck(r.command, false)}
+                          className="ml-auto shrink-0 rounded px-1 text-muted-foreground hover:bg-hover hover:text-foreground"
+                        >
+                          {t('decisions.review.notACheck', { defaultValue: 'Not a check' })}
+                        </button>
+                      </div>
+                      <code className="mt-1 block break-all font-mono text-foreground">{r.command}</code>
+                      {r.changedAfter.length > 0 && (
+                        <div className="mt-1 text-amber-11">
+                          {t('decisions.review.changedAfter', { defaultValue: 'Changed afterwards:' })} {r.changedAfter.join(', ')}
+                          {r.approximate && ` (${t('decisions.review.approximate', { defaultValue: 'code index not ready — assumed relevant' })})`}
+                        </div>
+                      )}
+                      {r.tail && (
+                        <details className="mt-1">
+                          <summary className="cursor-pointer text-muted-foreground">{t('decisions.review.output', { defaultValue: 'Output' })}</summary>
+                          <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded bg-background p-2 font-mono text-foreground">{r.tail}</pre>
+                        </details>
+                      )}
+                    </div>
+                  ))}
+                  {verification && verification.otherCommands.length > 0 && (
+                    <details>
+                      <summary className="cursor-pointer text-muted-foreground">
+                        {t('decisions.review.otherCommands', { defaultValue: 'Other commands ({{count}})', count: verification.otherCommands.length })}
+                      </summary>
+                      {verification.otherCommands.map((c) => (
+                        <div key={c.toolId} className="flex items-center gap-2 py-0.5">
+                          <code className="min-w-0 flex-1 truncate font-mono text-foreground" title={c.command}>{c.command}</code>
+                          <button onClick={() => void correctCheck(c.command, true)} className="shrink-0 rounded px-1 text-muted-foreground hover:bg-hover hover:text-foreground">
+                            {t('decisions.review.isACheck', { defaultValue: 'This is a check' })}
+                          </button>
+                        </div>
+                      ))}
+                    </details>
+                  )}
+                </div>
+              ) : active ? (
                 active.oldContent === null && active.newContent === null ? (
                   <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
                     {t('decisions.review.notViewable', { defaultValue: 'Binary or too large to show' })}

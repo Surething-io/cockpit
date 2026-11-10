@@ -164,3 +164,19 @@ describe('convertToChatMessages spawned background tasks', () => {
     expect(tc?.task).toBeUndefined();
   });
 });
+
+describe('convertToChatMessages keeps tool outcomes (decision-mode verification)', () => {
+  it('reads is_error / exit_code off the tool_result block', () => {
+    const out = convertToChatMessages([
+      userTurn('u1', 'go'),
+      assistant('a1', [{ type: 'tool_use', id: 'b1', name: 'Bash', input: { command: 'npm test' } }, { type: 'tool_use', id: 'b2', name: 'Bash', input: { command: 'ls' } }]),
+      { type: 'user', uuid: 'r1', message: { role: 'user', content: [
+        { type: 'tool_result', tool_use_id: 'b1', content: 'Exit code 1\nFAIL', is_error: true },
+        { type: 'tool_result', tool_use_id: 'b2', content: 'a' },
+      ] } } as Parameters<typeof convertToChatMessages>[0][number],
+    ]);
+    const calls = out[1].toolCalls ?? [];
+    expect(calls[0]).toMatchObject({ id: 'b1', isError: true });
+    expect(calls[1]).not.toHaveProperty('isError');
+  });
+});

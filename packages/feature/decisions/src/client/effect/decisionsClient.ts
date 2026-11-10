@@ -51,3 +51,7 @@ export const acceptReview = (
   goal: string,
   turns: ReadonlyArray<ReviewTurn>,
 ): Effect.Effect<{ task: AcceptedTask }, AppError> => postJson('/api/decisions/tasks', { cwd, sessionId, goal, turns });
+
+/** Correct check detection for one command in this project (§5). */
+export const setCheckOverride = (cwd: string, command: string, isCheck: boolean): Effect.Effect<{ include: string[]; exclude: string[] }, AppError> =>
+  postJson('/api/decisions/checks', { cwd, command, isCheck });

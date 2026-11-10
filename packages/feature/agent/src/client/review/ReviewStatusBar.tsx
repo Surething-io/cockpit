@@ -1,12 +1,13 @@
 'use client';
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { History, Scale } from 'lucide-react';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { loadReview, loadSessionTasks, useDecisionMode, type AcceptedTaskSummary } from '@cockpit/feature-decisions';
 import type { ChatMessage } from '../types';
-import { buildReviewTurns, defaultRangeStart } from './reviewTurns';
+import { buildReviewTurns, defaultRangeStart, rangeEvidence } from './reviewTurns';
+import { loadVerification } from '../effect/verificationClient';
 import { ReviewModal, type ReviewModalMode } from './ReviewModal';
 
 interface ReviewStatusBarProps {
@@ -51,10 +52,17 @@ export const ReviewStatusBar = memo(function ReviewStatusBar({ cwd, sessionId, m
   // File count of the default range. Recomputed when a run ends, not on every
   // streamed token; the previous count stays visible meanwhile.
   const [fileCount, setFileCount] = useState(0);
+  // Verification summary of the same range: kinds verified / kinds that matter.
+  const [verified, setVerified] = useState<{ ok: number; total: number }>({ ok: 0, total: 0 });
+  // Read through a ref so a streamed token does not restart the queries; they
+  // re-run when the range's tool calls change or a run ends.
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   useEffect(() => {
     if (!active || !cwd || running) return;
     if (!toolKey) {
       setFileCount(0);
+      setVerified({ ok: 0, total: 0 });
       return;
     }
     let cancelled = false;
@@ -63,16 +71,29 @@ export const ReviewStatusBar = memo(function ReviewStatusBar({ cwd, sessionId, m
       const r = exit.value;
       setFileCount(r.empty ? 0 : r.files.filter((f) => f.category !== 'other-session').length);
     });
+    const ev = rangeEvidence(messagesRef.current, new Set(turns.slice(start).map((x) => x.id)));
+    void BrowserRuntime.runPromiseExit(loadVerification(cwd, ev.orderedToolIds, ev.runs, ev.claimedPass)).then((exit) => {
+      if (cancelled || exit._tag !== 'Success') return;
+      const kinds = exit.value.kinds;
+      setVerified({ ok: kinds.filter((k) => k.state === 'verified').length, total: kinds.length });
+    });
     return () => {
       cancelled = true;
     };
+    // turns/start are captured with toolKey (same range), so they are not listed separately.
   }, [active, cwd, running, toolKey, tasksTick]);
 
   const [modal, setModal] = useState<ReviewModalMode | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const close = useCallback(() => setModal(null), []);
   const onAccepted = useCallback(() => setTasksTick((n) => n + 1), []);
-  const openReview = useCallback(() => setModal({ kind: 'live', turns, initialStart: start }), [turns, start]);
+  const openReview = useCallback(
+    () => setModal({ kind: 'live', turns, initialStart: start, messages: messagesRef.current }),
+    [turns, start],
+  );
+  const onModalClose = useCallback(() => {
+    setModal(null);
+    setTasksTick((n) => n + 1); // a check correction made in the modal changes the summary
+  }, []);
 
   if (!active || !cwd || !sessionId) return null;
   if (fileCount === 0 && tasks.length === 0) return null;
@@ -107,6 +128,8 @@ export const ReviewStatusBar = memo(function ReviewStatusBar({ cwd, sessionId, m
                 turns: rangeTurns,
                 files: fileCount,
               })}
+              {verified.total > 0 &&
+                ` · ${t('decisions.review.verifiedCount', { defaultValue: 'verification {{ok}}/{{total}}', ok: verified.ok, total: verified.total })}`}
               {hasMoreHistory && start === 0 && ` ${t('decisions.review.loadedOnly', { defaultValue: '(loaded turns only)' })}`}
             </span>
             <button onClick={openReview} className="shrink-0 rounded border border-border px-2 py-0.5 text-foreground hover:bg-hover">
@@ -128,7 +151,7 @@ export const ReviewStatusBar = memo(function ReviewStatusBar({ cwd, sessionId, m
           </button>
         )}
       </div>
-      {modal && <ReviewModal cwd={cwd} sessionId={sessionId} mode={modal} onClose={close} onAccepted={onAccepted} />}
+      {modal && <ReviewModal cwd={cwd} sessionId={sessionId} mode={modal} onClose={onModalClose} onAccepted={onAccepted} />}
     </>
   );
 });

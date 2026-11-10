@@ -219,6 +219,11 @@ describe('codexItemBubble spelling', () => {
     expect(bubble).toMatchObject({ name: 'ApplyPatch', result: 'update /a.ts' });
   });
 
+  it('carries the command exit code (null when codex reports none)', () => {
+    expect(codexItemBubble({ type: 'command_execution', id: 'e', command: 'npm test', aggregated_output: 'x', exit_code: 1 })?.exitCode).toBe(1);
+    expect(codexItemBubble({ type: 'command_execution', id: 'e', command: 'npm test', aggregated_output: 'x' })?.exitCode).toBeNull();
+  });
+
   it('draws nothing for an item that has no bubble', () => {
     expect(codexItemBubble({ type: 'Reasoning', id: 'rs_1' })).toBeNull();
     expect(codexItemBubble({ type: 'AgentMessage', id: 'msg_1' })).toBeNull();

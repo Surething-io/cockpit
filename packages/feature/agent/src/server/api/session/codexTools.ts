@@ -1122,6 +1122,8 @@ export interface CodexItemBubble {
   name: string;
   input: Record<string, unknown>;
   result: string;
+  /** Command executions only: the process exit code (null = codex did not report one). */
+  exitCode?: number | null;
 }
 
 export function codexItemToolUseId(item: CodexItemLike): string {
@@ -1214,6 +1216,7 @@ export function codexItemBubble(item: CodexItemLike): CodexItemBubble | null {
         // An empty result spins forever in the UI, so a bare exit code stands
         // in for a command that printed nothing.
         result: item.aggregated_output || `(exit code: ${item.exit_code ?? 'unknown'})`,
+        exitCode: typeof item.exit_code === 'number' ? item.exit_code : null,
       };
 
     case 'file_change':

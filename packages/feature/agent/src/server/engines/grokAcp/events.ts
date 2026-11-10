@@ -51,6 +51,7 @@ export class GrokEventAdapter {
       this.completed.add(task.toolId);
       return [this.backgroundChanged(), { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: task.toolId,
         content: contentText(update.output ?? update.error ?? snapshot.output), is_error: update.status === 'failed' || (typeof snapshot.exit_code === 'number' && snapshot.exit_code !== 0),
+        ...(typeof snapshot.exit_code === 'number' ? { exit_code: snapshot.exit_code } : {}),
       }] } }];
     }
     if (kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') {
@@ -105,7 +106,8 @@ export class GrokEventAdapter {
         this.completed.add(id);
         const output = contentText(tool.content) || contentText(tool.rawOutput)
           || (tool.rawOutput === undefined ? '' : JSON.stringify(tool.rawOutput));
-        events.push({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: output, is_error: tool.status === 'failed' }] } });
+        const exitCode = object(tool.rawOutput).exit_code;
+        events.push({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: output, is_error: tool.status === 'failed', ...(typeof exitCode === 'number' ? { exit_code: exitCode } : {}) }] } });
       } else if (kind === 'tool_call_content_chunk') {
         events.push({ type: 'tool_progress', tool_call_id: id, progress_text: contentText(tool.content) });
       }

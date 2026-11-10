@@ -827,7 +827,38 @@ export function countIndexSymbols(index: CodeIndex): number {
 export const MAX_CACHED_SYMBOLS = 1_000_000;
 
 /**
- * Evict least-recently-used indexes until the cache fits the budget.
+ * What one resident analytics node costs, in index symbols — the unit
+ * MAX_CACHED_SYMBOLS is expressed in.
+ *
+ * Analytics turned out to be the LARGER half of a project's footprint, not
+ * the smaller one: a production heap snapshot held two analytics entries of
+ * ~149K nodes each at 1.27 GB and 1.25 GB (~8.4 KB per node, TF-IDF ~2/3 of
+ * it), against ~3.3 KB per symbol for the index itself. 8.4 / 3.3 ≈ 2.5;
+ * rounded up so the estimate errs towards evicting. Leaving it out of the
+ * budget is how two such projects filled the 4 GB heap without ever reaching
+ * the 1M-symbol eviction threshold.
+ */
+export const ANALYTICS_SYMBOLS_PER_NODE = 3;
+
+/**
+ * Resident analytics as seen from here. `analytics/cache` imports this module
+ * statically, so the reverse edge cannot be a static import; it registers
+ * itself on load instead. Null until analytics is first used, which is also
+ * exactly when there is nothing resident to count.
+ */
+export interface AnalyticsResidency {
+  /** Nodes held for `cwd`, 0 when nothing is cached. */
+  nodes(cwd: string): number;
+  /** Drop `cwd`'s analytics synchronously. */
+  drop(cwd: string): void;
+}
+let analyticsResidency: AnalyticsResidency | null = null;
+export function registerAnalyticsResidency(residency: AnalyticsResidency | null): void {
+  analyticsResidency = residency;
+}
+
+/**
+ * Recency and `keep` rules shared by `enforceCodeMapBudget` (below).
  *
  * `Map` preserves insertion order and `getCodeIndex` re-inserts on every
  * cache hit, so iteration order IS least-recently-used order — no separate
@@ -865,30 +896,54 @@ export const __indexCacheTesting = {
     indexCache.clear();
     dirtyCwds.clear();
   },
-  evict(keep: string): void {
-    evictIndexesToBudget(keep);
+  evict(keep: string, reserve = 0): void {
+    enforceCodeMapBudget(keep, reserve);
   },
 };
 
-function evictIndexesToBudget(keep: string): void {
-  let total = 0;
+/**
+ * Evict least-recently-used Code Map data until indexes AND analytics fit the
+ * budget, counting `reserve` symbols for something about to be built.
+ *
+ * Two passes, cheapest loss first: analytics rebuild from a resident index in
+ * seconds, an index takes tens of seconds of parsing. So every other
+ * project's analytics go before any index does. `keep` is never touched — it
+ * is what the caller is building or returning.
+ *
+ * `reserve` exists for the analytics build itself: its peak lands before the
+ * entry is cached, so evicting only afterwards is evicting too late.
+ */
+export function enforceCodeMapBudget(keep: string, reserve = 0): void {
+  const analyticsCost = (cwd: string) =>
+    (analyticsResidency?.nodes(cwd) ?? 0) * ANALYTICS_SYMBOLS_PER_NODE;
   const sizes = new Map<string, number>();
+  let total = reserve;
   for (const [cwd, idx] of indexCache) {
     const n = countIndexSymbols(idx);
     sizes.set(cwd, n);
-    total += n;
+    total += n + analyticsCost(cwd);
   }
   if (total <= MAX_CACHED_SYMBOLS) return;
 
-  for (const cwd of [...indexCache.keys()]) {
-    if (total <= MAX_CACHED_SYMBOLS) break;
-    if (cwd === keep) continue;
+  const order = [...indexCache.keys()].filter((cwd) => cwd !== keep);
+  for (const cwd of order) {
+    if (total <= MAX_CACHED_SYMBOLS) return;
+    const cost = analyticsCost(cwd);
+    if (cost === 0) continue;
+    analyticsResidency?.drop(cwd);
+    total -= cost;
+    console.log(
+      `[codeIndex] dropped analytics for ${cwd} (${cost} symbol-equivalents) — ` +
+        `Code Map over MAX_CACHED_SYMBOLS=${MAX_CACHED_SYMBOLS}`,
+    );
+  }
+  for (const cwd of order) {
+    if (total <= MAX_CACHED_SYMBOLS) return;
     const n = sizes.get(cwd) ?? 0;
     indexCache.delete(cwd);
     dirtyCwds.delete(cwd);
-    // The analytics entry is keyed separately and has no eviction of its
-    // own; leaving it behind would keep the larger half's companion data
-    // alive for an index that no longer exists.
+    // Already dropped above when it held anything; this covers an analytics
+    // module that had not registered yet.
     invalidateAnalyticsAsync(cwd);
     total -= n;
     console.log(
@@ -1010,11 +1065,15 @@ export async function getCodeIndex(cwd: string, opts: GetIndexOptions = {}): Pro
   if (opts.forceRefresh) {
     indexCache.delete(cwd);
     dirtyCwds.delete(cwd); // forceRefresh subsumes any pending lazy sync
+    // The old graph describes the index being replaced. Holding it through the
+    // rebuild only raises the peak, and routes reading it would answer from
+    // stale structure.
+    invalidateAnalyticsAsync(cwd);
   }
   const cached = indexCache.get(cwd);
   if (cached) {
     // LRU touch: re-insert so this cwd moves to the most-recent end of the
-    // Map. `evictIndexesToBudget` relies on Map order being recency order.
+    // Map. `enforceCodeMapBudget` relies on Map order being recency order.
     indexCache.delete(cwd);
     indexCache.set(cwd, cached);
     // Lazy flush: drain dirty before returning. Sync runs in the foreground so
@@ -1035,7 +1094,7 @@ export async function getCodeIndex(cwd: string, opts: GetIndexOptions = {}): Pro
   if (pending) return pending;
   const p = buildCodeIndex(cwd).then((index) => {
     indexCache.set(cwd, index);
-    evictIndexesToBudget(cwd);
+    enforceCodeMapBudget(cwd);
     inflight.delete(cwd);
     buildFailures.delete(cwd);
     // Fresh build subsumes any dirty flag that arrived during the build.

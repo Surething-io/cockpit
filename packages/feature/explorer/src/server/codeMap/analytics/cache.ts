@@ -12,24 +12,28 @@
  *     codeIndex cache uses — we drop our cache whenever the CodeIndex
  *     is invalidated.
  *
- * Memory budget: at 10K nodes / 100K edges the cache is well under
- * 50 MB (PR scores: 10K floats; TF-IDF: ~10K × ~10 terms each). For
- * Cockpit's typical project sizes (`MAX_FILES = 15000`) this is fine
- * to keep resident. Note the analytics entry is the SMALL half of the
- * per-project footprint — the CodeIndex itself measured ~0.8 GB
- * resident for a 7.7K-file project, and neither cache has an eviction
- * policy, so every project visited stays until the process restarts.
+ * Memory: this is the LARGER half of a project's Code Map footprint —
+ * measured ~8.4 KB per node in production (two ~149K-node entries at
+ * 1.27 / 1.25 GB, TF-IDF about two thirds of it). Residency is therefore
+ * budgeted together with the CodeIndex cache: this module registers its
+ * entries with `registerAnalyticsResidency`, and `enforceCodeMapBudget`
+ * drops least-recently-used analytics before any index (see
+ * ANALYTICS_SYMBOLS_PER_NODE).
  *
- * Concurrency: precompute is idempotent and synchronous (all algos
- * are pure CPU). We don't lock — multiple precompute calls overlap
- * harmlessly; last writer wins.
+ * Concurrency: precompute is synchronous (all algos are pure CPU), so two
+ * builds for one cwd cannot interleave and no in-flight table is needed.
  */
 import type { CodeIndex } from '../projectGraph/codeIndex';
 // Value import, not just the type: the symbol count is the unit BOTH budgets
 // are expressed in (MAX_ANALYTICS_SYMBOLS here, MAX_CACHED_SYMBOLS there), and
 // two copies of the definition could drift apart silently. Safe from a cycle —
 // codeIndex only reaches back into this module via dynamic import.
-import { countIndexSymbols } from '../projectGraph/codeIndex';
+import {
+  ANALYTICS_SYMBOLS_PER_NODE,
+  countIndexSymbols,
+  enforceCodeMapBudget,
+  registerAnalyticsResidency,
+} from '../projectGraph/codeIndex';
 import type { AnalyticsGraph, NodeId } from './types';
 import { buildAnalyticsGraph } from './graph';
 import { pagerank, personalizedPageRank } from './pagerank';
@@ -135,8 +139,14 @@ export function cachedPPR(
 }
 
 const cache = new Map<string, AnalyticsEntry>();
-const inflight = new Map<string, Promise<AnalyticsEntry>>();
 let versionCounter = 0;
+
+registerAnalyticsResidency({
+  nodes: (cwd) => cache.get(cwd)?.graph.nodes.size ?? 0,
+  drop: (cwd) => {
+    cache.delete(cwd);
+  },
+});
 
 /**
  * Symbol ceiling above which analytics are SKIPPED, not merely slow.
@@ -220,24 +230,26 @@ export function getAnalytics(cwd: string): AnalyticsEntry | null {
 export function invalidateAnalytics(cwd?: string): void {
   if (!cwd) {
     cache.clear();
-    inflight.clear();
     oversizedReported.clear();
     return;
   }
   cache.delete(cwd);
-  inflight.delete(cwd);
   oversizedReported.delete(cwd);
 }
 
-/** Build (or rebuild) the analytics entry for a given index snapshot.
- *  Safe to fire-and-forget — callers don't need to await unless they
- *  want guaranteed freshness for the next read. */
+/**
+ * Build (or rebuild) the analytics entry for a given index snapshot.
+ *
+ * Synchronous underneath; the Promise is kept for callers' convenience. It
+ * used to be an async IIFE with no `await`, which ran to completion before
+ * `inflight.set` — so the finished Promise stayed registered forever. That
+ * pinned the entry past eviction and, worse, answered every later build for
+ * the cwd (including the "refresh project graph" rebuild) with the OLD entry.
+ */
 export function precomputeAnalytics(
   cwd: string,
   index: CodeIndex,
 ): Promise<AnalyticsEntry> {
-  const pending = inflight.get(cwd);
-  if (pending) return pending;
   if (isAnalyticsOversized(index)) {
     // Reject rather than resolve with an empty entry: an empty AnalyticsEntry
     // would be cached and handed to the builders as if it were real, silently
@@ -245,31 +257,38 @@ export function precomputeAnalytics(
     // .catch, or getOrTriggerAnalytics, which never reaches this line.
     return Promise.reject(new Error('analytics-skipped-oversized'));
   }
-  const p = (async () => {
-    const t0 = Date.now();
-    versionCounter += 1;
-    const version = versionCounter;
-    const graph = buildAnalyticsGraph(index, version);
-    const pr = pagerank(graph);
-    const tf = new TfidfIndex(graph);
-    const communities = detectCommunities(graph);
-    const entry: AnalyticsEntry = {
-      cwd,
-      version,
-      graph,
-      pagerank: pr,
-      tfidf: tf,
-      communities,
-      pprCache: new PPRLruCache(PPR_CACHE_CAP),
-      builtAt: Date.now(),
-      buildMs: Date.now() - t0,
-    };
-    cache.set(cwd, entry);
-    inflight.delete(cwd);
-    return entry;
-  })();
-  inflight.set(cwd, p);
-  return p;
+  try {
+    return Promise.resolve(buildAnalyticsEntry(cwd, index));
+  } catch (error) {
+    return Promise.reject(error);
+  }
+}
+
+function buildAnalyticsEntry(cwd: string, index: CodeIndex): AnalyticsEntry {
+  // The entry being replaced must not count against — or survive — its own
+  // rebuild; then make room for the new one BEFORE the passes allocate.
+  cache.delete(cwd);
+  enforceCodeMapBudget(cwd, countIndexSymbols(index) * ANALYTICS_SYMBOLS_PER_NODE);
+  const t0 = Date.now();
+  versionCounter += 1;
+  const version = versionCounter;
+  const graph = buildAnalyticsGraph(index, version);
+  const pr = pagerank(graph);
+  const tf = new TfidfIndex(graph);
+  const communities = detectCommunities(graph);
+  const entry: AnalyticsEntry = {
+    cwd,
+    version,
+    graph,
+    pagerank: pr,
+    tfidf: tf,
+    communities,
+    pprCache: new PPRLruCache(PPR_CACHE_CAP),
+    builtAt: Date.now(),
+    buildMs: Date.now() - t0,
+  };
+  cache.set(cwd, entry);
+  return entry;
 }
 
 /** Convenience for routes: if analytics are ready use them; otherwise

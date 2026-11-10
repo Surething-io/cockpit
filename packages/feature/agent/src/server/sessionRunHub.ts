@@ -38,6 +38,12 @@ interface RunState {
    *  the run — used by scheduled tasks to persist a freshly-created session. */
   sessionId?: string;
   status: RunStatus;
+  /**
+   * Ended by an explicit stop. A stop is the user's own decision, so inputs it
+   * leaves undelivered are settled inline but do not turn the run into a failure
+   * (and with it a pinned recovery copy in every open tab).
+   */
+  stopped?: boolean;
   seq: number; // monotonic within the run; snapshot/tail dedupe on it
   events: unknown[]; // current in-flight turn only
   /** Server clock at startRun. The turn's time boundary: every message this run writes to
@@ -319,7 +325,7 @@ export function appendRun(key: string, message: unknown): void {
   const frame = message as { type?: string } | null;
   if (r.status !== 'running') {
     if (!r.writer || !isRecoverySettlement(message)) return;
-    if (frame?.type === 'error') markRunIdle(key, 'error');
+    if (frame?.type === 'error' && !r.stopped) markRunIdle(key, 'error');
   }
   if (typeof message === 'object' && message !== null) {
     const frame = message as { type?: string; subtype?: string; _ts?: number };
@@ -605,6 +611,7 @@ export function setRunAbort(key: string, abort: () => void): void {
 export function requestStop(key: string): boolean {
   const r = registry.get(key);
   if (!r) return false;
+  r.stopped = true;
   try { r.abort?.(); } catch { /* ignore */ }
   // No `usage` field: the result handler only updates token counts when usage is present,
   // so omitting it preserves the turn's real token counter on stop.

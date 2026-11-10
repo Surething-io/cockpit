@@ -262,7 +262,7 @@ describe('orchestrator dispatch contract', () => {
       old.emit(binding);
       old.emit(recovery);
       const stopped = getRunSnapshot(sessionId)!;
-      expect(stopped).toMatchObject({ status: 'error', writerActive: true });
+      expect(stopped).toMatchObject({ status: 'idle', writerActive: true });
       expect(stopped.events).toContainEqual(binding);
       expect(stopped.events).toContainEqual(recovery);
       expect(stopped.events).not.toContainEqual({ type: 'assistant', text: 'late output' });
@@ -274,7 +274,8 @@ describe('orchestrator dispatch contract', () => {
       expect(successor).toBeUndefined();
       finish();
       expect((await pending).ok).toBe(true);
-      expect(getRunRecoveries(sessionId)).toMatchObject([{ runId, status: 'error', writerActive: false }]);
+      // A stop is never a failure, so it leaves no recovery copy behind.
+      expect(getRunRecoveries(sessionId)).toEqual([]);
       const before = getRunSnapshot(sessionId);
       old.emit(binding);
       old.emit(recovery);

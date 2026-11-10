@@ -338,7 +338,7 @@ it('keeps ordered identity remaps and deletion across aliases, expiry and succes
 });
 
 
-it('retains undelivered input settlement after Stop only while the writer owns cleanup', () => {
+it('keeps undelivered input settlement after Stop inline, without failing the run', () => {
   const key = 'stopped-input-recovery';
   startRun(key, '/cwd', 'Initial', key, 'ollama');
   const received: unknown[] = [];
@@ -351,17 +351,17 @@ it('retains undelivered input settlement after Stop only while the writer owns c
   expect(received).toContainEqual(binding);
   const recovery = { type: 'error', error: 'Input cancelled', undeliveredInputs: [{ inputId: 'queued', images: [{ type: 'base64', media_type: 'image/png', data: 'image' }] }] };
   appendRun(key, recovery);
-  expect(getRunSnapshot(key)).toMatchObject({ status: 'error', writerActive: true });
+  expect(getRunSnapshot(key)).toMatchObject({ status: 'idle', writerActive: true });
   expect(received).toContainEqual(recovery);
   expect(received).not.toContainEqual({ type: 'error', error: 'Late generic error' });
   releaseRun(key);
-  expect(received.at(-1)).toMatchObject({ type: 'run-settled', status: 'error' });
+  expect(received.at(-1)).toMatchObject({ type: 'run-settled', status: 'idle' });
   const count = getRunSnapshot(key)!.events.length;
   appendRun(key, recovery);
   appendRun(key, binding);
   expect(getRunSnapshot(key)!.events).toHaveLength(count);
   startRun(key, '/cwd', 'Successor', 'next');
-  expect(getRunRecoveries(key)[0].events).toContainEqual(recovery);
+  expect(getRunRecoveries(key)).toEqual([]);
   off(); markRunIdle(key); releaseRun(key);
 });
 

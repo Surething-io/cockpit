@@ -468,7 +468,7 @@ describe('embedded Pi runtime', () => {
       spy.mockRestore();
     }
     expect(hub.getRunSnapshot(id)?.writerActive).toBe(false);
-    expect(hub.getRunSnapshot(id)?.status).toBe('error');
+    expect(hub.getRunSnapshot(id)?.status).toBe('idle');
     const file = await Effect.runPromise(sessions.findPiSession(home, 'cancel-init-session'));
     expect(file).toBeDefined();
     const restored = SessionManager.open(file!.path);
@@ -569,7 +569,7 @@ describe('embedded Pi runtime', () => {
       expect(await hub.waitForWriter(id, 3000)).toBe(true);
     } finally { off(); hub.requestStop(id); await hub.waitForWriter(id, 3000); }
     expect(injected).toBe(true);
-    expect(hub.getRunSnapshot(id)?.status).toBe('error');
+    expect(hub.getRunSnapshot(id)?.status).toBe('idle');
     expect(hub.getRunSnapshot(id)?.events.find((event) => (event as RunEvent).type === 'error')).toMatchObject({
       error: 'Input did not complete because the run was cancelled.',
       // The prompt Pi was answering is already native history; only the queued input is undelivered.

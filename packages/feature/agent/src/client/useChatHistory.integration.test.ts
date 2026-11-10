@@ -111,10 +111,10 @@ describe.skipIf(!browser)('history and live replay in a browser', () => {
       } } }, { prompt: 'New input', sessionId: stoppedId, runId: 'successor-browser-run' });
       finish();
       expect(await hub.waitForWriter(stoppedId, 1000)).toBe(true);
-      expect(stopped.snapshot).toMatchObject({ status: 'error', writerActive: false });
+      expect(stopped.snapshot).toMatchObject({ status: 'idle', writerActive: false });
       expect((await successor).ok).toBe(true);
       successorSnapshot = { type: 'run-snapshot', ...hub.getRunSnapshot(stoppedId), recoveries: hub.getRunRecoveries(stoppedId) };
-      expect(hub.getRunRecoveries(stoppedId)).toHaveLength(1);
+      expect(hub.getRunRecoveries(stoppedId)).toHaveLength(0);
     } finally {
       stopOff(); finish(); hub.requestStop(stoppedId); await hub.waitForWriter(stoppedId, 1000);
     }

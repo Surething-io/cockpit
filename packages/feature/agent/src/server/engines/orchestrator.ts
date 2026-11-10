@@ -195,8 +195,9 @@ export async function dispatchChat(
     } catch (error) {
       if (abort.signal.aborted) {
         // explicit stop: requestStop already emitted the terminal result + marked idle.
+        // Undelivered inputs were settled inline; a stop is never a failure.
         isClosed = true;
-        markRunIdle(currentKey, hasRecoveryFailure ? 'error' : 'idle');
+        markRunIdle(currentKey, 'idle');
         return;
       }
       console.error(`[engine:${spec.name}] run error:`, error);
@@ -223,7 +224,8 @@ export async function dispatchChat(
       await updateGlobalState(cwd, actualSessionId, 'unread', title, undefined, spec.name).catch(() => {});
     }
     isClosed = true;
-    markRunIdle(currentKey, hasRecoveryFailure ? 'error' : 'idle');
+    // Engines that resolve on abort (Codex) land here too; a stop is never a failure.
+    markRunIdle(currentKey, hasRecoveryFailure && !abort.signal.aborted ? 'error' : 'idle');
   }
 
   return { ok: true, runKey: currentKey, sessionId: actualSessionId ?? null, startedAt: getRunSnapshot(currentKey)?.startedAt };

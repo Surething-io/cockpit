@@ -356,23 +356,19 @@ async function main() {
       });
       else await act(() => deliverSessionMessage(stopped.snapshot, wire));
       await refresh(false);
-      const checkCopy = () => {
-        check(current.recoveryCopies.length === 1, 'A stopped input failure must retain one copy');
-        const rows = current.recoveryCopies[0].messages;
-        check(rows.filter(row => row.role === 'user' && row.liveInputId === 'image-input').length === 1, 'Queued input identity must be retained once');
-        check(rows.some(row => row.images?.[0].data === image.data), 'Image bytes must survive final history replacement');
-        check(rows.some(row => row.streamError?.includes('cancelled')), 'The recovery must explain cancellation');
-        check(!current.messages.some(row => row.images?.length), 'Recovery input must remain outside canonical history');
-        check(document.querySelectorAll('[data-recovery-id] img').length === 1, 'Recovery UI must render the image');
+      // A stop is the user's decision, not a failure: inputs it left undelivered are
+      // reported inline while live, but no recovery copy is pinned above the chat.
+      const checkNoCopy = () => {
+        check(current.recoveryCopies.length === 0, 'A stopped run must not retain a recovery copy');
+        check(!current.messages.some(row => row.images?.length), 'Undelivered input must stay outside canonical history');
+        check(document.querySelectorAll('[data-recovery-id]').length === 0, 'No recovery UI after a stop');
       };
-      checkCopy();
+      checkNoCopy();
       for (let i = 0; i < 2; i++) {
         await act(() => deliverSessionMessage(stopped.snapshot));
-        checkCopy();
+        checkNoCopy();
       }
-      await act(() => current.onRecoveryDeleted({ sourceIds: ['user-19'], taskIds: [] }));
-      checkCopy();
-      check(current.recoveryCopies[0].messages.every(row => row.liveInputId === 'image-input'), 'A binding settled during Stop must still let deletion remove the consumed turn');
+      check(!!image, 'Fixture carries the undelivered image');
     });
   }
 
@@ -389,13 +385,9 @@ async function main() {
     const currentRun = stoppedRun(oldId, senderRunId).successor;
     for (let i = 0; i < 2; i++) {
       await act(() => deliverSessionMessage(currentRun, wire));
-      check(current.recoveryCopies.length === 1, 'A successor snapshot must retain the stopped input recovery');
-      check(current.recoveryCopies[0].messages.some(row => row.images?.length), 'Queued image must survive subscription handoff');
-      check(current.recoveryCopies[0].messages.some(row => row.content.includes('Observed before Stop')), 'Settlement must preserve already observed partial output');
+      check(current.recoveryCopies.length === 0, 'A successor snapshot must not turn a stop into a recovery copy');
       check(sender.isLoading, 'Old settlement must not stop the new sender');
     }
-    await act(() => current.onRecoveryDeleted({ sourceIds: ['user-19'], taskIds: [] }));
-    check(current.recoveryCopies[0].messages.every(row => row.liveInputId === 'image-input'), 'Late native binding must also apply during sender handoff');
     await act(() => deliverSessionMessage({ type: 'run-event', message: { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'New output' } } } }, wire));
     await act(() => deliverSessionMessage({ type: 'run-event', message: { type: 'result' } }, wire));
     check(current.messages.some(row => row.content === 'New output'), 'New sender must still own its output');

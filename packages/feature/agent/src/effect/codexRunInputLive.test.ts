@@ -120,12 +120,13 @@ it.each([false, true])('retains cancelled Codex input through dispatch and recon
     hub.requestStop(key); ack.resolve(); finish.resolve();
     expect(await hub.waitForWriter(key, 1000)).toBe(true);
     const snapshot = hub.getRunSnapshot(key)!;
-    expect(snapshot.status).toBe('error');
+    // A stop settles undelivered input inline but is never a failure.
+    expect(snapshot.status).toBe('idle');
     expect(snapshot.events).toContainEqual(expect.objectContaining({ type: 'error', undeliveredInputs: [
       { inputId: 'pending', text: 'queued', images: [image] },
     ] }));
     hub.startRun(key, '', 'next', 'successor');
-    expect(hub.getRunRecoveries(key)).toHaveLength(1);
+    expect(hub.getRunRecoveries(key)).toHaveLength(0);
     hub.markRunIdle(key); hub.releaseRun(key);
   } finally { ack.resolve(); finish.resolve(); hub.requestStop(key); await hub.waitForWriter(key, 1000); }
 });

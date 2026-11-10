@@ -107,7 +107,7 @@ describe('runSdkLoop background-task residency', () => {
       await dispatchChat({ name: 'claude', runner: { run: ctx => runSdkLoop(ctx, () => ({})) } }, { prompt: 'initial', runId: id });
       expect(await hub.waitForWriter(id, 1000)).toBe(true);
       const snapshot = hub.getRunSnapshot(id)!;
-      expect(snapshot.status).toBe('error');
+      expect(snapshot.status).toBe('idle');
       const event = snapshot.events.find(value => (value as { undeliveredInputs?: unknown }).undeliveredInputs) as { undeliveredInputs: Array<{ inputId: string }> };
       expect(event.undeliveredInputs).toContainEqual({ inputId: 'queued-input', text: 'queued', images: [image] });
       // The initial prompt reached the CLI either way; only the queued input did not.

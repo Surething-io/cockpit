@@ -33,6 +33,12 @@ export interface ChatHistoryState {
   diskTurns: DiskTurn[];
   runs: HistoryRun[];
   failures: HistoryFailure[];
+  /**
+   * Recovery copies the user closed. Kept apart from `failures` because a run's
+   * late events re-remember it (see `rememberFailure` callers), which would
+   * otherwise bring a closed copy straight back.
+   */
+  dismissedFailures: string[];
   sessionId: string | null;
   startTurnIndex?: number;
   totalTurns: number;
@@ -46,7 +52,7 @@ export interface ChatHistoryState {
   writerIdleRevision: number;
 }
 export const emptyChatHistory: ChatHistoryState = {
-  messages: [], diskTurns: [], runs: [], failures: [], sessionId: null, totalTurns: 0, hasMore: false, needsStableRead: false, writerIdle: false, writerIdleRevision: 0,
+  messages: [], diskTurns: [], runs: [], failures: [], dismissedFailures: [], sessionId: null, totalTurns: 0, hasMore: false, needsStableRead: false, writerIdle: false, writerIdleRevision: 0,
 };
 export type HistoryMessageUpdate = SetStateAction<ChatMessage[]>
   | { event: StreamEvent; engine?: string; assistantId: string };
@@ -62,6 +68,7 @@ export type ChatHistoryAction =
   | { type: 'input-rejected'; sessionId: string; copy: HistoryFailure }
   | { type: 'validated'; sessionId: string; stable: boolean }
   | { type: 'recovery-deleted'; deletion: RecoveryDeletion }
+  | { type: 'recovery-dismissed'; id: string }
   | { type: 'writer-idle'; sessionId: string }
   | { type: 'page'; sessionId: string; page: HistoryPage;
       mode: 'replace' | 'incremental' | 'prepend' | 'jump';
@@ -184,6 +191,17 @@ function composeWindow(state: ChatHistoryState, refreshTail = false): ChatHistor
 }
 
 export function chatHistoryReducer(state: ChatHistoryState, action: ChatHistoryAction): ChatHistoryState {
+  if (action.type === 'recovery-dismissed') {
+    return { ...state, dismissedFailures: [...state.dismissedFailures, action.id],
+      failures: state.failures.filter((copy) => copy.id !== action.id) };
+  }
+  const next = reduceChatHistory(state, action);
+  if (next === state || !next.dismissedFailures.length) return next;
+  const failures = next.failures.filter((copy) => !next.dismissedFailures.includes(copy.id));
+  return failures.length === next.failures.length ? next : { ...next, failures };
+}
+
+function reduceChatHistory(state: ChatHistoryState, action: Exclude<ChatHistoryAction, { type: 'recovery-dismissed' }>): ChatHistoryState {
   if (action.type === 'sender-start' || action.type === 'replay-start' || action.type === 'run-accepted') {
     const accepted = action.type !== 'sender-start' && !action.run.recovery;
     const existing = state.runs.find((run) => run.id === action.run.id);

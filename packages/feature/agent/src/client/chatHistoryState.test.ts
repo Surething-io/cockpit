@@ -165,6 +165,18 @@ describe('canonical history coordinates and live overlays', () => {
     expect(state.failures.map((failure) => failure.id)).toEqual(['new']);
   });
 
+  it('keeps a dismissed copy closed even when its run is remembered again', () => {
+    let state = replay(emptyChatHistory, [{ id: 'u', sourceId: 'native-u', role: 'user', content: 'Q' }, { id: 'a', role: 'assistant', content: 'Partial' }],
+      { id: 'run', startedAt: time(5) });
+    state = chatHistoryReducer(state, { type: 'run-end', runId: 'run', writerActive: false, failed: true });
+    expect(state.failures.map((failure) => failure.id)).toEqual(['run']);
+    state = chatHistoryReducer(state, { type: 'recovery-dismissed', id: 'run' });
+    expect(state.failures).toEqual([]);
+    // A late event for the released failed run re-remembers it.
+    state = chatHistoryReducer(state, { type: 'run-messages', runId: 'run', update: (rows) => [...rows, { id: 'late', role: 'assistant', content: 'Late' }] });
+    expect(state.failures).toEqual([]);
+  });
+
   it('empties a released failed run started before a compaction marker', () => {
     let state = replay(emptyChatHistory, [{ id: 'u', sourceId: 'native-u', role: 'user', content: 'Q' }, { id: 'a', role: 'assistant', content: 'Partial' }],
       { id: 'run', startedAt: time(5) });

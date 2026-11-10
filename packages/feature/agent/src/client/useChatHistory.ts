@@ -104,6 +104,7 @@ interface UseChatHistoryReturn {
   messages: ChatMessage[];
   recoveryCopies: import('./chatHistoryState').HistoryFailure[];
   onRecoveryDeleted: (deletion: RecoveryDeletion) => void;
+  onRecoveryDismissed: (id: string) => void;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   onLiveSnapshotStart: (run: LiveHistoryRun) => void;
   setRunMessages: RunMessageUpdate;
@@ -290,6 +291,7 @@ export function useChatHistory(
     dispatchHistory({ type: 'run-end', runId, writerActive, failed });
   }, [dispatchHistory]);
   const onRecoveryDeleted = useCallback((deletion: RecoveryDeletion) => dispatchHistory({ type: 'recovery-deleted', deletion }), [dispatchHistory]);
+  const onRecoveryDismissed = useCallback((id: string) => dispatchHistory({ type: 'recovery-dismissed', id }), [dispatchHistory]);
   const onWriterIdle = useCallback((sessionId: string) => dispatchHistory({ type: 'writer-idle', sessionId }), [dispatchHistory]);
   // Last incremental fetch time: used for throttling
   const lastIncrementalFetchRef = useRef(0);
@@ -619,6 +621,7 @@ export function useChatHistory(
     messages,
     recoveryCopies: history.failures,
     onRecoveryDeleted,
+    onRecoveryDismissed,
     setMessages,
     onLiveSnapshotStart,
     setRunMessages,

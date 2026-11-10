@@ -250,6 +250,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     messages,
     recoveryCopies,
     onRecoveryDeleted,
+    onRecoveryDismissed,
     setMessages,
     onLiveSnapshotStart,
     onWriterIdle,
@@ -981,6 +982,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             ref={messageListRef}
             messages={messages}
             recoveryCopies={recoveryCopies}
+            onDismissRecoveryCopy={onRecoveryDismissed}
             isLoading={isLoading || liveRunning}
             liveOutputTokens={liveOutputTokens}
             runningStartedAt={runningStartedAt}

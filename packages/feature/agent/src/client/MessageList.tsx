@@ -71,6 +71,7 @@ const RECENT_USER_MESSAGE_LIMIT = 10;
 interface MessageListProps {
   messages: ChatMessage[];
   recoveryCopies?: HistoryFailure[];
+  onDismissRecoveryCopy?: (id: string) => void;
   isLoading?: boolean;
   cwd?: string;
   sessionId?: string | null;
@@ -171,7 +172,7 @@ export interface MessageListHandle {
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
-  { messages, recoveryCopies, isLoading, cwd, sessionId, engine, botName, apiRetryInfo, backgroundTasks, liveOutputTokens, runningStartedAt, hasMoreHistory, isLoadingMore, onLoadMore, onFork, onDeleteTurn, onSendToPeer, peerSide, isActive = true, onContentSearch, onShowFileDiff, onOpenFileLink, onApprovePlan, onShowUserMessages },
+  { messages, recoveryCopies, onDismissRecoveryCopy, isLoading, cwd, sessionId, engine, botName, apiRetryInfo, backgroundTasks, liveOutputTokens, runningStartedAt, hasMoreHistory, isLoadingMore, onLoadMore, onFork, onDeleteTurn, onSendToPeer, peerSide, isActive = true, onContentSearch, onShowFileDiff, onOpenFileLink, onApprovePlan, onShowUserMessages },
   ref
 ) {
   const { t, i18n } = useTranslation();
@@ -1026,7 +1027,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
 
   return (
     <div ref={outerRef} className="relative flex-1 min-h-0 overflow-hidden flex flex-col outline-none" tabIndex={-1} onMouseUp={handleSelectionMouseUp} onMouseDown={handleSelectionMouseDown}>
-      {recoveryCopies && <RecoveryCopies copies={recoveryCopies} />}
+      {recoveryCopies && <RecoveryCopies copies={recoveryCopies} onDismiss={onDismissRecoveryCopy} />}
       {/* Search bar */}
       {isSearchVisible && (
         <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-b border-border">

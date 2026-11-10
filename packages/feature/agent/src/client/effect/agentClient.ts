@@ -195,6 +195,16 @@ export const loadEngineModels = (
 ): Effect.Effect<{ models: EngineModelInfo[] }, AppError> =>
   httpJson<{ models: EngineModelInfo[] }>(`/api/${engine}/models`)
 
+export const loadPiThinking = (
+  engine: import('@cockpit/shared-utils/piEngines').PiEngine,
+  model: string,
+  cwd?: string,
+  sessionId?: string | null,
+): Effect.Effect<import('../../shared/piThinking').PiThinkingOptions, AppError> => {
+  const query = new URLSearchParams({ engine, model, ...(cwd ? { cwd } : {}), ...(sessionId ? { sessionId } : {}) })
+  return httpJson(`/api/pi/thinking?${query}`)
+}
+
 // ─────────────────────────────────────────────────────────
 // /api/deepseek/balance — account balance, server-proxied (the raw key never
 // reaches the browser). `isAvailable: false` is a successful response describing

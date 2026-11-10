@@ -3,14 +3,11 @@ import { Inter, Lora, JetBrains_Mono } from "next/font/google";
 import { readFileSync } from "fs";
 import { join } from "path";
 import "./globals.css";
-import { Providers } from "@cockpit/feature-workspace";
+import { BootstrapScripts, Providers } from "@cockpit/feature-workspace";
 
-// boot.js runs synchronously before first paint (mobile redirect + theme +
-// insecure-context clipboard fallback + SW cleanup). Inlined from the source
-// file rather than referenced via <script src> so it executes during SSR
-// without the React "script tag inside a component is never executed on the
-// client" warning — the standard FOUC-prevention pattern. Read once at module
-// load. NOTE: after editing public/boot.js in dev, edit/save this file so the
+// BootstrapScripts inserts boot.js into the initial HTML stream so it executes
+// before hydration without creating script elements during client renders.
+// Read once at module load. After editing public/boot.js in dev, edit/save this file so the
 // module re-evaluates and re-reads the script (mtime-only touches don't bust
 // Turbopack's cache).
 let bootScript = "";
@@ -72,14 +69,6 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning className="overflow-hidden">
       <head>
         {/*
-         * boot.js inlined (see bootScript above). Runs synchronously on initial
-         * HTML parse — before first paint and hydration — to apply the theme
-         * class (no FOUC), redirect narrow viewports to /m, and clean up legacy
-         * Service Workers. Inlined via dangerouslySetInnerHTML (not <script src>)
-         * so React does not warn that the script won't execute on client render.
-         */}
-        <script dangerouslySetInnerHTML={{ __html: bootScript }} />
-        {/*
          * Stamp the build this HTML was served from. After an upgrade the
          * server restarts with a new BUILD_ID, but an already-open tab keeps
          * referencing the previous build's content-hashed chunks — which no
@@ -96,16 +85,10 @@ export default function RootLayout({
          * override cannot be used for that: /api/update refuses to run in dev
          * mode (npm would install the published package over a source tree).
          */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html:
-              `window.__COCKPIT_BUILD_ID__=${JSON.stringify(
-                process.env.COCKPIT_BUILD_ID ?? null
-              )};` +
-              `window.__COCKPIT_FORCE_UPDATE__=${JSON.stringify(
-                process.env.COCKPIT_FORCE_UPDATE_BADGE === "1"
-              )}`,
-          }}
+        <BootstrapScripts
+          bootScript={bootScript}
+          buildId={process.env.COCKPIT_BUILD_ID ?? null}
+          forceUpdate={process.env.COCKPIT_FORCE_UPDATE_BADGE === "1"}
         />
       </head>
       <body

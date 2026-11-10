@@ -35,6 +35,8 @@ import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { OllamaModelPicker } from './OllamaModelPicker';
 import { GrokModelTraitsPicker } from './GrokModelTraitsPicker';
 import { EngineConfigPicker } from './EngineConfigPicker';
+import { PiThinkingPicker } from './PiThinkingPicker';
+import { usePiThinking } from './usePiThinking';
 import {
   AgentModelTraitsPicker,
   DEFAULT_CLAUDE_MODEL,
@@ -297,6 +299,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     engine === 'deepseek' || engine === 'kimi' || engine === 'glm' ? engine : null;
   const engineModel =
     apiKeyEngine === 'kimi' ? kimiModel : apiKeyEngine === 'glm' ? glmModel : deepseekModel;
+  const piThinking = usePiThinking(engine, engine === 'ollama' ? ollamaModel : engineModel, initialCwd, sessionId, engineHasKey);
   const onEngineModelChange =
     apiKeyEngine === 'kimi'
       ? onKimiModelChange
@@ -348,6 +351,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     outputStyleId: outputStyle,
     ollamaModel,
     engineModel,
+    piThinkingLevel: piThinking.level,
     claudeModel: effectiveClaudeModel,
     claudeEffort: effectiveClaudeEffort,
     claudeFastMode,
@@ -913,6 +917,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             {onOllamaModelChange && (
               <OllamaModelPicker currentModel={ollamaModel} onModelChange={onOllamaModelChange} />
             )}
+            <PiThinkingPicker {...piThinking} />
             {independentTaskToggle}
             {outputStyleControl}
             {decisionModeToggle}
@@ -934,6 +939,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
                 onHasKeyChange={setEngineHasKey}
               />
             )}
+            <PiThinkingPicker {...piThinking} />
             {independentTaskToggle}
             {outputStyleControl}
             {decisionModeToggle}

@@ -1,6 +1,7 @@
 // Audited service contracts. Numeric units follow each provider, not model-name heuristics.
 import type { ProviderModelConfig } from '@earendil-works/pi-coding-agent';
 import type { PiEngine } from '@cockpit/shared-utils';
+import type { PiThinkingLevel } from '../../../shared/piThinking';
 
 export type PiChatDefinition = Extract<ProviderModelConfig, { reasoning: boolean; maxTokens: number }>;
 export type PiModelOverride = Pick<PiChatDefinition, 'id' | 'contextWindow' | 'maxTokens' | 'input' | 'reasoning'> & Partial<PiChatDefinition>;
@@ -14,7 +15,7 @@ export interface PiModelCapabilities {
   input: ('text' | 'image')[];
   tools: boolean;
   thinking: 'optional' | 'required' | 'none';
-  defaultThinking: 'off' | 'low' | 'high';
+  defaultThinking: PiThinkingLevel;
   compat: Compat;
   thinkingLevelMap?: PiChatDefinition['thinkingLevelMap'];
   source: string;
@@ -26,10 +27,10 @@ const common: Compat = { supportsStore: false, supportsDeveloperRole: false, max
 const effort: PiChatDefinition['thinkingLevelMap'] = { off: null, minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' };
 const deepseek = (vision: boolean): PiModelCapabilities => ({
   contextWindow: 1000000, maxOutputTokens: 384000, input: vision ? ['text', 'image'] : ['text'], tools: true,
-  thinking: 'optional', defaultThinking: 'off', verifiedAt,
+  thinking: 'optional', defaultThinking: 'high', verifiedAt,
   source: 'https://api-docs.deepseek.com/quick_start/pricing/',
   compat: { ...common, thinkingFormat: 'deepseek', requiresReasoningContentOnAssistantMessages: true, supportsStrictMode: true },
-  thinkingLevelMap: { minimal: null, low: null, medium: null, high: 'high', max: 'max' },
+  thinkingLevelMap: { minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' },
 });
 const kimi = (contextWindow: number, highspeed = false, contextCeiling = contextWindow): PiModelCapabilities => ({
   contextWindow, contextCeiling, maxOutputTokens: null, input: ['text', 'image'], tools: true,
@@ -39,14 +40,16 @@ const kimi = (contextWindow: number, highspeed = false, contextCeiling = context
   source: 'https://www.kimi.com/code/docs/kimi-code/models.html',
   compat: { ...common, supportsReasoningEffort: !highspeed, thinkingFormat: highspeed ? 'deepseek' : 'openai',
     requiresReasoningContentOnAssistantMessages: !highspeed, supportsMidConvoSystemMessages: true },
-  thinkingLevelMap: highspeed ? { off: null } : effort,
+  thinkingLevelMap: highspeed ? { off: null, minimal: null, low: null, medium: null, high: 'high', xhigh: null, max: null } : effort,
 });
 const glm = (contextWindow: number, output: number, version: string, required = false, vision = false): PiModelCapabilities => ({
   contextWindow, maxOutputTokens: output, input: vision ? ['text', 'image'] : ['text'], tools: true,
-  thinking: required ? 'required' : 'optional', defaultThinking: required ? 'low' : 'off', verifiedAt,
+  thinking: required ? 'required' : 'optional', defaultThinking: 'high', verifiedAt,
   source: `https://docs.z.ai/guides/${vision ? 'vlm' : 'llm'}/${version}`,
   compat: { ...common, thinkingFormat: 'zai', supportsReasoningEffort: required || version === 'glm-5.2', supportsStrictMode: true, zaiToolStream: true },
-  thinkingLevelMap: required ? effort : undefined,
+  thinkingLevelMap: required ? effort : version === 'glm-5.2'
+    ? { minimal: null, low: null, medium: null, high: 'high', xhigh: null, max: 'max' }
+    : { minimal: null, low: null, medium: null, high: 'high', xhigh: null, max: null },
 });
 /** Kimi's 256K entry is the documented lower-tier entitlement, enlarged only by live service metadata or an explicit override. */
 export const PI_MODEL_CAPABILITIES: Partial<Record<PiEngine, Readonly<Record<string, PiModelCapabilities>>>> = {

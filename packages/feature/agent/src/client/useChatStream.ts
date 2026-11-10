@@ -74,6 +74,7 @@ interface UseChatStreamOptions {
   codexReasoningEffort?: CodexReasoningEffort;
   grokModel?: string;
   grokReasoningEffort?: string;
+  piThinkingLevel?: import('../shared/piThinking').PiThinkingLevel;
   onSessionId: (sid: string) => void;
   onFetchTitle: (sid: string) => void;
   /** Transfer message ownership before creating the originator's bubbles. */
@@ -143,7 +144,7 @@ function DrainingRun({ run, update, engine, onAccepted, onEnd, onDeleted, onSett
 export function useChatStream(
   messages: ChatMessage[],
   updateRunMessages: RunMessageUpdate,
-  { sessionId, cwd, engine, planMode, noHistory, outputStyleId, ollamaModel, engineModel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, onSessionId, onFetchTitle, onSendStart, onRunEnd, onRunAccepted, onSendFailure, onInputRejected, onRecoveryDeleted, taskStore }: UseChatStreamOptions
+  { sessionId, cwd, engine, planMode, noHistory, outputStyleId, ollamaModel, engineModel, piThinkingLevel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, onSessionId, onFetchTitle, onSendStart, onRunEnd, onRunAccepted, onSendFailure, onInputRejected, onRecoveryDeleted, taskStore }: UseChatStreamOptions
 ): UseChatStreamReturn {
   // Each subscriber needs its own initial snapshot, including a sender/viewer handoff.
   const subscriptionId = useId();
@@ -845,6 +846,7 @@ export function useChatStream(
             language: i18n.language,
             ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),
             ...(isApiKeyEngine && engineModel && { model: engineModel }),
+            ...((isApiKeyEngine || engine === 'ollama') && piThinkingLevel !== undefined && { piThinkingLevel }),
             ...(isClaudeEngine && claudeModel && { model: claudeModel }),
             ...(isClaudeEngine && claudeEffort && { claudeEffort }),
             ...(isClaudeEngine && claudeFastMode !== undefined && { claudeFastMode }),
@@ -915,7 +917,7 @@ export function useChatStream(
         setActiveRun(null);
       }
     },
-    [cwd, engine, planMode, noHistory, outputStyleId, ollamaModel, engineModel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, setMessages, endRun, onSendStart, onRunAccepted, onSendFailure]
+    [cwd, engine, planMode, noHistory, outputStyleId, ollamaModel, engineModel, piThinkingLevel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, setMessages, endRun, onSendStart, onRunAccepted, onSendFailure]
   );
 
   const injectMessage = useCallback(
@@ -933,7 +935,7 @@ export function useChatStream(
         cwd,
         language: i18n.language,
         inject: true,
-        ...(isPiProvider ? { model: engine === 'ollama' ? ollamaModel : engineModel, noHistory, outputStyleId } : {}),
+        ...(isPiProvider ? { model: engine === 'ollama' ? ollamaModel : engineModel, piThinkingLevel, noHistory, outputStyleId } : {}),
         ...(engine === 'codex' ? { model: codexModel, codexReasoningEffort, noHistory, outputStyleId } : {}),
         ...(engine === 'grok' ? { model: grokModel && grokModel !== 'grok-build' ? grokModel : GROK_DEFAULT_MODEL, grokReasoningEffort: grokReasoningEffort || GROK_DEFAULT_REASONING, noHistory, outputStyleId } : {}),
       }).pipe(Effect.tapError((error) => Effect.sync(() => {
@@ -944,7 +946,7 @@ export function useChatStream(
         ] });
       }))));
     },
-    [cwd, engine, ollamaModel, engineModel, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, noHistory, outputStyleId, onInputRejected]
+    [cwd, engine, ollamaModel, engineModel, piThinkingLevel, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, noHistory, outputStyleId, onInputRejected]
   );
 
   return {

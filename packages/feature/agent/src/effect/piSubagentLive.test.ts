@@ -10,7 +10,7 @@ import { ModelRuntime, type ExtensionAPI, type ToolDefinition, type ExtensionToo
 let home: string, baseUrl: string, server: Server;
 let tool: ToolDefinition;
 const key = 'test-literal-$key!';
-const requests: Array<{ model: string; messages: Array<{ role: string; content: unknown }>; tools?: Array<{ function: { name: string } }> }> = [];
+const requests: Array<{ model: string; thinking?: { type: string }; reasoning_effort?: string; messages: Array<{ role: string; content: unknown }>; tools?: Array<{ function: { name: string } }> }> = [];
 const previousHome = process.env.COCKPIT_HOME;
 const previousRoot = process.env.COCKPIT_ROOT;
 const parentAbort = new AbortController();
@@ -73,6 +73,7 @@ afterAll(async () => {
 const execute = (params: unknown, signal?: AbortSignal, update?: (result: unknown) => void) => tool.execute('call', params, signal, update,
   { cwd: home, model: { provider: 'ollama', id: 'parent-model' }, thinkingLevel: 'off' } as ExtensionToolContext);
 
+
 it('dynamically creates an agent with inherited model/key, isolated context and correct CLI root', async () => {
   const updates: unknown[] = [];
   const result = await execute({ task: 'call-child-bash', instructions: 'Unique dynamic instructions', name: 'New role never defined' }, undefined, (u) => updates.push(u));
@@ -96,6 +97,30 @@ it('dynamically creates an agent with inherited model/key, isolated context and 
   const header = JSON.parse(transcript.split('\n')[0]);
   expect(header.id).toBe(subagents[0].id);
 }, 30000);
+
+it.each([undefined, 'deepseek-flash', 'deepseek/deepseek-flash', 'deepseek-v4-pro'])(
+  'inherits thinking by resolved model identity: %s', async (requestedModel) => {
+    const { makePiSubagentExtension } = await import('./piSubagentLive');
+    const { SessionManager } = await import('@earendil-works/pi-coding-agent');
+    const parentPath = join(home, 'pi', 'sessions', '--thinking--', 'parent.jsonl');
+    let thinkingTool: ToolDefinition | undefined;
+    const extension = await Effect.runPromise(makePiSubagentExtension({ engine: 'deepseek', baseUrl, apiKey: key }, runtime,
+      'deepseek-flash', parentAbort.signal, 'thinking-parent', parentPath));
+    await extension({ registerTool: (registered: ToolDefinition) => { thinkingTool = registered; } } as unknown as ExtensionAPI);
+    const start = requests.length;
+    const result = await thinkingTool!.execute('thinking-call', { task: 'Check inherited thinking', model: requestedModel, tools: [] }, undefined, undefined,
+      { cwd: home, model: { provider: 'deepseek', id: 'deepseek-flash' }, thinkingLevel: 'off' } as ExtensionToolContext);
+    expect(result.isError, JSON.stringify(result)).toBe(false);
+    const differentModel = requestedModel === 'deepseek-v4-pro';
+    const observed = requests.slice(start);
+    expect(observed).toHaveLength(1);
+    expect(observed[0].thinking).toEqual({ type: differentModel ? 'enabled' : 'disabled' });
+    expect(observed[0].reasoning_effort).toBe(differentModel ? 'high' : undefined);
+    const { subagents } = result.details as { subagents: Array<{ sessionPath: string }> };
+    const native = SessionManager.open(join(home, 'pi', 'sessions', '--thinking--', 'thinking-parent', subagents[0].sessionPath));
+    expect(native.getBranch().findLast((entry) => entry.type === 'thinking_level_change')).toMatchObject({ thinkingLevel: differentModel ? 'high' : 'off' });
+  }, 30000,
+);
 
 it('allows a direct Pi CLI path through the child native Bash tool', async () => {
   const fakeDir = join(home, 'fake', 'pi', 'dist');

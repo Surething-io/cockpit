@@ -104,6 +104,37 @@ function context(id: string, prompt: string, sessionId?: string) {
 }
 
 describe('embedded Pi runtime', () => {
+  it('sends selected thinking controls and restores changed native settings on subsequent turns', async () => {
+    const config = { engine: 'deepseek' as const, baseUrl, apiKey: 'test' };
+    const id = 'thinking-native-persistence';
+    for (const [index, level] of (['off', 'high', undefined, 'max', 'off', undefined] as const).entries()) {
+      const run = context(id, `thinking turn ${index}`, index ? id : undefined);
+      run.ctx.params.model = 'deepseek-flash';
+      run.ctx.params.piThinkingLevel = level;
+      await Effect.runPromise(runPiAgent(run.ctx, config));
+      const payload = requests.at(-1);
+      const expected = level ?? (index === 2 ? 'high' : 'off');
+      expect(payload).toHaveProperty('thinking', { type: expected === 'off' ? 'disabled' : 'enabled' });
+      if (expected === 'off') expect(payload).not.toHaveProperty('reasoning_effort');
+      else expect(payload).toHaveProperty('reasoning_effort', expected);
+      const file = await Effect.runPromise(sessions.findPiSession(home, id));
+      const native = await Effect.runPromise(sessions.readPiSession(file!.path));
+      expect(native.entries.findLast((entry) => entry.type === 'thinking_level_change')).toMatchObject({ thinkingLevel: expected });
+    }
+  });
+
+  it.each([
+    ['deepseek', 'deepseek-flash', 'medium'],
+    ['glm', 'glm-5.3', 'off'],
+  ] as const)('rejects unsupported thinking before generating: %s/%s/%s', async (engine, model, level) => {
+    const before = requests.length;
+    const run = context(`invalid-thinking-${engine}`, 'must not reach the provider');
+    run.ctx.params.model = model;
+    run.ctx.params.piThinkingLevel = level;
+    await expect(Effect.runPromise(runPiAgent(run.ctx, { engine, baseUrl, apiKey: 'test' }).pipe(Effect.mapError((error) => error.cause)))).rejects.toThrow('Unsupported Pi thinking level');
+    expect(requests).toHaveLength(before);
+  });
+
   it('keeps displayed legacy IDs through the real resume writer and later excerpt', async () => {
     const { getPiSessionsDir } = await import('@cockpit/shared-utils');
     const id = 'legacy-resume-identity';

@@ -5,8 +5,9 @@ import { AgentError } from '@cockpit/effect-core';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PI_MODEL_ALIASES, PI_MODEL_CAPABILITIES, PI_REQUEST_OUTPUT_BUDGET, type PiModelCapabilities, type PiChatDefinition, type PiModelOverride } from '../server/engines/shared/piModelCapabilities';
-import { PI_AGENT_DIR, isPiEngine, resolveOllamaConnection } from '@cockpit/shared-utils';
+import { PI_AGENT_DIR, isPiEngine } from '@cockpit/shared-utils';
 import type { PiAgentConfig } from './piAgentLive';
+import { loadPiEngineConfig, ollamaThinkingControls } from './piThinkingLive';
 
 export interface PiResolvedModel {
   definition: PiChatDefinition;
@@ -103,16 +104,16 @@ export const resolvePiModel = (runtime: ModelRuntime, config: PiAgentConfig, id:
       const context = config.contextWindow ?? (validLimit(running?.context_length) ? running.context_length : configured);
       if (!validLimit(context)) throw error('effective num_ctx is unknown; model_info context_length alone is only a theoretical maximum');
       caps = { contextWindow: context, maxOutputTokens: null, input: capabilities.includes('vision') ? ['text', 'image'] : ['text'],
-        tools: true, thinking: capabilities.includes('thinking') ? 'optional' : 'none', defaultThinking: 'off',
-        compat: { maxTokensField: 'max_tokens', supportsStore: false, supportsDeveloperRole: false }, source: `${base}/api/show + /api/ps`, verifiedAt: 'runtime' };
+        tools: true, ...ollamaThinkingControls(info, capabilities.includes('thinking')),
+        compat: { maxTokensField: 'max_tokens', supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true }, source: `${base}/api/show + /api/ps`, verifiedAt: 'runtime' };
     }
     if (!caps && native) caps = { contextWindow: native.contextWindow, maxOutputTokens: native.maxTokens, input: native.input,
-      tools: true, thinking: native.reasoning ? 'optional' : 'none', defaultThinking: 'off',
+      tools: true, thinking: native.reasoning ? 'optional' : 'none', defaultThinking: native.reasoning ? 'high' : 'off',
       compat: native.api === 'openai-completions' ? native.compat ?? {} : {}, thinkingLevelMap: native.thinkingLevelMap,
       source: 'pi-coding-agent@1.4.0 model catalog', verifiedAt: '2026-11-02' };
     if (explicit) {
       if (!validLimit(explicit.contextWindow) || !validLimit(explicit.maxTokens) || (!Array.isArray(explicit.input) || !explicit.input.includes('text') || explicit.input.some((input) => !['text', 'image'].includes(input))) || typeof explicit.reasoning !== 'boolean') throw error('explicit definition needs contextWindow, maxTokens, input and reasoning');
-      caps = { ...(caps ?? { tools: true, defaultThinking: 'off' }), source: 'explicit models.json', verifiedAt: 'operator',
+      caps = { ...(caps ?? { tools: true, defaultThinking: explicit.reasoning ? 'high' : 'off' }), source: 'explicit models.json', verifiedAt: 'operator',
         contextWindow: explicit.contextWindow, maxOutputTokens: explicit.maxTokens, input: explicit.input, thinking: caps?.thinking === 'required' ? 'required' : explicit.reasoning ? 'optional' : 'none',
         compat: caps?.compat ?? {}, thinkingLevelMap: explicit.thinkingLevelMap ?? caps?.thinkingLevelMap };
     }
@@ -158,16 +159,7 @@ export const piChildSelection = (parent: PiAgentConfig, parentModel: string, req
     const model = qualified ? requested.slice(slash + 1) : requested;
     if (!isPiEngine(provider) || !model.trim()) throw new Error('Use a configured Pi provider/model, or a bare model ID');
     if (provider === parent.engine) return { config: parent, model };
-    if (provider === 'ollama') {
-      const connection = await resolveOllamaConnection();
-      return { config: { engine: provider, baseUrl: `${connection.baseUrl}/v1`, apiKey: connection.apiKey || 'ollama' }, model };
-    }
-    const { readEngineEndpoints } = await import('../server/engines/anthropicCompat');
-    const p = provider === 'deepseek' ? (await import('../server/engines/deepseek')).deepseekProvider
-      : provider === 'kimi' ? (await import('../server/engines/kimi')).kimiProvider : (await import('../server/engines/glm')).glmProvider;
-    const apiKey = await p.apiKey.read();
-    if (!apiKey) throw new Error(`No API key configured for ${provider}`);
-    return { config: { engine: provider, baseUrl: (await readEngineEndpoints(p)).openAiBaseUrl, apiKey, temperature: p.builtinTemperature }, model };
+    return { config: await Effect.runPromise(loadPiEngineConfig(provider)), model };
   },
   catch: (cause) => new AgentError({ provider: parent.engine, kind: 'protocol', cause }),
 });

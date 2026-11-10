@@ -14,6 +14,7 @@ import { openPiSessionForWrite } from './piSessionWriteLive';
 import type { PiModelOverride } from '../server/engines/shared/piModelCapabilities';
 import { resolvePiModel } from './piModelLive';
 import { makePiSubagentExtension } from './piSubagentLive';
+import { piThinkingOptions, resolvePiThinking } from './piThinkingLive';
 
 export interface PiAgentConfig {
   engine: PiEngine;
@@ -75,6 +76,9 @@ export const runPiAgent = (ctx: RunCtx, config: PiAgentConfig): Effect.Effect<vo
       await runtime.setRuntimeApiKey(config.engine, config.apiKey);
       const model = runtime.getModel(config.engine, modelId);
       if (!model) throw new Error(`Pi model unavailable: ${config.engine}/${modelId}`);
+      const previousThinking = manager.getBranch().findLast((entry) => entry.type === 'thinking_level_change');
+      const thinkingLevel = resolvePiThinking(await piThinkingOptions(model, resolved.capabilities), ctx.params.piThinkingLevel,
+        previousThinking?.type === 'thinking_level_change' ? previousThinking.thinkingLevel : undefined);
       if (ctx.images?.length && !model.input.includes('image')) throw new Error(`Model ${modelId} does not support images`);
       const settings = SettingsManager.inMemory({ compaction: { enabled: ctx.params.noHistory !== true }, retry: { enabled: true, maxRetries: 2 } });
       const subagents = await Effect.runPromise(makePiSubagentExtension(config, runtime, modelId, ctx.signal, manager.getSessionId(), manager.getSessionFile()!, resolved));
@@ -97,12 +101,16 @@ export const runPiAgent = (ctx: RunCtx, config: PiAgentConfig): Effect.Effect<vo
       const selection = manager.buildSessionContext().model;
       const created = await createAgentSession({ cwd, agentDir: PI_AGENT_DIR, modelRuntime: runtime, model,
         sessionManager: manager, settingsManager: settings, resourceLoader: resources,
-        thinkingLevel: resolved.capabilities.defaultThinking,
+        thinkingLevel,
         tools: ['read', 'write', 'edit', 'bash', 'grep', 'find', 'ls', 'subagent'],
         // The SDK erases tool schema generics at its registry boundary.
         customTools: [createBashToolDefinition(cwd, { spawnHook: (spawn) => ({ ...spawn, env: sanitizedSpawnEnv({ COCKPIT_RUN_ID: manager.getSessionId(), COCKPIT_CWD: cwd }, spawn.env) }) }) as unknown as ToolDefinition],
       });
       if (selection && (selection.provider !== model.provider || selection.modelId !== model.id)) await created.session.setModel(model);
+      created.session.setThinkingLevel(thinkingLevel);
+      // The SDK only records initial thinking metadata on resume when it is missing.
+      const recordedThinking = manager.getBranch().findLast((entry) => entry.type === 'thinking_level_change');
+      if (recordedThinking?.type !== 'thinking_level_change' || recordedThinking.thinkingLevel !== created.session.thinkingLevel) manager.appendThinkingLevelChange(created.session.thinkingLevel);
       return created;
     }), ({ session }) => Effect.sync(() => session.dispose()));
     yield* sdk(() => session.bindExtensions({}));

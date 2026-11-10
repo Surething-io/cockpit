@@ -208,6 +208,18 @@ maximum. Required thinking stays enabled and Kimi sampling fields are omitted.
 Parents and same-model children share the already resolved definition; selecting
 another model resolves that model independently.
 
+The chat header exposes each effective model's thinking controls. DeepSeek has
+Off/Low/High/Max; GLM-5.2 has Off/High/Max; GLM-5.3 has Low/High/Max without Off.
+Older GLM models use an Off/On control. Kimi effort models expose Low/High/Max;
+the legacy highspeed model is always On. Kimi's Off routing can select a different
+model, so Cockpit keeps the selected model in thinking mode. Ollama controls come
+from `/api/show` thinking metadata, with a boolean fallback for older servers.
+The effective SDK map (including explicit definitions) supplies the UI and run
+validation. A selection takes effect on the next run and is recorded in native
+`thinking_level_change` entries; follow-up runs and reopened chats restore it.
+New sessions default to High when the model supports it. Models without thinking
+support have no thinking control in the header.
+
 Unknown IDs fail with an actionable error. Configure an exact native entry in
 `$COCKPIT_HOME/pi/models.json` (actual limits must match your serving runtime):
 

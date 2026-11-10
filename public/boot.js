@@ -1,4 +1,4 @@
-// Runs before React hydrates (see app/layout.tsx <Script strategy="beforeInteractive">).
+// Runs from the initial HTML stream before hydration (see BootstrapScripts).
 // Four jobs:
 //   1. Redirect narrow viewports to the mobile route /m (before first paint).
 //   2. Apply the persisted theme class to <html> before first paint to avoid FOUC.

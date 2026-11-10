@@ -61,7 +61,7 @@ it('resolves every audited cloud model, including required thinking and service 
   expect((await resolveModel('kimi', 'k3')).definition.contextWindow).toBe(262144);
   expect((await resolveModel('kimi', 'k3-256k')).definition.contextWindow).toBe(262144);
   expect((await resolveModel('kimi', 'k3.1-pro')).definition.contextWindow).toBe(1048576);
-  expect((await resolveModel('glm', 'glm-5.3')).capabilities).toMatchObject({ thinking: 'required', defaultThinking: 'low' });
+  expect((await resolveModel('glm', 'glm-5.3')).capabilities).toMatchObject({ thinking: 'required', defaultThinking: 'high' });
   expect((await resolveModel('kimi', 'k3.1-pro')).definition).not.toHaveProperty('samplingParams');
 });
 it('rejects unknown IDs instead of guessing from the name or using 32K/4K defaults', async () => {

@@ -52,7 +52,9 @@ export const makePiSubagentExtension = (
             if (signal.aborted) return yield* Effect.fail(problem(new Error('Subagent cancelled')));
             if (!task.task?.trim() || task.task.length > 200000 || (task.instructions?.length ?? 0) > 200000) return yield* Effect.fail(problem(new Error('A nonempty task and bounded instructions are required')));
             if (task.tools?.some((tool) => !TOOLS.includes(tool))) return yield* Effect.fail(problem(new Error('Unsupported subagent tool')));
-            const selection = yield* piChildSelection(config, parentModel, task.model ?? `${ctx.model?.provider ?? config.engine}/${ctx.model?.id ?? parentModel}`);
+            const parentProvider = ctx.model?.provider ?? config.engine;
+            const parentModelId = ctx.model?.id ?? parentModel;
+            const selection = yield* piChildSelection(config, parentModel, task.model ?? `${parentProvider}/${parentModelId}`);
             const model = selection.model;
             const resolved = parentResolved && selection.config.engine === config.engine && model === parentModel
               ? parentResolved : yield* resolvePiModel(runtime, selection.config, model);
@@ -80,7 +82,9 @@ export const makePiSubagentExtension = (
               '--extension', join(root, 'bin', 'pi-subagent-provider.mjs'),
               '--extension', join(root, 'bin', 'pi-subagent-progress.mjs'), '--model', result.model,
               '--append-system-prompt', prompt, ...(task.tools?.length === 0 ? ['--no-tools'] : ['--tools', (task.tools ?? TOOLS).join(',')])];
-            args.push('--thinking', resolved.capabilities.thinking === 'required' ? resolved.capabilities.defaultThinking : !task.model && ctx.thinkingLevel ? ctx.thinkingLevel : resolved.capabilities.defaultThinking);
+            const inheritedThinking = selection.config.engine === parentProvider && model === parentModelId ? ctx.thinkingLevel : undefined;
+            args.push('--thinking', inheritedThinking && (inheritedThinking !== 'off' || resolved.capabilities.thinking !== 'required')
+              ? inheritedThinking : resolved.capabilities.defaultThinking);
             const finished = yield* runPiChildProcess(Effect.try({
               try: () => startPiChild(join(root, 'bin', 'pi-subagent-entry.mjs'), args, cwd, sanitizedSpawnEnv({
                 PI_CODING_AGENT_DIR: PI_AGENT_DIR, PI_OFFLINE: '1', COCKPIT_RUN_ID: parentRunId, COCKPIT_CWD: cwd,

@@ -30,6 +30,7 @@ export { useTabState } from './useTabState';
 // Application bootstrap providers
 // ============================================
 export { Providers } from './Providers';
+export { BootstrapScripts } from './BootstrapScripts';
 export { I18nProvider } from './I18nProvider';
 
 // ============================================

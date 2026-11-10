@@ -4,13 +4,7 @@ import { COCKPIT_DIR } from './paths';
 
 export const PI_AGENT_DIR = join(COCKPIT_DIR, 'pi');
 export const PI_SESSIONS_DIR = join(PI_AGENT_DIR, 'sessions');
-export const PI_ENGINES = ['ollama', 'deepseek', 'kimi', 'glm'] as const;
-export type PiEngine = typeof PI_ENGINES[number];
-
-/** Whether a provider uses the embedded Pi runtime. */
-export function isPiEngine(engine: string | undefined): engine is PiEngine {
-  return PI_ENGINES.some((candidate) => candidate === engine);
-}
+export { PI_ENGINES, isPiEngine, type PiEngine } from './piEngines';
 
 /** Match Pi's project-directory encoding without creating directories. */
 export function getPiSessionsDir(cwd: string): string {

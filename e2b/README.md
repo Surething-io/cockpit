@@ -20,7 +20,7 @@ npm run build-template
 
 The script in `template.mjs`:
 
-1. Builds a Docker image based on `node:20-slim`
+1. Builds a Docker image based on `node:22-slim` with 2 GB of sandbox memory
 2. Globally installs the latest `@surething/cockpit` from npm
 3. Clones the cockpit repo into `/home/user/demo-project`
 4. Sets the start command to `cock /home/user/demo-project --no-open`

@@ -2,7 +2,7 @@ import { Template, defaultBuildLogger, waitForPort } from 'e2b';
 
 const template = Template()
   .fromDockerfile(`
-FROM node:20-slim
+FROM node:22-slim
 
 RUN apt-get update && apt-get install -y \\
   git bash curl procps build-essential python3 \\
@@ -23,6 +23,7 @@ WORKDIR /home/user/demo-project
   .setStartCmd('cockpit /home/user/demo-project --no-open', waitForPort(3457));
 
 const buildInfo = await Template.build(template, 'cockpit-demo', {
+  memoryMB: 2048,
   skipCache: true,
   onBuildLogs: defaultBuildLogger(),
 });

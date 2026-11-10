@@ -17,7 +17,8 @@ import { FSError, NotFoundError, ValidationError, type AppError } from '@cockpit
 import { SnapshotService } from '@cockpit/effect-services';
 import type { AcceptedTask, AcceptedTaskFile, AcceptedTaskSummary, ReviewTurn } from '../shared/review';
 import type { Decision, DecisionContent, DecisionSource } from '../shared/types';
-import { createDecision, parseContent, parseSource } from './store';
+import { createDecision, listDecisions, parseContent, parseSource, recordReview } from './store';
+import { findTouched } from './derived';
 import { projectDir } from './paths';
 import { readGitInfo } from './projectIdentity';
 import { computeReview, TASK_CATEGORIES, toToplevelPath } from './review';
@@ -80,12 +81,18 @@ export interface KeptDecision {
   files: string[];
 }
 
+/** The user's answer for one existing decision the change touched (§4.4, §7.2). */
+export type DecisionVerdict =
+  | { decisionId: string; verdict: 'holds' | 'unrelated' }
+  | { decisionId: string; verdict: 'superseded'; replacement: DecisionContent };
+
 export interface AcceptInput {
   cwd: string;
   sessionId: string;
   goal: string;
   turns: ReviewTurn[];
   decisions?: KeptDecision[];
+  verdicts?: DecisionVerdict[];
 }
 
 /** Recompute the review for the given turns and freeze it. */
@@ -116,6 +123,21 @@ export const acceptTask = (
       ...(blobs.get(f.path) ? { blob: blobs.get(f.path) } : {}),
     }));
     const head = info ? yield* projectHead(input.cwd) : undefined;
+
+    // Every existing decision whose files this task changed must have an answer
+    // before anything is written — the safety net is not skippable (§4.4).
+    // (Neighbor-only touches are enforced by the review UI; they need the code index.)
+    const verdicts = new Map((input.verdicts ?? []).map((v) => [v.decisionId, v]));
+    const existing = yield* listDecisions(projectId);
+    const touched = yield* findTouched(projectId, input.cwd, existing, new Set(files.map((f) => f.path)), new Set());
+    const unanswered = touched.filter((t) => t.reason === 'direct' && !verdicts.has(t.decision.id));
+    if (unanswered.length > 0) {
+      return yield* Effect.fail(new ValidationError({ field: 'verdicts', reason: `missing for ${unanswered.map((t) => t.decision.id).join(', ')}` }));
+    }
+    const known = new Map(existing.map((d) => [d.id, d]));
+    for (const v of verdicts.values()) {
+      if (!known.has(v.decisionId)) return yield* Effect.fail(new NotFoundError({ resource: 'decision', id: v.decisionId }));
+    }
 
     const task: AcceptedTask = {
       id: `task-${Date.now().toString(36)}-${randomUUID().replace(/-/g, '').slice(0, 8)}`,
@@ -154,8 +176,48 @@ export const acceptTask = (
         origin: { sessionId: input.sessionId, taskId: task.id, ...(head ? { head } : {}) },
       }),
     );
-    return { task, decisions };
+
+    // Verdicts: a review entry for holds / unrelated; a replacement decision for superseded
+    // (createDecision marks the old one superseded and links both ways).
+    const replacements: Decision[] = [];
+    for (const v of verdicts.values()) {
+      if (v.verdict === 'superseded') {
+        const old = known.get(v.decisionId)!;
+        replacements.push(
+          yield* createDecision(projectId, {
+            content: v.replacement,
+            source: { kind: 'manual' },
+            links: old.links.map((l) => {
+              const now = files.find((f) => f.path === l.path);
+              return { path: l.path, ...(l.symbol ? { symbol: l.symbol } : {}), ...(now?.blob ? { blob: now.blob } : {}) };
+            }),
+            origin: { sessionId: input.sessionId, taskId: task.id, ...(head ? { head } : {}) },
+            supersedes: v.decisionId,
+          }),
+        );
+      } else {
+        yield* recordReview(projectId, v.decisionId, task.id, v.verdict);
+      }
+    }
+    return { task, decisions: [...decisions, ...replacements] };
   });
+
+/** Validate verdicts from a request body. */
+export function parseVerdicts(raw: unknown): DecisionVerdict[] | ValidationError {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || raw.length > 500) return new ValidationError({ field: 'verdicts', reason: 'must be an array' });
+  const out: DecisionVerdict[] = [];
+  for (const v of raw as Array<Record<string, unknown>>) {
+    if (!v || typeof v.decisionId !== 'string') return new ValidationError({ field: 'verdicts.decisionId', reason: 'missing' });
+    if (v.verdict === 'holds' || v.verdict === 'unrelated') out.push({ decisionId: v.decisionId, verdict: v.verdict });
+    else if (v.verdict === 'superseded') {
+      const replacement = parseContent(v.replacement, false);
+      if (replacement instanceof ValidationError) return replacement;
+      out.push({ decisionId: v.decisionId, verdict: 'superseded', replacement });
+    } else return new ValidationError({ field: 'verdicts.verdict', reason: 'holds | unrelated | superseded' });
+  }
+  return out;
+}
 
 /** Validate kept decisions from a request body. */
 export function parseKeptDecisions(raw: unknown): KeptDecision[] | ValidationError {

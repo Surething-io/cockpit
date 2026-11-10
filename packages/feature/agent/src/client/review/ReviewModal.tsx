@@ -3,7 +3,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Effect } from 'effect';
-import { ChevronDown, ChevronRight, FileText, Scale, ShieldCheck, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, Network, Scale, ShieldCheck, X } from 'lucide-react';
 import { useEffectQuery } from '@cockpit/effect-react';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { Portal, blurActiveElement, toast } from '@cockpit/shared-ui';
@@ -26,6 +26,9 @@ import type { ChatMessage } from '../types';
 import { loadVerification } from '../effect/verificationClient';
 import { extractionMessages, rangeEvidence } from './reviewTurns';
 import { loadExtraction } from '../effect/extractionClient';
+import { loadImpact } from '../effect/impactClient';
+import { ImpactView, TouchedDecisions, verdictComplete, verdictPayload, type VerdictDraft } from './ReviewImpact';
+import { STATE_STYLE } from './reviewStyles';
 import {
   DecisionsView,
   ExtractionModelPicker,
@@ -64,6 +67,8 @@ interface ReviewModalProps {
   mode: ReviewModalMode;
   onClose: () => void;
   onAccepted?: (task: AcceptedTask) => void;
+  /** Put text into the chat input (never sends). */
+  onFillInput?: (text: string) => void;
 }
 
 const CATEGORY_ORDER: FileCategory[] = ['task', 'mixed', 'task-maybe', 'non-agent', 'other-session'];
@@ -78,18 +83,6 @@ const CATEGORY_STYLE: Record<FileCategory, string> = {
 
 const EMPTY_TOOL_IDS: string[] = [];
 
-/** Colour of a verification state badge. */
-export const STATE_STYLE: Record<VerificationState, string> = {
-  verified: 'text-green-11',
-  failed: 'text-red-11',
-  'needs-rerun': 'text-amber-11',
-  'no-tests': 'text-amber-11',
-  unknown: 'text-muted-foreground',
-  running: 'text-muted-foreground',
-  unverified: 'text-amber-11',
-  claimed: 'text-red-11',
-};
-
 const STATE_DEFAULT: Record<VerificationState, string> = {
   verified: 'Verified',
   failed: 'Failed',
@@ -102,7 +95,7 @@ const STATE_DEFAULT: Record<VerificationState, string> = {
 };
 const KIND_DEFAULT = { test: 'Tests', typecheck: 'Type check', lint: 'Lint', custom: 'Custom check' } as const;
 
-export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onClose, onAccepted }: ReviewModalProps) {
+export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onClose, onAccepted, onFillInput }: ReviewModalProps) {
   const { t } = useTranslation();
   const live = mode.kind === 'live';
 
@@ -214,6 +207,25 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
   const addManual = useCallback((d: KeptDraft) => setManual((m) => [...m, d]), []);
   const removeManual = useCallback((key: string) => setManual((m) => m.filter((x) => x.key !== key)), []);
 
+  // ── Decision check + impact (§6, §7.2) ──
+  const impactQ = useEffectQuery(
+    evidence ? loadImpact(cwd, evidence.orderedToolIds, evidence.runs, evidence.claimedPass) : Effect.succeed(null),
+    [cwd, evidence, checksTick],
+  );
+  const impact = impactQ.status === 'success' ? impactQ.data : null;
+  const touched = impact?.touched ?? [];
+  const [verdicts, setVerdicts] = useState<Map<string, VerdictDraft>>(new Map());
+  const setVerdict = useCallback((id: string, v: VerdictDraft) => setVerdicts((m) => new Map(m).set(id, v)), []);
+  const unanswered = touched.filter((x) => !verdictComplete(verdicts.get(x.decision.id))).length;
+  const gapCount = impact ? impact.totals.interfaceGaps + impact.tests.filter((x) => x.state !== 'verified').length : 0;
+  const fillAndClose = useCallback(
+    (text: string) => {
+      onFillInput?.(text);
+      onClose();
+    },
+    [onFillInput, onClose],
+  );
+
   const stateLabel = useCallback((st: VerificationState) => t(`decisions.review.state.${st}`, { defaultValue: STATE_DEFAULT[st] }), [t]);
   const kindLabel = useCallback((k: keyof typeof KIND_DEFAULT) => t(`decisions.review.kind.${k}`, { defaultValue: KIND_DEFAULT[k] }), [t]);
 
@@ -227,7 +239,7 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
   );
 
   const [activePath, setActivePath] = useState<string | null>(null);
-  type View = 'file' | 'verification' | 'summary' | 'decisions';
+  type View = 'file' | 'verification' | 'summary' | 'decisions' | 'impact';
   const [view, setView] = useState<View>(live ? 'summary' : 'file');
   const showVerification = view === 'verification';
   const setShowVerification = useCallback((v: boolean) => setView(v ? 'verification' : 'file'), []);
@@ -255,7 +267,11 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
       ...(extraction?.candidates.filter((c) => kept.has(c.key)) ?? []),
       ...manual,
     ].map(({ content, source, files }) => ({ content, source, files }));
-    const exit = await BrowserRuntime.runPromiseExit(acceptReview(cwd, sessionId, goal, selected, keptDecisions));
+    const verdictList = touched.flatMap((x) => {
+      const v = verdicts.get(x.decision.id);
+      return v ? [verdictPayload(x.decision.id, v)] : [];
+    });
+    const exit = await BrowserRuntime.runPromiseExit(acceptReview(cwd, sessionId, goal, selected, keptDecisions, verdictList));
     setAccepting(false);
     if (exit._tag !== 'Success') {
       toast(t('decisions.review.acceptFailed', { defaultValue: 'Could not accept this review' }), 'error');
@@ -264,7 +280,7 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
     toast(t('decisions.review.accepted', { defaultValue: 'Review accepted' }), 'success');
     onAccepted?.(exit.value.task);
     onClose();
-  }, [live, selected, cwd, sessionId, goal, extraction, kept, manual, onAccepted, onClose, t]);
+  }, [live, selected, cwd, sessionId, goal, extraction, kept, manual, touched, verdicts, onAccepted, onClose, t]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -362,9 +378,20 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
                     <Scale className="h-3.5 w-3.5" />
                     {t('decisions.review.decisions', { defaultValue: 'Decisions' })}
                     <span className="ml-auto font-normal text-foreground-subtle">
+                      {unanswered > 0 && <span className="mr-1 text-amber-11">⚠ {unanswered}</span>}
                       {extraction
                         ? t('decisions.review.keptCount', { defaultValue: '{{kept}} of {{count}} kept', kept: kept.size + manual.length, count: extraction.candidates.length + manual.length })
                         : ''}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setView('impact')}
+                    className={`mt-1 flex w-full items-center gap-1 rounded px-1 text-left font-medium ${view === 'impact' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-hover'}`}
+                  >
+                    <Network className="h-3.5 w-3.5" />
+                    {t('decisions.review.impact', { defaultValue: 'Impact & gaps' })}
+                    <span className="ml-auto font-normal text-foreground-subtle">
+                      {impactQ.status === 'loading' ? t('common.loading', { defaultValue: 'Loading…' }) : gapCount > 0 ? gapCount : ''}
                     </span>
                   </button>
                 </div>
@@ -445,7 +472,21 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
 
             {/* Right: verification details, or the diff of the selected file */}
             <div className="flex min-w-0 flex-1 flex-col">
-              {view === 'summary' || view === 'decisions' ? (
+              {view === 'impact' ? (
+                impact ? (
+                  <ImpactView impact={impact} onFillInput={onFillInput ? fillAndClose : undefined} onOpenFile={openFile} />
+                ) : (
+                  <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                    {impactQ.status === 'error'
+                      ? t('decisions.review.loadFailed', { defaultValue: 'Could not load the review' })
+                      : t('common.loading', { defaultValue: 'Loading…' })}
+                  </div>
+                )
+              ) : view === 'decisions' && touched.length > 0 && extractionQ.status !== 'success' ? (
+                <div className="flex-1 overflow-y-auto p-3 text-xs">
+                  <TouchedDecisions touched={touched} verdicts={verdicts} onVerdict={setVerdict} />
+                </div>
+              ) : view === 'summary' || view === 'decisions' ? (
                 !choice.model ? (
                   <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
                     {t('decisions.review.pickModel', { defaultValue: 'Choose a model above to generate the summary and candidate decisions.' })}
@@ -467,7 +508,14 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
                 ) : extraction && view === 'summary' ? (
                   <SummaryView result={extraction} onOpenFile={openFile} onOpenRun={openVerification} />
                 ) : extraction ? (
-                  <DecisionsView candidates={extraction.candidates} kept={kept} onToggle={toggleKept} manual={manual} onAddManual={addManual} onRemoveManual={removeManual} onOpenFile={openFile} />
+                  <div className="flex flex-1 flex-col overflow-y-auto">
+                    {touched.length > 0 && (
+                      <div className="p-3 pb-0 text-xs">
+                        <TouchedDecisions touched={touched} verdicts={verdicts} onVerdict={setVerdict} />
+                      </div>
+                    )}
+                    <DecisionsView candidates={extraction.candidates} kept={kept} onToggle={toggleKept} manual={manual} onAddManual={addManual} onRemoveManual={removeManual} onOpenFile={openFile} />
+                  </div>
                 ) : null
               ) : showVerification ? (
                 <div className="flex-1 overflow-y-auto p-3 text-xs">
@@ -550,7 +598,8 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
               </span>
               <button
                 onClick={() => void accept()}
-                disabled={accepting || !review || review.empty || selected.length === 0}
+                disabled={accepting || !review || review.empty || selected.length === 0 || impactQ.status === 'loading' || unanswered > 0}
+                title={unanswered > 0 ? t('decisions.review.answerFirst', { defaultValue: 'Answer every touched decision first' }) : undefined}
                 className="rounded bg-brand px-3 py-1 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {t('decisions.review.accept', { defaultValue: 'Accept this range' })}

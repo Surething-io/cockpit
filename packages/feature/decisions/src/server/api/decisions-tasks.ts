@@ -3,13 +3,15 @@
  *
  * GET  ?cwd=&sessionId=   → { tasks: AcceptedTaskSummary[] } (newest first)
  * GET  ?cwd=&id=          → { task: AcceptedTask }  (read-only re-view)
- * POST { cwd, sessionId, goal, turns, decisions? } → { task, decisions }  (accept: recompute + freeze, then write kept decisions)
+ * POST { cwd, sessionId, goal, turns, decisions?, verdicts? } → { task, decisions }
+ *      accept: recompute + freeze; every directly touched decision needs a verdict;
+ *      then write kept decisions, review entries and replacements
  */
 import { Effect } from 'effect';
 import { handler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import { ValidationError } from '@cockpit/effect-core';
 import { requireProject } from '../projectIdentity';
-import { acceptTask, listSessionTasks, parseKeptDecisions, parseTurns, readTask } from '../tasks';
+import { acceptTask, listSessionTasks, parseKeptDecisions, parseTurns, parseVerdicts, readTask } from '../tasks';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,7 +43,9 @@ export const POST = handler((req) =>
     if (!project.enabled) return yield* Effect.fail(new ValidationError({ field: 'decisionMode', reason: 'disabled for this project' }));
     const decisions = parseKeptDecisions(body.decisions);
     if (decisions instanceof ValidationError) return yield* Effect.fail(decisions);
+    const verdicts = parseVerdicts(body.verdicts);
+    if (verdicts instanceof ValidationError) return yield* Effect.fail(verdicts);
     const goal = typeof body.goal === 'string' ? body.goal.trim().slice(0, 500) : '';
-    return ok(yield* acceptTask(project.projectId, { cwd: body.cwd, sessionId: body.sessionId, goal, turns, decisions }));
+    return ok(yield* acceptTask(project.projectId, { cwd: body.cwd, sessionId: body.sessionId, goal, turns, decisions, verdicts }));
   }),
 );

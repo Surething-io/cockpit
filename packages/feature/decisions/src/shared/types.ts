@@ -93,7 +93,16 @@ export interface DecisionStatusEvent {
   supersededBy?: string;
 }
 
-export type DecisionEvent = DecisionCreatedEvent | DecisionEditedEvent | DecisionStatusEvent;
+/** A review touched the decision's code and the user confirmed it (§7.2). */
+export interface DecisionReviewedEvent {
+  type: 'reviewed';
+  at: number;
+  taskId: string;
+  /** holds = still valid for this change; unrelated = the change does not bear on it. */
+  verdict: 'holds' | 'unrelated';
+}
+
+export type DecisionEvent = DecisionCreatedEvent | DecisionEditedEvent | DecisionStatusEvent | DecisionReviewedEvent;
 
 export interface Decision extends DecisionContent {
   id: string;
@@ -108,6 +117,8 @@ export interface Decision extends DecisionContent {
   updatedAt: number;
   /** Number of `edited` events — non-zero shows the "edited" badge. */
   revisions: number;
+  /** Latest review verdict, if any review touched it. */
+  lastReview?: { at: number; taskId: string; verdict: 'holds' | 'unrelated' };
 }
 
 /** Fold an event log into the current state. Returns null for an empty / headless log. */
@@ -137,6 +148,9 @@ export function foldDecision(id: string, events: readonly DecisionEvent[]): Deci
       d.status = ev.status;
       d.statusReason = ev.reason;
       d.supersededBy = ev.status === 'superseded' ? ev.supersededBy : undefined;
+    } else if (ev.type === 'reviewed') {
+      d.lastReview = { at: ev.at, taskId: ev.taskId, verdict: ev.verdict };
+      continue; // a review is not a change to the decision itself
     } else {
       // A second `created` can only come from a corrupted log; ignore it rather
       // than silently replacing the original rationale.
@@ -146,6 +160,12 @@ export function foldDecision(id: string, events: readonly DecisionEvent[]): Deci
   }
   return d;
 }
+
+/**
+ * Situational state, derived at read time from git and the working tree (§7.1, §10).
+ * Never stored. `superseded` / `retired` come from the lifecycle.
+ */
+export type DerivedDecisionState = 'applicable' | 'other-branch' | 'not-landed' | 'link-lost' | 'superseded' | 'retired';
 
 /** How a checkout maps to a decision project. */
 export type ProjectKind = 'git' | 'path';

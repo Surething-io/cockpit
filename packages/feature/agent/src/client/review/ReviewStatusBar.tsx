@@ -8,6 +8,7 @@ import { loadReview, loadSessionTasks, useDecisionMode, type AcceptedTaskSummary
 import type { ChatMessage } from '../types';
 import { buildReviewTurns, defaultRangeStart, rangeEvidence } from './reviewTurns';
 import { loadVerification } from '../effect/verificationClient';
+import { loadImpact } from '../effect/impactClient';
 import { ReviewModal, type ReviewModalMode } from './ReviewModal';
 
 interface ReviewStatusBarProps {
@@ -19,6 +20,8 @@ interface ReviewStatusBarProps {
   /** Session engine + its current model: default for the extraction model (§9). */
   engine?: string;
   sessionModel?: string;
+  /** Put text into the chat input (never sends). */
+  onFillInput?: (text: string) => void;
 }
 
 /**
@@ -26,7 +29,7 @@ interface ReviewStatusBarProps {
  * what changed since the last accepted review, and the way into the review.
  * Renders nothing while decision mode is off or the range has no file changes.
  */
-export const ReviewStatusBar = memo(function ReviewStatusBar({ cwd, sessionId, messages, running, hasMoreHistory, engine, sessionModel }: ReviewStatusBarProps) {
+export const ReviewStatusBar = memo(function ReviewStatusBar({ cwd, sessionId, messages, running, hasMoreHistory, engine, sessionModel, onFillInput }: ReviewStatusBarProps) {
   const { t } = useTranslation();
   const { enabled, resolution } = useDecisionMode(cwd);
   const enabledAt = resolution?.status === 'resolved' ? resolution.enabledAt : undefined;
@@ -57,6 +60,7 @@ export const ReviewStatusBar = memo(function ReviewStatusBar({ cwd, sessionId, m
   const [fileCount, setFileCount] = useState(0);
   // Verification summary of the same range: kinds verified / kinds that matter.
   const [verified, setVerified] = useState<{ ok: number; total: number }>({ ok: 0, total: 0 });
+  const [touchedCount, setTouchedCount] = useState(0);
   // Read through a ref so a streamed token does not restart the queries; they
   // re-run when the range's tool calls change or a run ends.
   const messagesRef = useRef(messages);
@@ -66,6 +70,7 @@ export const ReviewStatusBar = memo(function ReviewStatusBar({ cwd, sessionId, m
     if (!toolKey) {
       setFileCount(0);
       setVerified({ ok: 0, total: 0 });
+      setTouchedCount(0);
       return;
     }
     let cancelled = false;
@@ -79,6 +84,9 @@ export const ReviewStatusBar = memo(function ReviewStatusBar({ cwd, sessionId, m
       if (cancelled || exit._tag !== 'Success') return;
       const kinds = exit.value.kinds;
       setVerified({ ok: kinds.filter((k) => k.state === 'verified').length, total: kinds.length });
+    });
+    void BrowserRuntime.runPromiseExit(loadImpact(cwd, ev.orderedToolIds, [], false, true)).then((exit) => {
+      if (!cancelled && exit._tag === 'Success') setTouchedCount(exit.value.touched.length);
     });
     return () => {
       cancelled = true;
@@ -142,6 +150,11 @@ export const ReviewStatusBar = memo(function ReviewStatusBar({ cwd, sessionId, m
               })}
               {verified.total > 0 &&
                 ` · ${t('decisions.review.verifiedCount', { defaultValue: 'verification {{ok}}/{{total}}', ok: verified.ok, total: verified.total })}`}
+              {touchedCount > 0 && (
+                <span className="text-amber-11">
+                  {` · ⚠ ${t('decisions.review.touchedCount', { defaultValue: 'touches {{count}} existing decisions', count: touchedCount })}`}
+                </span>
+              )}
               {hasMoreHistory && start === 0 && ` ${t('decisions.review.loadedOnly', { defaultValue: '(loaded turns only)' })}`}
             </span>
             <button onClick={openReview} className="shrink-0 rounded border border-border px-2 py-0.5 text-foreground hover:bg-hover">
@@ -163,7 +176,7 @@ export const ReviewStatusBar = memo(function ReviewStatusBar({ cwd, sessionId, m
           </button>
         )}
       </div>
-      {modal && <ReviewModal cwd={cwd} sessionId={sessionId} mode={modal} onClose={onModalClose} onAccepted={onAccepted} />}
+      {modal && <ReviewModal cwd={cwd} sessionId={sessionId} mode={modal} onClose={onModalClose} onAccepted={onAccepted} onFillInput={onFillInput} />}
     </>
   );
 });

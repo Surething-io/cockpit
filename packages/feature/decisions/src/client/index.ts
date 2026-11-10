@@ -4,6 +4,7 @@
 export type * from '../shared/types';
 export type * from '../shared/review';
 export type * from '../shared/verification';
+export type * from '../shared/impact';
 export type * from '../shared/extraction';
 export { LOW_END_MODEL } from '../shared/extraction';
 export { useDecisionMode, type DecisionModeState } from './useDecisionMode';

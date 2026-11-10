@@ -275,6 +275,17 @@ export const editDecision = (
     return yield* readDecision(projectId, decisionId);
   });
 
+/** Record a review verdict on a decision (append-only; does not count as an edit). */
+export const recordReview = (
+  projectId: string,
+  decisionId: string,
+  taskId: string,
+  verdict: 'holds' | 'unrelated',
+): Effect.Effect<void, FSError | NotFoundError | ValidationError> =>
+  readDecision(projectId, decisionId).pipe(
+    Effect.flatMap(() => appendEvent(projectId, decisionId, { type: 'reviewed', at: Date.now(), taskId, verdict })),
+  );
+
 /**
  * Retire a decision (its subject no longer exists; reason required) or bring a
  * retired one back. Superseding goes through createDecision so it always has a

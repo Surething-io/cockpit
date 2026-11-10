@@ -299,6 +299,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     engine === 'deepseek' || engine === 'kimi' || engine === 'glm' ? engine : null;
   const engineModel =
     apiKeyEngine === 'kimi' ? kimiModel : apiKeyEngine === 'glm' ? glmModel : deepseekModel;
+  // Decision-mode review fills the composer and never sends (docs/DECISION_MODE.md §4.2).
+  const fillDraft = useCallback((text: string) => setDraft((prev) => (prev.trim() ? `${prev}\n\n${text}` : text)), []);
   // The session's current model, as the default for decision-mode extraction (§9).
   const reviewSessionModel = isCodexEngine ? effectiveCodexModel
     : engine === 'ollama' ? ollamaModel
@@ -1008,6 +1010,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           hasMoreHistory={hasMoreHistory}
           engine={engine ?? 'claude'}
           sessionModel={reviewSessionModel}
+          onFillInput={fillDraft}
         />
 
         {/* Input. In side-by-side the focused pane portals its composer into a

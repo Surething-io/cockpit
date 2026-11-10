@@ -51,7 +51,8 @@ export const acceptReview = (
   goal: string,
   turns: ReadonlyArray<ReviewTurn>,
   decisions: ReadonlyArray<{ content: DecisionContent; source: DecisionSource; files: string[] }> = [],
-): Effect.Effect<{ task: AcceptedTask; decisions: Decision[] }, AppError> => postJson('/api/decisions/tasks', { cwd, sessionId, goal, turns, decisions });
+  verdicts: ReadonlyArray<{ decisionId: string; verdict: 'holds' | 'unrelated' } | { decisionId: string; verdict: 'superseded'; replacement: DecisionContent }> = [],
+): Effect.Effect<{ task: AcceptedTask; decisions: Decision[] }, AppError> => postJson('/api/decisions/tasks', { cwd, sessionId, goal, turns, decisions, verdicts });
 
 /** Correct check detection for one command in this project (§5). */
 export const setCheckOverride = (cwd: string, command: string, isCheck: boolean): Effect.Effect<{ include: string[]; exclude: string[] }, AppError> =>

@@ -19,6 +19,7 @@ import { formatRelativeTime } from './index';
 import { toast, confirm } from '@cockpit/shared-ui';
 import type { FileEditorHandle } from './index';
 import { useViMode } from '@cockpit/shared-ui';
+import { FileDecisionsBanner, useFileDecisions } from './FileDecisions';
 
 // Re-export utilities used by other modules
 export { getHighlighter, getLanguageFromPath } from '@cockpit/shared-ui';
@@ -129,6 +130,12 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   onContentSearch,
 }, ref) {
   const { t } = useTranslation();
+
+  // ========== Decision mode: decisions linked to this file (docs/DECISION_MODE.md §8.1) ==========
+  const fileDecisions = useFileDecisions(cwd, filePath, !!cwd && enableComments && !editable);
+  const decisionLines = useMemo(() => new Set(fileDecisions.items.flatMap((x) => x.lines)), [fileDecisions.items]);
+  const [decisionFocus, setDecisionFocus] = useState<{ line: number; tick: number } | null>(null);
+  const handleDecisionMarkerClick = useCallback((line: number) => setDecisionFocus({ line, tick: Date.now() }), []);
 
   // ========== Edit mode state ==========
   const editContentRef = useRef(content); // ref: no re-render, only read during save/highlight
@@ -990,6 +997,10 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
         </div>
       )}
 
+      {!editable && cwd && (
+        <FileDecisionsBanner cwd={cwd} items={fileDecisions.items} onChanged={fileDecisions.refresh} focusLine={decisionFocus} />
+      )}
+
       {/* ========== Edit mode: contentEditable ========== */}
       {editable ? (
         <div ref={editScrollRef} className="flex-1 overflow-auto bg-card">
@@ -1084,6 +1095,8 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
                   showLineNumbers={showLineNumbers}
                   lineNumChars={lineNumChars}
                   commentsEnabled={commentsEnabled}
+                  hasDecision={decisionLines.has(lineNum)}
+                  onDecisionClick={handleDecisionMarkerClick}
                   virtualItemSize={virtualItem.size}
                   virtualItemStart={virtualItem.start}
                   onCommentBubbleClick={handleCommentBubbleClick}

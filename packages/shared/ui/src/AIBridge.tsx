@@ -24,6 +24,11 @@ export interface AIBridge {
   sendMessage: (message: string) => void;
   /** Whether the host is currently streaming an AI response. */
   isLoading: boolean;
+  /**
+   * Put text into the active chat's input WITHOUT sending — the user reviews
+   * and sends. Absent when no chat registered a composer.
+   */
+  fillInput?: (text: string) => void;
 }
 
 const AIBridgeContext = createContext<AIBridge | null>(null);

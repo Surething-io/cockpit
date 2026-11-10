@@ -617,12 +617,12 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
 
     chatContext.registerChat((message: string) => {
       handleSendRef.current?.(message);
-    }, tabId);
+    }, tabId, fillDraft);
 
     return () => {
       chatContext.unregisterChat(tabId);
     };
-  }, [tabId, chatContext]);
+  }, [tabId, chatContext, fillDraft]);
 
   // Claim the destination for externally-routed messages (CodeViewer "send to
   // AI", comments, …). Gated on isFocused, not isActive: in side-by-side both

@@ -78,7 +78,7 @@ relationship.
 ```
 feature-workspace  ──→  agent, console, explorer, skills
 feature-agent      ──→  feature-comments, feature-decisions, feature-explorer
-feature-explorer   ──→  feature-comments
+feature-explorer   ──→  feature-comments, feature-decisions
 feature-skills     ──→  feature-explorer
 feature-comments   ──→  (none)
 feature-console    ──→  (none)

@@ -24,8 +24,9 @@ interface ChatContextType {
   sendToTab: (tabId: string, message: string) => boolean;
   // Whether the current Chat is loading (streaming response)
   isLoading: boolean;
-  // Register the Chat's sendMessage method (called by Chat component)
-  registerChat: (sendFn: (message: string) => void, tabId: string) => void;
+  // Register the Chat's sendMessage method (called by Chat component), and
+  // optionally its composer filler (put text in the input without sending).
+  registerChat: (sendFn: (message: string) => void, tabId: string, fillFn?: (text: string) => void) => void;
   // Unregister a Chat
   unregisterChat: (tabId: string) => void;
   // Set the tab that externally-routed messages go to (the FOCUSED pane in
@@ -44,6 +45,7 @@ const ChatContext = createContext<ChatContextType | null>(null);
 export function ChatProvider({ children }: { children: ReactNode }) {
   // Use ref to store senders, avoiding infinite loops from state updates
   const chatSendersRef = useRef<Map<string, (message: string) => void>>(new Map());
+  const chatFillersRef = useRef<Map<string, (text: string) => void>>(new Map());
   // Currently active Tab ID
   const activeTabIdRef = useRef<string | null>(null);
   // Per-tab loading, reduced to one boolean for consumers. State (not a ref)
@@ -61,13 +63,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Register Chat's sendMessage method (does not trigger re-render)
-  const registerChat = useCallback((sendFn: (message: string) => void, tabId: string) => {
+  const registerChat = useCallback((sendFn: (message: string) => void, tabId: string, fillFn?: (text: string) => void) => {
     chatSendersRef.current.set(tabId, sendFn);
+    if (fillFn) chatFillersRef.current.set(tabId, fillFn);
   }, []);
 
   // Unregister Chat (does not trigger re-render)
   const unregisterChat = useCallback((tabId: string) => {
     chatSendersRef.current.delete(tabId);
+    chatFillersRef.current.delete(tabId);
     // A tab that goes away while streaming would otherwise pin isLoading true
     // forever — there is no longer anyone to report it false.
     setLoadingTabIds((prev) => {
@@ -98,6 +102,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Fill the active Chat's input without sending (decision-mode "bring into chat").
+  const fillInput = useCallback((text: string) => {
+    const activeTabId = activeTabIdRef.current;
+    const filler = activeTabId ? chatFillersRef.current.get(activeTabId) : undefined;
+    if (filler) filler(text);
+    else console.warn('No chat composer registered for the active tab');
+  }, []);
+
   // Send a message to a specific Chat by tab id (see the interface comment)
   const sendToTab = useCallback((tabId: string, message: string) => {
     const sender = chatSendersRef.current.get(tabId);
@@ -126,7 +138,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const aiBridge = useMemo<AIBridge>(() => ({
     sendMessage,
     isLoading,
-  }), [sendMessage, isLoading]);
+    fillInput,
+  }), [sendMessage, isLoading, fillInput]);
 
   return (
     <ChatContext.Provider value={contextValue}>

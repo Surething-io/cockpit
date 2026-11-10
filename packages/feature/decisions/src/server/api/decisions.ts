@@ -1,7 +1,7 @@
 /**
  * /api/decisions — decision records of the project a cwd belongs to.
  *
- * GET   ?cwd=[&id=]                       → { decisions } | { decision, events } (one, with history)
+ * GET   ?cwd=[&id=][&states=1]            → { decisions, states? } | { decision, events } (one, with history)
  * POST  { cwd, content, source, links?, origin?, supersedes? } → { decision }
  * PATCH { cwd, id, content?, links? }     → { decision }  (edit, recorded as a revision)
  * PATCH { cwd, id, status, reason? }      → { decision }  (retire / reactivate)
@@ -15,6 +15,7 @@ import { handler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import { ValidationError } from '@cockpit/effect-core';
 import { foldDecision } from '../../shared/types';
 import { requireProject } from '../projectIdentity';
+import { deriveAll } from '../derived';
 import {
   createDecision,
   editDecision,
@@ -54,7 +55,10 @@ export const GET = handler((req) =>
       const events = yield* readEvents(project.projectId, id);
       return ok({ decision: foldDecision(id, events), events });
     }
-    return ok({ decisions: yield* listDecisions(project.projectId) });
+    const decisions = yield* listDecisions(project.projectId);
+    // Derived state needs git; only computed when a view asks for it.
+    if (sp.get('states') === '1') return ok({ decisions, states: yield* deriveAll(project.projectId, cwd, decisions) });
+    return ok({ decisions });
   }),
 );
 

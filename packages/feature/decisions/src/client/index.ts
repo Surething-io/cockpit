@@ -9,4 +9,6 @@ export type * from '../shared/extraction';
 export { LOW_END_MODEL } from '../shared/extraction';
 export { useDecisionMode, type DecisionModeState } from './useDecisionMode';
 export { DecisionModeToggle } from './DecisionModeToggle';
-export { decisionsExportUrl, loadReview, loadSessionTasks, loadAcceptedTask, acceptReview, setCheckOverride, saveExtractionModel, loadRelevantDecisions, type RelevantDecision } from './effect/decisionsClient';
+export { decisionsExportUrl, loadReview, loadSessionTasks, loadAcceptedTask, acceptReview, setCheckOverride, saveExtractionModel, loadRelevantDecisions, type RelevantDecision, loadDecisionsWithState, loadDecisionHistory, editDecisionContent, setDecisionLifecycle, supersedeDecision } from './effect/decisionsClient';
+export { DecisionCard, decisionAsPrompt } from './DecisionCard';
+export { DecisionListModal } from './DecisionListModal';

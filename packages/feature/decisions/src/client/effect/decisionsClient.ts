@@ -3,7 +3,7 @@
  */
 import { Effect } from 'effect';
 import { AppError } from '@cockpit/effect-core';
-import type { Decision, DecisionContent, DecisionProjectResolution, DecisionSource } from '../../shared/types';
+import type { Decision, DecisionContent, DecisionEvent, DecisionLink, DecisionProjectResolution, DecisionSource, DerivedDecisionState } from '../../shared/types';
 import type { AcceptedTask, AcceptedTaskSummary, ReviewResult, ReviewTurn } from '../../shared/review';
 
 const httpJson = <A>(url: string, init?: RequestInit): Effect.Effect<A, AppError> =>
@@ -78,3 +78,40 @@ export const loadRelevantDecisions = (
   files: ReadonlyArray<string>,
   exclude: ReadonlyArray<string>,
 ): Effect.Effect<{ decisions: RelevantDecision[] }, AppError> => postJson('/api/decisions/relevant', { cwd, text, files, exclude });
+
+// ─────────────────────────────────────────────────────────
+// Decision records (§7.1, §8)
+// ─────────────────────────────────────────────────────────
+
+const sendJson = <A>(method: 'POST' | 'PATCH', url: string, body: unknown): Effect.Effect<A, AppError> =>
+  httpJson<A>(url, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+/** Every decision of the project with its derived state. */
+export const loadDecisionsWithState = (cwd: string): Effect.Effect<{ decisions: Decision[]; states: Record<string, DerivedDecisionState> }, AppError> =>
+  httpJson(`/api/decisions?cwd=${encodeURIComponent(cwd)}&states=1`);
+
+/** One decision with its full event history (revision diffs). */
+export const loadDecisionHistory = (cwd: string, id: string): Effect.Effect<{ decision: Decision | null; events: DecisionEvent[] }, AppError> =>
+  httpJson(`/api/decisions?cwd=${encodeURIComponent(cwd)}&id=${encodeURIComponent(id)}`);
+
+/** Edit the text of a decision (recorded as a revision). */
+export const editDecisionContent = (cwd: string, id: string, content: Partial<DecisionContent>): Effect.Effect<{ decision: Decision }, AppError> =>
+  sendJson('PATCH', '/api/decisions', { cwd, id, content });
+
+/** Retire (reason required) or reactivate a decision. */
+export const setDecisionLifecycle = (cwd: string, id: string, status: 'retired' | 'active', reason?: string): Effect.Effect<{ decision: Decision }, AppError> =>
+  sendJson('PATCH', '/api/decisions', { cwd, id, status, ...(reason ? { reason } : {}) });
+
+/** Replace a decision with a new one; the old one is marked superseded and both are linked. */
+export const supersedeDecision = (cwd: string, old: Decision, content: DecisionContent): Effect.Effect<{ decision: Decision }, AppError> =>
+  sendJson('POST', '/api/decisions', {
+    cwd,
+    content,
+    source: { kind: 'manual' },
+    links: old.links.map(({ path, symbol }): DecisionLink => ({ path, ...(symbol ? { symbol } : {}) })),
+    supersedes: old.id,
+  });
+
+/** Decisions without derived state — cheap, for counts. */
+export const loadDecisionList = (cwd: string): Effect.Effect<{ decisions: Decision[] }, AppError> =>
+  httpJson(`/api/decisions?cwd=${encodeURIComponent(cwd)}`);

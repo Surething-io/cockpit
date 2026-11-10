@@ -229,6 +229,9 @@ export interface CodeLineProps {
   /** Minimum characters for line number (e.g. 4 means up to 9999 lines), for consistent width */
   lineNumChars: number;
   commentsEnabled: boolean;
+  /** A decision is linked to the symbol that starts on this line (decision mode). */
+  hasDecision?: boolean;
+  onDecisionClick?: (lineNum: number) => void;
   virtualItemSize: number;
   virtualItemStart: number;
   onCommentBubbleClick: (comment: CodeComment, e: React.MouseEvent) => void;
@@ -320,6 +323,8 @@ export const CodeLine = memo(function CodeLine({
   showLineNumbers,
   lineNumChars,
   commentsEnabled,
+  hasDecision = false,
+  onDecisionClick,
   virtualItemSize,
   virtualItemStart,
   onCommentBubbleClick,
@@ -435,6 +440,18 @@ export const CodeLine = memo(function CodeLine({
               isInRange ? 'bg-blue-9/30 text-blue-11' : 'bg-card/50 text-foreground-subtle'
             }`}
           >
+            {hasDecision && onDecisionClick && (
+              <button
+                onClick={() => onDecisionClick(lineNum)}
+                className="w-4 h-4 flex items-center justify-center rounded hover:bg-hover text-brand"
+                title={t('decisions.file.marker', { defaultValue: 'A decision is linked to this symbol' })}
+                data-testid="decision-marker"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v18M5 7h14M5 7l-3 7a4 4 0 0 0 6 0L5 7zm14 0-3 7a4 4 0 0 0 6 0l-3-7zM8 21h8" />
+                </svg>
+              </button>
+            )}
             {commentsEnabled && hasComments && firstComment && (
               <button
                 onClick={(e) => onCommentBubbleClick(firstComment, e)}

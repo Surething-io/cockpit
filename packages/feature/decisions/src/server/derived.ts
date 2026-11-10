@@ -146,3 +146,13 @@ export const findTouched = (
     const rank = (t: TouchedDecision) => (t.reason === 'direct' ? 0 : 2) + (t.decision.lastReview?.verdict === 'unrelated' ? 1 : 0);
     return out.sort((a, b) => rank(a) - rank(b));
   });
+
+/** Derived state of every decision (list views). */
+export const deriveAll = (projectId: string, cwd: string, decisions: readonly Decision[]): Effect.Effect<Record<string, DerivedDecisionState>> =>
+  Effect.gen(function* () {
+    if (decisions.length === 0) return {};
+    const ctx = yield* derivedContext(projectId, cwd, decisions);
+    const out: Record<string, DerivedDecisionState> = {};
+    for (const d of decisions) out[d.id] = yield* deriveState(d, ctx);
+    return out;
+  });

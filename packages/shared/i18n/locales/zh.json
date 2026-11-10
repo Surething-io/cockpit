@@ -1387,6 +1387,60 @@
     "removeFailed": "移除机器人失败"
   },
   "decisions": {
+    "card": {
+      "failed": "保存失败",
+      "edited": "已修改",
+      "lastReview": "{{date}} 复核：{{verdict}}",
+      "reason": "原因：",
+      "replaces": "← 替代了更早的决策",
+      "replacedBy": "已被替代 →",
+      "bringToChat": "带入对话",
+      "edit": "修改",
+      "retire": "废弃",
+      "reactivate": "恢复",
+      "premisesPlaceholder": "适用前提（每行一条）",
+      "save": "保存",
+      "retireReason": "为什么不再适用（必填）",
+      "state": {
+        "applicable": "适用",
+        "other-branch": "在其他分支",
+        "not-landed": "尚未提交",
+        "link-lost": "关联丢失",
+        "superseded": "已替代",
+        "retired": "已废弃"
+      },
+      "source": {
+        "user": "用户明确选择",
+        "agent": "Agent 自行决定",
+        "inferred": "推断",
+        "manual": "手动添加"
+      }
+    },
+    "list": {
+      "title": "项目决策",
+      "entry": "决策 {{count}}",
+      "export": "导出",
+      "keyword": "搜索内容",
+      "file": "文件或目录",
+      "showAll": "返回列表",
+      "loadFailed": "决策加载失败",
+      "empty": "没有符合条件的决策。",
+      "history": "修改记录",
+      "filter": {
+        "current": "当前有效",
+        "all": "全部",
+        "applicable": "适用",
+        "not-landed": "尚未提交",
+        "other-branch": "在其他分支",
+        "link-lost": "关联丢失",
+        "superseded": "已替代",
+        "retired": "已废弃"
+      }
+    },
+    "file": {
+      "banner": "本文件关联 {{count}} 条决策",
+      "marker": "这个符号关联了决策"
+    },
     "context": {
       "attached": "附带了 {{count}} 条相关决策",
       "willAttach": "将附带 {{count}} 条相关决策",

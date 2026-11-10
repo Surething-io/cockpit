@@ -1390,6 +1390,60 @@
     "removeFailed": "Failed to remove bot"
   },
   "decisions": {
+    "card": {
+      "failed": "Could not save",
+      "edited": "edited",
+      "lastReview": "last reviewed {{date}}: {{verdict}}",
+      "reason": "Reason:",
+      "replaces": "← replaces an earlier decision",
+      "replacedBy": "replaced by →",
+      "bringToChat": "Bring into chat",
+      "edit": "Edit",
+      "retire": "Retire",
+      "reactivate": "Reactivate",
+      "premisesPlaceholder": "Holds while… (one per line)",
+      "save": "Save",
+      "retireReason": "Why it no longer applies (required)",
+      "state": {
+        "applicable": "Applies here",
+        "other-branch": "On another branch",
+        "not-landed": "Not committed yet",
+        "link-lost": "Link lost",
+        "superseded": "Superseded",
+        "retired": "Retired"
+      },
+      "source": {
+        "user": "User chose",
+        "agent": "Agent decided",
+        "inferred": "Inferred",
+        "manual": "Added by hand"
+      }
+    },
+    "list": {
+      "title": "Project decisions",
+      "entry": "Decisions {{count}}",
+      "export": "Export",
+      "keyword": "Search text",
+      "file": "File or folder",
+      "showAll": "Back to the list",
+      "loadFailed": "Could not load decisions",
+      "empty": "No decisions match.",
+      "history": "Revisions",
+      "filter": {
+        "current": "Current",
+        "all": "All",
+        "applicable": "Applies here",
+        "not-landed": "Not committed yet",
+        "other-branch": "On another branch",
+        "link-lost": "Link lost",
+        "superseded": "Superseded",
+        "retired": "Retired"
+      }
+    },
+    "file": {
+      "banner": "This file has {{count}} related decisions",
+      "marker": "A decision is linked to this symbol"
+    },
     "context": {
       "attached": "{{count}} related decisions attached",
       "willAttach": "{{count}} related decisions will be attached",

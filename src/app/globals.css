@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@xterm/xterm/css/xterm.css";
+@import "../../public/html-lib/mono-font.css";
 
 /* Stop compositor-level scroll chaining from propagating across frames to the parent frame */
 html, body {
@@ -379,12 +380,8 @@ html, body {
   /* Fonts */
   --font-sans: var(--font-inter), "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-serif: var(--font-lora), "PingFang SC", "Microsoft YaHei", serif;
-  /*
-   * Monospace: prefer Maple Mono CN (perfect 2:1 CJK/Latin alignment)
-   * Install: brew install --cask font-maple-mono-nf-cn
-   * Fallback: Sarasa Mono SC (brew install --cask font-sarasa-gothic)
-   */
-  --font-mono: "Maple Mono CN", "Maple Mono NF CN", "Sarasa Mono SC", var(--font-jetbrains-mono), "Menlo", "Consolas", monospace;
+  /* Use the original preview font, including its single-cell diagram symbols. */
+  --font-mono: var(--font-cockpit-mono);
 
   /* Colors */
   --color-background: hsl(var(--background));

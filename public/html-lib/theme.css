@@ -14,6 +14,8 @@
  *   document.documentElement.classList.toggle('dark', matchMedia('(prefers-color-scheme: dark)').matches)
  */
 
+@import "./mono-font.css";
+
 :root {
   /* ---- Raw scales (HSL triplets — for translucency: hsl(var(--x) / <alpha>)) ---- */
   --teal-1: 180 50% 99.2%; --teal-2: 180 44% 97%;  --teal-3: 180 43% 93.8%;
@@ -113,7 +115,7 @@
 
   --radius: 0.5rem;
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-mono: var(--font-cockpit-mono);
 }
 
 .dark {

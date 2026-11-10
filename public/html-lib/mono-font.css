@@ -1,0 +1,12 @@
+/* Shared by the app and HTML widgets; no system font installation required. */
+@font-face {
+  font-family: "Cockpit Maple Mono CN";
+  src: url("/html-lib/maple-mono-cn/MapleMono-CN-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  --font-cockpit-mono: "Cockpit Maple Mono CN", "Maple Mono CN", "Maple Mono NF CN", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}

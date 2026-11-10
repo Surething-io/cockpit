@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Lora, JetBrains_Mono } from "next/font/google";
+import { Inter, Lora } from "next/font/google";
 import { readFileSync } from "fs";
 import { join } from "path";
 import "./globals.css";
@@ -27,12 +27,6 @@ const inter = Inter({
 
 const lora = Lora({
   variable: "--font-lora",
-  subsets: ["latin"],
-  display: "swap",
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
   display: "swap",
 });
@@ -92,7 +86,7 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${inter.variable} ${lora.variable} ${jetbrainsMono.variable} antialiased overflow-hidden`}
+        className={`${inter.variable} ${lora.variable} antialiased overflow-hidden`}
       >
         <Providers>
           {children}

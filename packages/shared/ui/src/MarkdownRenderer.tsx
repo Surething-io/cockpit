@@ -348,14 +348,17 @@ function createMarkdownComponents(
 
       // The margin lives on the wrapper so the copy button's `top` is measured
       // from the block's visible edge, not from above its top margin.
+      // Inherit the app's mono font on both highlighter layers: Prism themes
+      // otherwise replace the CJK/Latin 2:1 font used by file previews.
       return (
-        <div className="group/code relative" style={{ margin: '1.35em 0' }}>
+        <div className="group/code relative font-mono" style={{ margin: '1.35em 0' }}>
           <SyntaxHighlighter
             style={isDark ? oneDark : oneLight}
             language={language}
             PreTag="div"
             className="md-figure"
-            customStyle={{ margin: 0, borderRadius: '0.375rem', fontSize: '0.92em' }}
+            customStyle={{ margin: 0, borderRadius: '0.375rem', fontSize: '0.92em', fontFamily: 'inherit' }}
+            codeTagProps={{ className: `language-${language}`, style: { fontFamily: 'inherit' } }}
             wrapLines
             lineProps={() => {
               const sourceLine = codeStartLine + lineCounter;

@@ -547,6 +547,9 @@ export function useChatStream(
     // Handle text content (complete message)
     // Complete assistant message (codex/ollama/synthetic text + tool_use blocks)
     if (eventType === 'assistant') {
+      // A retried request that succeeds straight into a tool call produces no text delta,
+      // so the stream_event branch never clears the retry line; any model output means it recovered.
+      setApiRetryInfo(prev => prev ? null : prev);
       const content = (event.message as { content?: unknown } | undefined)?.content;
       if (Array.isArray(content)) {
         for (const block of content as Array<{ text?: string; name?: string; input?: unknown }>) {

@@ -35,7 +35,15 @@ export interface ExecShapedEvent {
 export type ShimOutput =
   | { kind: 'event'; event: ExecShapedEvent }
   /** Incremental assistant text. Has no exec-side equivalent — that is the point. */
-  | { kind: 'text-delta'; text: string };
+  | { kind: 'text-delta'; text: string }
+  /**
+   * The server is retrying a model request on its own. Not an error and not an
+   * exec event: the runner forwards it as the Claude-shaped `system/api_retry`,
+   * which the client already renders as a spinner line in the loading bubble.
+   */
+  | { kind: 'retry'; attempt: number; maxRetries: number; error?: string }
+  /** The server started compacting the thread's context mid-run. */
+  | { kind: 'compacting' };
 
 const camelToSnake = (key: string): string => key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
 
@@ -205,6 +213,15 @@ export class CodexEventShim {
 
       case 'item/started':
       case 'item/completed': {
+        /**
+         * Compaction is an item with nothing to show but its existence, and it
+         * can take minutes when the network is bad — measured on a real run:
+         * three failed remote-compaction attempts, then the HTTP fallback, all
+         * behind a silent screen until the user pressed stop. Announcing the
+         * start is enough; the adapter has no use for the item itself.
+         */
+        const rawType = (n.params.item as { type?: unknown } | undefined)?.type;
+        if (rawType === 'contextCompaction') return n.method === 'item/started' ? [{ kind: 'compacting' }] : [];
         const item = normalizeItem(n.params.item);
         if (!item) return [];
         // The user's own turn comes back as an item. Cockpit rendered it
@@ -313,10 +330,25 @@ export class CodexEventShim {
        * so surfacing this as an error would both lie to the user and — because
        * the adapter latches `terminated` on an error — go deaf to the retry's
        * events, leaving the turn to hang until it is aborted by hand.
+       *
+       * Dropping it outright was the opposite failure: a run whose requests
+       * time out retries for minutes with nothing on screen, which reads as a
+       * hang and gets stopped. So a retry becomes a `retry` output instead —
+       * visible, but not an error. The server spells the count only in prose
+       * (`Reconnecting... 2/5`); the underlying cause is `additionalDetails`.
        */
       case 'error': {
-        if (n.params.willRetry === true) return [];
         const error = n.params.error as { message?: string; additionalDetails?: string | null } | undefined;
+        if (n.params.willRetry === true) {
+          const count = /(\d+)\s*\/\s*(\d+)/.exec(error?.message ?? '');
+          const cause = error?.additionalDetails || error?.message;
+          return [{
+            kind: 'retry',
+            attempt: count ? Number(count[1]) : 0,
+            maxRetries: count ? Number(count[2]) : 0,
+            ...(cause ? { error: cause } : {}),
+          }];
+        }
         const message =
           [error?.message, error?.additionalDetails].filter(Boolean).join(' — ') || 'Codex error';
         return [{ kind: 'event', event: { type: 'error', message } }];

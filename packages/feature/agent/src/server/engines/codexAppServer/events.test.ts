@@ -150,14 +150,44 @@ describe('CodexEventShim', () => {
     });
 
     /**
-     * The server is about to try again. Surfacing this would both lie and —
-     * because the adapter latches `terminated` on an error — go deaf to the
-     * retry, hanging the turn until it is aborted by hand.
+     * The server is about to try again. Surfacing this as an error would both
+     * lie and — because the adapter latches `terminated` on an error — go deaf
+     * to the retry. Dropping it hid minutes of retries behind a blank screen,
+     * so it becomes a `retry` output: never an exec `error` event.
      */
-    it('stays silent when the server says it will retry', () => {
+    it('reports a retry, not an error, when the server says it will retry', () => {
+      expect(shim().handle({
+        method: 'error',
+        params: {
+          error: { message: 'Reconnecting... 2/5', additionalDetails: 'request timed out' },
+          willRetry: true,
+        },
+      })).toEqual([{ kind: 'retry', attempt: 2, maxRetries: 5, error: 'request timed out' }]);
+    });
+
+    it('falls back to the message and a zero count when the retry has no N/M', () => {
       expect(shim().handle({
         method: 'error',
         params: { error: { message: 'rate limited' }, willRetry: true },
+      })).toEqual([{ kind: 'retry', attempt: 0, maxRetries: 0, error: 'rate limited' }]);
+    });
+  });
+
+  describe('context compaction', () => {
+    it('announces the start once and hides the item from the adapter', () => {
+      const s = shim();
+      expect(s.handle({ method: 'item/started', params: { item: { type: 'contextCompaction', id: 'c1' } } }))
+        .toEqual([{ kind: 'compacting' }]);
+      expect(s.handle({ method: 'item/completed', params: { item: { type: 'contextCompaction', id: 'c1' } } }))
+        .toEqual([]);
+    });
+
+    it("ignores a sub-agent's compaction", () => {
+      const s = shim();
+      s.bindThread('parent');
+      expect(s.handle({
+        method: 'item/started',
+        params: { threadId: 'child', item: { type: 'contextCompaction', id: 'c1' } },
       })).toEqual([]);
     });
   });

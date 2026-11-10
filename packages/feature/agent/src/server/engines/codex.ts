@@ -746,6 +746,22 @@ async function runCodexAppServerWithInput(ctx: RunCtx, input: CodexRunInput): Pr
         });
         continue;
       }
+      if (out.kind === 'retry') {
+        // Same shape the Claude SDK and Pi emit, so the client's existing retry line renders it.
+        ctx.emit({
+          type: 'system',
+          subtype: 'api_retry',
+          attempt: out.attempt,
+          max_retries: out.maxRetries,
+          retry_delay_ms: 0,
+          ...(out.error ? { error: out.error } : {}),
+        });
+        continue;
+      }
+      if (out.kind === 'compacting') {
+        ctx.emit({ type: 'system', subtype: 'notice', notice: 'codex_context_compacting' });
+        continue;
+      }
       if (out.event.type === 'turn.completed' || out.event.type === 'turn.failed') input.close();
       adapter.handle(out.event as CodexEvent);
       if (out.event.type === 'turn.completed') terminal = 'completed';

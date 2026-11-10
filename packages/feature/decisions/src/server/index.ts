@@ -9,3 +9,5 @@ export * from '../shared/checks';
 export type * from '../shared/types';
 export type * from '../shared/review';
 export type * from '../shared/verification';
+export type * from '../shared/extraction';
+export { LOW_END_MODEL } from '../shared/extraction';

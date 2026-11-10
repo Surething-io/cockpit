@@ -46,7 +46,18 @@ interface CheckoutsRegistry {
 interface ProjectStateFile {
   enabled?: boolean;
   enabledAt?: number;
+  extractionModel?: { engine: string; model: string };
 }
+
+const toState = (projectId: string, kind: ProjectKind, s: ProjectStateFile): DecisionProjectState => ({
+  projectId,
+  kind,
+  enabled: s.enabled === true,
+  ...(typeof s.enabledAt === 'number' ? { enabledAt: s.enabledAt } : {}),
+  ...(s.extractionModel && typeof s.extractionModel.engine === 'string' && typeof s.extractionModel.model === 'string'
+    ? { extractionModel: { engine: s.extractionModel.engine, model: s.extractionModel.model } }
+    : {}),
+});
 
 export interface GitInfo {
   toplevel: string;
@@ -86,14 +97,7 @@ const pathProjectId = (cwd: string): Effect.Effect<string> =>
   );
 
 const readState = (projectId: string, kind: ProjectKind): Effect.Effect<DecisionProjectState> =>
-  Effect.promise(() => readJsonFile<ProjectStateFile>(projectStateFile(projectId), {})).pipe(
-    Effect.map((s) => ({
-      projectId,
-      kind,
-      enabled: s.enabled === true,
-      ...(typeof s.enabledAt === 'number' ? { enabledAt: s.enabledAt } : {}),
-    })),
-  );
+  Effect.promise(() => readJsonFile<ProjectStateFile>(projectStateFile(projectId), {})).pipe(Effect.map((s) => toState(projectId, kind, s)));
 
 type Binding =
   | { status: 'bound'; projectId: string }
@@ -165,7 +169,7 @@ export const requireProject = (cwd: string): Effect.Effect<DecisionProjectState,
   resolveProject(cwd).pipe(
     Effect.flatMap((r) =>
       r.status === 'resolved'
-        ? Effect.succeed({ projectId: r.projectId, kind: r.kind, enabled: r.enabled, ...(r.enabledAt !== undefined ? { enabledAt: r.enabledAt } : {}) })
+        ? Effect.succeed((({ status: _status, ...state }) => state)(r))
         : Effect.fail(new ValidationError({ field: 'project', reason: 'ambiguous' })),
     ),
   );
@@ -226,10 +230,26 @@ export const setEnabled = (
         }),
       catch: (cause) => new FSError({ path: file, op: 'write', cause }),
     });
-    return {
-      projectId: project.projectId,
-      kind: project.kind,
-      enabled: next.enabled === true,
-      ...(typeof next.enabledAt === 'number' ? { enabledAt: next.enabledAt } : {}),
-    };
+    return toState(project.projectId, project.kind, next);
+  });
+
+/** Remember the review-extraction model for the project (§9). */
+export const setExtractionModel = (
+  cwd: string,
+  choice: { engine: string; model: string },
+): Effect.Effect<DecisionProjectState, FSError | ValidationError> =>
+  Effect.gen(function* () {
+    const project = yield* requireProject(cwd);
+    const file = projectStateFile(project.projectId);
+    const next = yield* Effect.tryPromise({
+      try: () =>
+        withFileLock(file, async () => {
+          const cur = await readJsonFileForUpdate<ProjectStateFile>(file, {});
+          const updated: ProjectStateFile = { ...cur, extractionModel: { engine: choice.engine, model: choice.model } };
+          await writeJsonFile(file, updated);
+          return updated;
+        }),
+      catch: (cause) => new FSError({ path: file, op: 'write', cause }),
+    });
+    return toState(project.projectId, project.kind, next);
   });

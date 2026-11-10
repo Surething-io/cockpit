@@ -16,6 +16,8 @@ import { Effect } from 'effect';
 import { FSError, NotFoundError, ValidationError, type AppError } from '@cockpit/effect-core';
 import { SnapshotService } from '@cockpit/effect-services';
 import type { AcceptedTask, AcceptedTaskFile, AcceptedTaskSummary, ReviewTurn } from '../shared/review';
+import type { Decision, DecisionContent, DecisionSource } from '../shared/types';
+import { createDecision, parseContent, parseSource } from './store';
 import { projectDir } from './paths';
 import { readGitInfo } from './projectIdentity';
 import { computeReview, TASK_CATEGORIES, toToplevelPath } from './review';
@@ -70,18 +72,27 @@ export const readTask = (projectId: string, id: string): Effect.Effect<AcceptedT
     return t ?? (yield* Effect.fail(new NotFoundError({ resource: 'task', id })));
   });
 
+/** A decision the user kept in the review (candidate or typed by hand). */
+export interface KeptDecision {
+  content: DecisionContent;
+  source: DecisionSource;
+  /** cwd-relative paths of task files the decision is about. */
+  files: string[];
+}
+
 export interface AcceptInput {
   cwd: string;
   sessionId: string;
   goal: string;
   turns: ReviewTurn[];
+  decisions?: KeptDecision[];
 }
 
 /** Recompute the review for the given turns and freeze it. */
 export const acceptTask = (
   projectId: string,
   input: AcceptInput,
-): Effect.Effect<AcceptedTask, AppError | FSError | NotFoundError | ValidationError, SnapshotService> =>
+): Effect.Effect<{ task: AcceptedTask; decisions: Decision[] }, AppError | FSError | NotFoundError | ValidationError, SnapshotService> =>
   Effect.gen(function* () {
     const toolIds = [...new Set(input.turns.flatMap((t) => t.toolIds))];
     const review = yield* computeReview(input.cwd, toolIds, false);
@@ -128,8 +139,39 @@ export const acceptTask = (
       },
       catch: (cause) => new FSError({ path: file, op: 'write', cause }),
     });
-    return task;
+
+    // Decisions are written after the task exists, so each can point at it. Links use
+    // the task's toplevel-relative paths and the blobs frozen just above.
+    const byCwdPath = new Map(kept.map((f, i) => [f.path, files[i]]));
+    const decisions = yield* Effect.forEach(input.decisions ?? [], (d) =>
+      createDecision(projectId, {
+        content: d.content,
+        source: d.source,
+        links: d.files
+          .map((p) => byCwdPath.get(p))
+          .filter((f): f is AcceptedTaskFile => !!f)
+          .map((f) => ({ path: f.path, ...(f.blob ? { blob: f.blob } : {}) })),
+        origin: { sessionId: input.sessionId, taskId: task.id, ...(head ? { head } : {}) },
+      }),
+    );
+    return { task, decisions };
   });
+
+/** Validate kept decisions from a request body. */
+export function parseKeptDecisions(raw: unknown): KeptDecision[] | ValidationError {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || raw.length > 100) return new ValidationError({ field: 'decisions', reason: 'must be an array (max 100)' });
+  const out: KeptDecision[] = [];
+  for (const d of raw as Array<Record<string, unknown>>) {
+    const content = parseContent(d?.content, false);
+    if (content instanceof ValidationError) return content;
+    const source = parseSource(d?.source);
+    if (source instanceof ValidationError) return source;
+    const files = Array.isArray(d?.files) ? d.files.filter((x): x is string => typeof x === 'string') : [];
+    out.push({ content, source, files });
+  }
+  return out;
+}
 
 /** Validate untrusted turns from a request body. */
 export function parseTurns(raw: unknown): ReviewTurn[] | ValidationError {

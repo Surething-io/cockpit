@@ -157,6 +157,8 @@ export interface DecisionProjectState {
   enabled: boolean;
   /** When the switch was last turned on — default start of the first review range. */
   enabledAt?: number;
+  /** Model the user last picked for review extraction in this project (§9). */
+  extractionModel?: { engine: string; model: string };
 }
 
 /** Another checkout shares this repo's root commit and still exists. */

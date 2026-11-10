@@ -66,12 +66,19 @@ describe('decision-mode review on real snapshots', () => {
 
     // Accepting needs decision mode on.
     await Effect.runPromise(decisions.setEnabled(work, true));
-    const task = await run(
+    const { task, decisions: kept } = await run(
       decisions.acceptTask((await Effect.runPromise(decisions.requireProject(work))).projectId, {
         cwd: work,
         sessionId: 'S1',
         goal: 'fix a',
         turns: [{ id: 'u1', text: 'fix a', toolIds: ['t1', 't2', 't3'] }],
+        decisions: [
+          {
+            content: { choice: 'Keep a in memory', alternatives: ['persist a'], rationale: 'restart may lose it', tradeoffs: '', premises: [] },
+            source: { kind: 'user', quote: 'keep it in memory', sessionId: 'S1', messageId: 'u1' },
+            files: ['a.ts', 'b.ts'], // b.ts is another session's file: not linked
+          },
+        ],
       }),
     );
     expect(task.files.map((f) => f.path).sort()).toEqual(['a.ts', 'gen.ts', 'shared.ts']);
@@ -79,6 +86,11 @@ describe('decision-mode review on real snapshots', () => {
     const aBlob = execFileSync('git', ['hash-object', join(work, 'a.ts')]).toString().trim();
     expect(task.files.find((f) => f.path === 'a.ts')?.blob).toBe(aBlob);
     expect(task.projectHead).toMatch(/^[0-9a-f]{40}$/);
+
+    // Kept decisions point at the task, its HEAD, and the frozen content of their files.
+    expect(kept).toHaveLength(1);
+    expect(kept[0]).toMatchObject({ choice: 'Keep a in memory', source: { kind: 'user' }, origin: { sessionId: 'S1', taskId: task.id, head: task.projectHead } });
+    expect(kept[0].links).toEqual([{ path: 'a.ts', blob: aBlob }]);
 
     // Written once, listed for the session, readable back.
     const projectId = (await Effect.runPromise(decisions.requireProject(work))).projectId;

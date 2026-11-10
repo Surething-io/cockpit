@@ -3,7 +3,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Effect } from 'effect';
-import { ChevronDown, ChevronRight, ShieldCheck, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, Scale, ShieldCheck, X } from 'lucide-react';
 import { useEffectQuery } from '@cockpit/effect-react';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { Portal, blurActiveElement, toast } from '@cockpit/shared-ui';
@@ -12,6 +12,7 @@ import {
   acceptReview,
   loadAcceptedTask,
   loadReview,
+  saveExtractionModel,
   setCheckOverride,
   type AcceptedTask,
   type VerificationResult,
@@ -23,7 +24,17 @@ import {
 } from '@cockpit/feature-decisions';
 import type { ChatMessage } from '../types';
 import { loadVerification } from '../effect/verificationClient';
-import { rangeEvidence } from './reviewTurns';
+import { extractionMessages, rangeEvidence } from './reviewTurns';
+import { loadExtraction } from '../effect/extractionClient';
+import {
+  DecisionsView,
+  ExtractionModelPicker,
+  SummaryView,
+  defaultKept,
+  defaultModelChoice,
+  type KeptDraft,
+  type ModelChoice,
+} from './ReviewExtraction';
 
 /**
  * Decision-mode task review (docs/DECISION_MODE.md §4.2) — the deterministic
@@ -35,7 +46,16 @@ import { rangeEvidence } from './reviewTurns';
  */
 
 export type ReviewModalMode =
-  | { kind: 'live'; turns: ReviewTurn[]; initialStart: number; messages: ChatMessage[] }
+  | {
+      kind: 'live';
+      turns: ReviewTurn[];
+      initialStart: number;
+      messages: ChatMessage[];
+      sessionEngine?: string;
+      sessionModel?: string;
+      /** The project's remembered extraction model, if any. */
+      savedModel?: { engine: string; model: string };
+    }
   | { kind: 'accepted'; taskId: string };
 
 interface ReviewModalProps {
@@ -93,6 +113,7 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
   );
   const selected = useMemo(() => (turns ? turns.slice(span[0], span[1] + 1) : []), [turns, span]);
   const [goal, setGoal] = useState(() => (live ? mode.turns[mode.initialStart]?.text ?? '' : ''));
+  const [goalEdited, setGoalEdited] = useState(false);
 
   const toggleTurn = useCallback(
     (i: number) => {
@@ -144,6 +165,55 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
     },
     [cwd, t],
   );
+  // ── AI extraction (§9): summary + candidate decisions + goal ──
+  const [choice, setChoice] = useState<ModelChoice>(() =>
+    live ? defaultModelChoice(mode.savedModel, mode.sessionEngine, mode.sessionModel) : { engine: 'claude', model: '' },
+  );
+  const changeChoice = useCallback(
+    (next: ModelChoice) => {
+      setChoice(next);
+      void BrowserRuntime.runPromiseExit(saveExtractionModel(cwd, next.engine, next.model)); // remembered per project
+    },
+    [cwd],
+  );
+  const [extractTick, setExtractTick] = useState(0);
+  const extractionInput = useMemo(
+    () => (live && evidence && choice.model ? { messages: extractionMessages(mode.messages, new Set(selected.map((tr) => tr.id))), evidence } : null),
+    [live, mode, selected, evidence, choice.model],
+  );
+  const extractionQ = useEffectQuery(
+    extractionInput
+      ? loadExtraction({
+          cwd,
+          sessionId,
+          engine: choice.engine,
+          model: choice.model,
+          messages: extractionInput.messages,
+          orderedToolIds: extractionInput.evidence.orderedToolIds,
+          runs: extractionInput.evidence.runs,
+          claimedPass: extractionInput.evidence.claimedPass,
+        })
+      : Effect.succeed(null),
+    [cwd, sessionId, choice.engine, choice.model, extractionInput, extractTick],
+  );
+  const extraction = extractionQ.status === 'success' ? extractionQ.data : null;
+  const [kept, setKept] = useState<Set<string>>(new Set());
+  const [manual, setManual] = useState<KeptDraft[]>([]);
+  useEffect(() => {
+    if (!extraction) return;
+    setKept(defaultKept(extraction.candidates));
+    if (!goalEdited && extraction.goal) setGoal(extraction.goal);
+    // goalEdited is read, not tracked: a later edit must not re-run this.
+  }, [extraction]);
+  const toggleKept = useCallback((key: string) => setKept((k) => {
+    const n = new Set(k);
+    if (n.has(key)) n.delete(key);
+    else n.add(key);
+    return n;
+  }), []);
+  const addManual = useCallback((d: KeptDraft) => setManual((m) => [...m, d]), []);
+  const removeManual = useCallback((key: string) => setManual((m) => m.filter((x) => x.key !== key)), []);
+
   const stateLabel = useCallback((st: VerificationState) => t(`decisions.review.state.${st}`, { defaultValue: STATE_DEFAULT[st] }), [t]);
   const kindLabel = useCallback((k: keyof typeof KIND_DEFAULT) => t(`decisions.review.kind.${k}`, { defaultValue: KIND_DEFAULT[k] }), [t]);
 
@@ -157,11 +227,15 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
   );
 
   const [activePath, setActivePath] = useState<string | null>(null);
-  const [showVerification, setShowVerification] = useState(false);
+  type View = 'file' | 'verification' | 'summary' | 'decisions';
+  const [view, setView] = useState<View>(live ? 'summary' : 'file');
+  const showVerification = view === 'verification';
+  const setShowVerification = useCallback((v: boolean) => setView(v ? 'verification' : 'file'), []);
   const openFile = useCallback((p: string) => {
-    setShowVerification(false);
+    setView('file');
     setActivePath(p);
   }, []);
+  const openVerification = useCallback(() => setView('verification'), []);
   const [showOthers, setShowOthers] = useState(false);
   useEffect(() => {
     const first = groups.find((g) => g.category !== 'other-session')?.files[0];
@@ -177,7 +251,11 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
   const accept = useCallback(async () => {
     if (!live || selected.length === 0) return;
     setAccepting(true);
-    const exit = await BrowserRuntime.runPromiseExit(acceptReview(cwd, sessionId, goal, selected));
+    const keptDecisions = [
+      ...(extraction?.candidates.filter((c) => kept.has(c.key)) ?? []),
+      ...manual,
+    ].map(({ content, source, files }) => ({ content, source, files }));
+    const exit = await BrowserRuntime.runPromiseExit(acceptReview(cwd, sessionId, goal, selected, keptDecisions));
     setAccepting(false);
     if (exit._tag !== 'Success') {
       toast(t('decisions.review.acceptFailed', { defaultValue: 'Could not accept this review' }), 'error');
@@ -186,7 +264,7 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
     toast(t('decisions.review.accepted', { defaultValue: 'Review accepted' }), 'success');
     onAccepted?.(exit.value.task);
     onClose();
-  }, [live, selected, cwd, sessionId, goal, onAccepted, onClose, t]);
+  }, [live, selected, cwd, sessionId, goal, extraction, kept, manual, onAccepted, onClose, t]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -224,7 +302,10 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
             {live ? (
               <input
                 value={goal}
-                onChange={(e) => setGoal(e.target.value)}
+                onChange={(e) => {
+                  setGoal(e.target.value);
+                  setGoalEdited(true);
+                }}
                 placeholder={t('decisions.review.goalPlaceholder', { defaultValue: 'Goal of this task' })}
                 className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-sm text-foreground"
               />
@@ -233,6 +314,7 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
                 {task ? `${task.goal || '—'} · ${new Date(task.acceptedAt).toLocaleString()}` : ''}
               </span>
             )}
+            {live && <ExtractionModelPicker value={choice} sessionEngine={mode.sessionEngine} onChange={changeChoice} />}
             <button onClick={onClose} aria-label={t('common.close', { defaultValue: 'Close' })} className="rounded p-1 text-muted-foreground hover:bg-hover hover:text-foreground">
               <X className="h-4 w-4" />
             </button>
@@ -258,6 +340,33 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
                       </label>
                     );
                   })}
+                </div>
+              )}
+
+              {live && (
+                <div className="border-b border-border p-2">
+                  <button
+                    onClick={() => setView('summary')}
+                    className={`mb-1 flex w-full items-center gap-1 rounded px-1 text-left font-medium ${view === 'summary' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-hover'}`}
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    {t('decisions.review.result', { defaultValue: 'Result' })}
+                    <span className="ml-auto font-normal text-foreground-subtle">
+                      {extractionQ.status === 'loading' && choice.model ? t('decisions.review.generating', { defaultValue: 'generating…' }) : extraction ? extraction.summary.length : ''}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setView('decisions')}
+                    className={`flex w-full items-center gap-1 rounded px-1 text-left font-medium ${view === 'decisions' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-hover'}`}
+                  >
+                    <Scale className="h-3.5 w-3.5" />
+                    {t('decisions.review.decisions', { defaultValue: 'Decisions' })}
+                    <span className="ml-auto font-normal text-foreground-subtle">
+                      {extraction
+                        ? t('decisions.review.keptCount', { defaultValue: '{{kept}} of {{count}} kept', kept: kept.size + manual.length, count: extraction.candidates.length + manual.length })
+                        : ''}
+                    </span>
+                  </button>
                 </div>
               )}
 
@@ -318,7 +427,7 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
                             key={f.path}
                             onClick={() => openFile(f.path)}
                             title={f.otherSessions.length ? `${f.path}\n${f.otherSessions.join(', ')}` : f.path}
-                            className={`flex w-full items-center gap-2 rounded px-1 py-0.5 text-left ${f.path === activePath && !showVerification ? 'bg-accent text-foreground' : 'text-foreground hover:bg-hover'}`}
+                            className={`flex w-full items-center gap-2 rounded px-1 py-0.5 text-left ${f.path === activePath && view === 'file' ? 'bg-accent text-foreground' : 'text-foreground hover:bg-hover'}`}
                           >
                             <span className="min-w-0 flex-1 truncate">{f.path}</span>
                             <span className="shrink-0 text-green-11">+{f.additions}</span>
@@ -336,7 +445,31 @@ export const ReviewModal = memo(function ReviewModal({ cwd, sessionId, mode, onC
 
             {/* Right: verification details, or the diff of the selected file */}
             <div className="flex min-w-0 flex-1 flex-col">
-              {showVerification ? (
+              {view === 'summary' || view === 'decisions' ? (
+                !choice.model ? (
+                  <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                    {t('decisions.review.pickModel', { defaultValue: 'Choose a model above to generate the summary and candidate decisions.' })}
+                  </div>
+                ) : extractionQ.status === 'loading' ? (
+                  <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                    {t('decisions.review.generatingLong', { defaultValue: 'Reading the conversation… the deterministic sections are ready on the left.' })}
+                  </div>
+                ) : extractionQ.status === 'error' ? (
+                  <div className="flex flex-1 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <span>{t('decisions.review.extractionFailed', { defaultValue: 'Generation failed. You can still accept; no decisions will be kept unless you add them.' })}</span>
+                    <button onClick={() => setExtractTick((n) => n + 1)} className="rounded border border-border px-2 py-0.5 text-foreground hover:bg-hover">
+                      {t('decisions.review.retry', { defaultValue: 'Retry' })}
+                    </button>
+                    {view === 'decisions' && (
+                      <DecisionsView candidates={[]} kept={kept} onToggle={toggleKept} manual={manual} onAddManual={addManual} onRemoveManual={removeManual} onOpenFile={openFile} />
+                    )}
+                  </div>
+                ) : extraction && view === 'summary' ? (
+                  <SummaryView result={extraction} onOpenFile={openFile} onOpenRun={openVerification} />
+                ) : extraction ? (
+                  <DecisionsView candidates={extraction.candidates} kept={kept} onToggle={toggleKept} manual={manual} onAddManual={addManual} onRemoveManual={removeManual} onOpenFile={openFile} />
+                ) : null
+              ) : showVerification ? (
                 <div className="flex-1 overflow-y-auto p-3 text-xs">
                   {verification?.runs.length === 0 && (
                     <div className="mb-2 text-muted-foreground">{t('decisions.review.noRuns', { defaultValue: 'The agent ran no checks in these turns.' })}</div>

@@ -3,7 +3,7 @@
  */
 import { Effect } from 'effect';
 import { AppError } from '@cockpit/effect-core';
-import type { DecisionProjectResolution } from '../../shared/types';
+import type { Decision, DecisionContent, DecisionProjectResolution, DecisionSource } from '../../shared/types';
 import type { AcceptedTask, AcceptedTaskSummary, ReviewResult, ReviewTurn } from '../../shared/review';
 
 const httpJson = <A>(url: string, init?: RequestInit): Effect.Effect<A, AppError> =>
@@ -50,8 +50,13 @@ export const acceptReview = (
   sessionId: string,
   goal: string,
   turns: ReadonlyArray<ReviewTurn>,
-): Effect.Effect<{ task: AcceptedTask }, AppError> => postJson('/api/decisions/tasks', { cwd, sessionId, goal, turns });
+  decisions: ReadonlyArray<{ content: DecisionContent; source: DecisionSource; files: string[] }> = [],
+): Effect.Effect<{ task: AcceptedTask; decisions: Decision[] }, AppError> => postJson('/api/decisions/tasks', { cwd, sessionId, goal, turns, decisions });
 
 /** Correct check detection for one command in this project (§5). */
 export const setCheckOverride = (cwd: string, command: string, isCheck: boolean): Effect.Effect<{ include: string[]; exclude: string[] }, AppError> =>
   postJson('/api/decisions/checks', { cwd, command, isCheck });
+
+/** Remember the review-extraction model for this project (§9). */
+export const saveExtractionModel = (cwd: string, engine: string, model: string): Effect.Effect<DecisionProjectResolution, AppError> =>
+  postJson('/api/decisions/project', { cwd, extractionModel: { engine, model } });

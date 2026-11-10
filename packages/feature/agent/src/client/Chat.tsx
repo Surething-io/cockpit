@@ -299,6 +299,12 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     engine === 'deepseek' || engine === 'kimi' || engine === 'glm' ? engine : null;
   const engineModel =
     apiKeyEngine === 'kimi' ? kimiModel : apiKeyEngine === 'glm' ? glmModel : deepseekModel;
+  // The session's current model, as the default for decision-mode extraction (§9).
+  const reviewSessionModel = isCodexEngine ? effectiveCodexModel
+    : engine === 'ollama' ? ollamaModel
+    : apiKeyEngine ? engineModel
+    : engine === 'grok' ? effectiveGrokModel
+    : effectiveClaudeModel;
   const piThinking = usePiThinking(engine, engine === 'ollama' ? ollamaModel : engineModel, initialCwd, sessionId, engineHasKey);
   const onEngineModelChange =
     apiKeyEngine === 'kimi'
@@ -1000,6 +1006,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           messages={messages}
           running={isLoading || liveRunning}
           hasMoreHistory={hasMoreHistory}
+          engine={engine ?? 'claude'}
+          sessionModel={reviewSessionModel}
         />
 
         {/* Input. In side-by-side the focused pane portals its composer into a

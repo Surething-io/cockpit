@@ -16,6 +16,9 @@ interface ReviewStatusBarProps {
   messages: ChatMessage[];
   running: boolean;
   hasMoreHistory: boolean;
+  /** Session engine + its current model: default for the extraction model (§9). */
+  engine?: string;
+  sessionModel?: string;
 }
 
 /**
@@ -23,7 +26,7 @@ interface ReviewStatusBarProps {
  * what changed since the last accepted review, and the way into the review.
  * Renders nothing while decision mode is off or the range has no file changes.
  */
-export const ReviewStatusBar = memo(function ReviewStatusBar({ cwd, sessionId, messages, running, hasMoreHistory }: ReviewStatusBarProps) {
+export const ReviewStatusBar = memo(function ReviewStatusBar({ cwd, sessionId, messages, running, hasMoreHistory, engine, sessionModel }: ReviewStatusBarProps) {
   const { t } = useTranslation();
   const { enabled, resolution } = useDecisionMode(cwd);
   const enabledAt = resolution?.status === 'resolved' ? resolution.enabledAt : undefined;
@@ -87,8 +90,17 @@ export const ReviewStatusBar = memo(function ReviewStatusBar({ cwd, sessionId, m
   const [showHistory, setShowHistory] = useState(false);
   const onAccepted = useCallback(() => setTasksTick((n) => n + 1), []);
   const openReview = useCallback(
-    () => setModal({ kind: 'live', turns, initialStart: start, messages: messagesRef.current }),
-    [turns, start],
+    () =>
+      setModal({
+        kind: 'live',
+        turns,
+        initialStart: start,
+        messages: messagesRef.current,
+        sessionEngine: engine ?? 'claude',
+        ...(sessionModel ? { sessionModel } : {}),
+        ...(resolution?.status === 'resolved' && resolution.extractionModel ? { savedModel: resolution.extractionModel } : {}),
+      }),
+    [turns, start, engine, sessionModel, resolution],
   );
   const onModalClose = useCallback(() => {
     setModal(null);

@@ -4,6 +4,8 @@
 export type * from '../shared/types';
 export type * from '../shared/review';
 export type * from '../shared/verification';
+export type * from '../shared/extraction';
+export { LOW_END_MODEL } from '../shared/extraction';
 export { useDecisionMode, type DecisionModeState } from './useDecisionMode';
 export { DecisionModeToggle } from './DecisionModeToggle';
-export { decisionsExportUrl, loadReview, loadSessionTasks, loadAcceptedTask, acceptReview, setCheckOverride } from './effect/decisionsClient';
+export { decisionsExportUrl, loadReview, loadSessionTasks, loadAcceptedTask, acceptReview, setCheckOverride, saveExtractionModel } from './effect/decisionsClient';

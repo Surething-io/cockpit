@@ -177,3 +177,27 @@ export const verifyRange = (
       affects,
     });
   });
+
+/** Validate untrusted runs from a request body (shared by the verification and extraction routes). */
+export function parseRuns(raw: unknown): VerificationRunInput[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: VerificationRunInput[] = [];
+  for (const r of raw as Array<Record<string, unknown>>) {
+    if (!r || typeof r.toolId !== 'string' || typeof r.command !== 'string' || typeof r.order !== 'number') return null;
+    const o = r.outcome as Record<string, unknown> | undefined;
+    const outcome: VerificationRunInput['outcome'] =
+      o?.kind === 'exit' && typeof o.code === 'number' ? { kind: 'exit', code: o.code }
+      : o?.kind === 'running' ? { kind: 'running' }
+      : { kind: 'unknown' };
+    out.push({
+      toolId: r.toolId,
+      command: r.command.slice(0, 4000),
+      outcome,
+      order: r.order,
+      ...(typeof r.at === 'string' ? { at: r.at } : {}),
+      noTestsRan: r.noTestsRan === true,
+      tail: typeof r.tail === 'string' ? r.tail.slice(-4000) : '',
+    });
+  }
+  return out;
+}

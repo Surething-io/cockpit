@@ -6,9 +6,9 @@
  * that survive a history reload, unlike live bubble ids, which is why "already
  * accepted" is decided by tool ids rather than by turn ids.
  */
-import type { ReviewTurn } from '@cockpit/feature-decisions';
+import type { ExtractionMessage, ReviewTurn } from '@cockpit/feature-decisions';
 import type { ChatMessage, ToolCallInfo } from '../types';
-import { extractRuns, type CommandRun } from '../../shared/commandRuns';
+import { extractRuns, isShellTool, resolveExit, type CommandRun } from '../../shared/commandRuns';
 
 const firstLine = (s: string): string => (s.split('\n').find((l) => l.trim()) ?? '').trim().slice(0, 120);
 
@@ -86,4 +86,39 @@ export function rangeEvidence(messages: readonly ChatMessage[], turnIds: Readonl
     for (const tc of m.toolCalls ?? []) ordered.push({ call: tc, ...(m.timestamp ? { at: m.timestamp } : {}) });
   }
   return { orderedToolIds: ordered.map((o) => o.call.id), runs: extractRuns(ordered), claimedPass };
+}
+
+const toolTarget = (tc: ToolCallInfo): string => {
+  const i = tc.input as Record<string, unknown>;
+  const v = i.file_path ?? i.notebook_path ?? i.path ?? i.command ?? i.pattern ?? i.url ?? i.description;
+  return typeof v === 'string' ? v : '';
+};
+
+/** One line per tool call — a pointer for the model, not evidence. */
+function toolLine(tc: ToolCallInfo): string {
+  const target = toolTarget(tc);
+  const shown = isShellTool(tc.name) ? `\`${target}\`` : target;
+  const outcome = isShellTool(tc.name) ? resolveExit(tc) : null;
+  const tail = outcome?.kind === 'exit' ? ` (exit ${outcome.code})` : '';
+  return `${tc.name}${shown ? ` ${shown}` : ''}${tail}`;
+}
+
+/**
+ * The conversation of the selected turns, condensed for extraction (§9):
+ * user and agent text kept whole, tool calls reduced to one line each.
+ */
+export function extractionMessages(messages: readonly ChatMessage[], turnIds: ReadonlySet<string>): ExtractionMessage[] {
+  const out: ExtractionMessage[] = [];
+  let inRange = false;
+  for (const m of messages) {
+    if (m.role === 'user') {
+      inRange = turnIds.has(m.id);
+      if (inRange) out.push({ id: m.id, role: 'user', text: m.content, tools: [] });
+      continue;
+    }
+    if (!inRange || m.role !== 'assistant') continue;
+    const tools = (m.toolCalls ?? []).map(toolLine);
+    if (m.content.trim() || tools.length) out.push({ id: m.id, role: 'agent', text: m.content, tools });
+  }
+  return out;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '../types';
-import { buildReviewTurns, defaultRangeStart, rangeEvidence } from './reviewTurns';
+import { buildReviewTurns, defaultRangeStart, extractionMessages, rangeEvidence } from './reviewTurns';
 
 const user = (id: string, content: string, timestamp?: string): ChatMessage => ({ id, role: 'user', content, ...(timestamp ? { timestamp } : {}) });
 const assistant = (id: string, toolIds: string[]): ChatMessage => ({
@@ -72,5 +72,24 @@ describe('rangeEvidence', () => {
     expect(claim('测试没有通过')).toBe(false);
     expect(claim('Fixed it — all tests pass.')).toBe(true);
     expect(claim('测试已经通过')).toBe(true);
+  });
+});
+
+describe('extractionMessages', () => {
+  it('keeps text whole and condenses tool calls of the selected turns', () => {
+    const msgs: ChatMessage[] = [
+      user('u0', 'old'),
+      { id: 'a0', role: 'assistant', content: 'old answer' },
+      user('u1', 'fix it\nplease'),
+      { id: 'a1', role: 'assistant', content: 'Done.', toolCalls: [
+        { id: 't1', name: 'Edit', input: { file_path: 'src/a.ts' } },
+        { id: 't2', name: 'Bash', input: { command: 'npm test' }, isError: true, result: 'Exit code 1\nx' },
+      ] },
+      { id: 'a2', role: 'assistant', content: '   ' },
+    ];
+    expect(extractionMessages(msgs, new Set(['u1']))).toEqual([
+      { id: 'u1', role: 'user', text: 'fix it\nplease', tools: [] },
+      { id: 'a1', role: 'agent', text: 'Done.', tools: ['Edit src/a.ts', 'Bash `npm test` (exit 1)'] },
+    ]);
   });
 });

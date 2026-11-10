@@ -178,6 +178,7 @@
     "@cockpit/feature-agent": "*",
     "@cockpit/feature-comments": "*",
     "@cockpit/feature-console": "*",
+    "@cockpit/feature-decisions": "*",
     "@cockpit/feature-explorer": "*",
     "@cockpit/feature-skills": "*",
     "@cockpit/feature-workspace": "*",

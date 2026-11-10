@@ -48,6 +48,7 @@ import { EngineQuotaButton } from './EngineQuotaButton';
 import { COLUMN_HEADER_ROW } from './columnHeaderRow';
 import type { ApiKeyEngine, UserMessageIndexEntry } from './effect/agentClient';
 import { CommentsListModal, useHasComments } from '@cockpit/feature-comments';
+import { DecisionModeToggle } from '@cockpit/feature-decisions';
 import { useTranslation } from 'react-i18next';
 
 // Migrated from src/components/project/Chat.tsx.
@@ -811,6 +812,13 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
      all engines inject it, so unlike that toggle there is no support gate. */
   const outputStyleControl = <OutputStylePicker value={outputStyle} onChange={setOutputStyle} />;
 
+  /* Decision mode (docs/DECISION_MODE.md): per-PROJECT feature switch, shared by every tab of
+     the project. Mounted in every engine's option row — the feature is engine-agnostic. */
+  const decisionModeToggle = useMemo(
+    () => (initialCwd ? <DecisionModeToggle cwd={initialCwd} /> : null),
+    [initialCwd],
+  );
+
   return (
     // Provider, not props: every tool row needs the store, including the ones inside a
     // SubagentTranscriptModal nested arbitrarily deep. Portals inherit context, so the modal
@@ -885,6 +893,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             )}
             {independentTaskToggle}
             {outputStyleControl}
+            {decisionModeToggle}
           </div>
         )}
 
@@ -893,6 +902,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             <GrokModelTraitsPicker model={effectiveGrokModel} onModelChange={onGrokModelChange} reasoningEffort={grokReasoningEffort} onReasoningEffortChange={onGrokReasoningEffortChange} />
             {independentTaskToggle}
             {outputStyleControl}
+            {decisionModeToggle}
           </div>
         )}
 
@@ -904,6 +914,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             )}
             {independentTaskToggle}
             {outputStyleControl}
+            {decisionModeToggle}
           </div>
         )}
 
@@ -924,6 +935,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             )}
             {independentTaskToggle}
             {outputStyleControl}
+            {decisionModeToggle}
             {/* Belongs to the key, not to the turn — pushed right so it reads as status
                 rather than as one more control in the sequence. */}
             <div className="ml-auto pl-2">

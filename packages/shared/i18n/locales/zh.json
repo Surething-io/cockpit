@@ -1385,5 +1385,17 @@
     "loadFailed": "加载机器人失败",
     "saveFailed": "添加机器人失败",
     "removeFailed": "移除机器人失败"
+  },
+  "decisions": {
+    "mode": "决策模式",
+    "modeDesc": "审阅改动 · 留住决策 · 按项目生效",
+    "toggleFailed": "无法切换决策模式",
+    "ambiguousTitle": "这是哪个项目？",
+    "ambiguousSame": "这个仓库与 {{path}} 的首个提交相同。它们是同一个项目吗？同一个项目会共享决策。",
+    "sameProject": "同一个项目",
+    "notSameProject": "不是",
+    "ambiguousSeparate": "为这个仓库单独建立决策记录？",
+    "separateProject": "独立项目",
+    "pathProjectWarning": "这个目录不是有提交记录的 git 仓库，决策会按目录路径保存，挪动或重命名目录后将失去关联。仍然开启决策模式？"
   }
 }

@@ -1388,5 +1388,17 @@
     "loadFailed": "Failed to load bots",
     "saveFailed": "Failed to add bot",
     "removeFailed": "Failed to remove bot"
+  },
+  "decisions": {
+    "mode": "Decision mode",
+    "modeDesc": "review changes · keep decisions · per project",
+    "toggleFailed": "Could not change decision mode",
+    "ambiguousTitle": "Which project is this?",
+    "ambiguousSame": "This repository shares its first commit with {{path}}. Is it the same project? Same project shares its decisions.",
+    "sameProject": "Same project",
+    "notSameProject": "No",
+    "ambiguousSeparate": "Start a separate decision record for this repository?",
+    "separateProject": "Separate project",
+    "pathProjectWarning": "This folder is not a git repository with commits, so decisions are tied to its path. Moving or renaming the folder loses them. Turn on decision mode?"
   }
 }

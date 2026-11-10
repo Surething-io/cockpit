@@ -34,6 +34,7 @@ bootstrap. **All business code lives in `packages/`.**
 | `packages/feature/agent/`         | `@cockpit/feature-agent`      | Chat domain: API + UI + state + scheduled tasks + slash commands |
 | `packages/feature/comments/`      | `@cockpit/feature-comments`   | Code annotation API + hooks + list modal |
 | `packages/feature/console/`       | `@cockpit/feature-console`    | Terminal + browser bubbles + DB bubbles |
+| `packages/feature/decisions/`     | `@cockpit/feature-decisions`  | Decision mode: per-project switch, project identity, append-only decision store (docs/DECISION_MODE.md) |
 | `packages/feature/explorer/`      | `@cockpit/feature-explorer`   | File browser + code rendering (DiffView, CodeViewer, MarkdownPreview) + git + LSP |
 | `packages/feature/skills/`        | `@cockpit/feature-skills`     | SKILL.md parser + slash autocomplete + cross-frame bus |
 | `packages/feature/workspace/`     | `@cockpit/feature-workspace`  | Integrator feature — consumes all other features; mounted by Next.js `src/app/page.tsx`. Contains Workspace + TabManager + Providers + cross-feature modals. There is no `apps/` directory; the integrator lives as a feature package. |
@@ -76,11 +77,12 @@ relationship.
 
 ```
 feature-workspace  ──→  agent, console, explorer, skills
-feature-agent      ──→  feature-comments, feature-explorer
+feature-agent      ──→  feature-comments, feature-decisions, feature-explorer
 feature-explorer   ──→  feature-comments
 feature-skills     ──→  feature-explorer
 feature-comments   ──→  (none)
 feature-console    ──→  (none)
+feature-decisions  ──→  (none)
 ```
 
 When adding a feature → feature dependency, double-check this graph stays

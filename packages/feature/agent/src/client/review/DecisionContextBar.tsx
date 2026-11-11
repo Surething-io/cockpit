@@ -35,7 +35,13 @@ function recentEditedFiles(messages: readonly ChatMessage[]): string[] {
  * Debounced relevance lookup for the draft. Returns a ref-stable getter so
  * the send path never re-renders on keystrokes.
  */
-export function useDecisionContext(cwd: string | undefined, draft: string, messages: readonly ChatMessage[]) {
+export function useDecisionContext(
+  cwd: string | undefined,
+  draft: string,
+  messages: readonly ChatMessage[],
+  /** A run is active: the next send is a mid-turn message, which never carries decisions. */
+  paused = false,
+) {
   const { enabled } = useDecisionMode(cwd);
   const [found, setFound] = useState<RelevantDecision[]>([]);
   const [removed, setRemoved] = useState<Set<string>>(new Set());
@@ -43,7 +49,7 @@ export function useDecisionContext(cwd: string | undefined, draft: string, messa
   messagesRef.current = messages;
 
   useEffect(() => {
-    if (!enabled || !cwd || !draft.trim()) {
+    if (!enabled || !cwd || paused || !draft.trim()) {
       setFound([]);
       return;
     }
@@ -59,7 +65,7 @@ export function useDecisionContext(cwd: string | undefined, draft: string, messa
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [enabled, cwd, draft]);
+  }, [enabled, cwd, draft, paused]);
 
   const shown = useMemo(() => found.filter((d) => !removed.has(d.id)), [found, removed]);
   const picks = useMemo<DecisionContextItem[]>(() => shown.map((d) => ({ id: d.id, rev: d.rev, choice: d.choice, premises: d.premises })), [shown]);

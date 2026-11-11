@@ -33,6 +33,22 @@ describe('rankDecisions', () => {
   it('superseded decisions and ones already injected at this revision are skipped', () => {
     expect(rank('send.ts', [], ['mem@1'])).toEqual([]);
   });
+  it('regression: a long decision no longer collides with an unrelated message on common words', () => {
+    const inbox = d('inbox', {
+      choice: '把“留住决策”与“接受审阅”分开：候选决策可以在待确认收件箱中单独保留或丢弃，接受整段审阅变为可选项，而不再是决策进入决策库的唯一途径。',
+      rationale: '正式版 41 次提取生成了 54 条候选决策，但一次接受都没有发生，所有候选都停留在提取缓存里，决策库为空。',
+      alternatives: ['保持现状：决策只能通过打开审阅、勾选候选并点“接受此区间”进入决策库'],
+      premises: ['候选决策已存在于提取缓存中', '用户接受了这一方向'],
+      links: [{ path: 'packages/feature/decisions/src/server/candidates.ts' }],
+    });
+    const text = '就解决一个列表标题问题，怎么解决方案这么重，影响第一次打开用户体验了';
+    expect(rankDecisions([inbox], text, new Set(), new Set())).toEqual([]);
+    // Even with its file changed in this range, common words do not tip it over.
+    expect(rankDecisions([inbox], text, new Set(['packages/feature/decisions/src/server/candidates.ts']), new Set())).toEqual([]);
+    // A message that is actually about it still matches.
+    expect(rankDecisions([inbox], '候选决策还是要接受审阅才能进决策库吗', new Set(), new Set()).map((r) => r.decision.id)).toEqual(['inbox']);
+  });
+
   it('tokens: words and CJK bigrams', () => {
     expect([...tokens('The Dedupe ids 会话存储')].sort()).toEqual(['dedupe', 'ids', '会话', '存储', '话存']);
   });

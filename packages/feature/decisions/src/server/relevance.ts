@@ -13,6 +13,9 @@ import { derivedContext, deriveState } from './derived';
 
 export const MAX_INJECTED = 3;
 const MIN_SCORE = 3;
+/** Share of shared words (of the shorter of choice / message) needed for a keyword match. */
+const KEYWORD_SHARE = 0.3;
+const KEYWORD_SHARE_WEAK = 0.2;
 
 export type RelevanceReason = 'mentioned' | 'changed' | 'keywords';
 
@@ -60,12 +63,21 @@ export function rankDecisions(
     }
     if (reasons.has('mentioned')) score += 3;
     if (reasons.has('changed')) score += 2;
-    const own = tokens([d.choice, d.rationale, ...d.premises, ...d.alternatives].join(' '));
+    // Keywords compare against the CHOICE only, and must cover a real share of it.
+    // Matching the whole record (rationale, alternatives, premises) let a long
+    // decision collide with any message on common words — a real case attached a
+    // decision about the review inbox to "list titles load slowly" on 一次 / 用户 / 打开.
+    const own = tokens(d.choice);
     let overlap = 0;
     for (const w of own) if (words.has(w)) overlap++;
-    // Two shared words only tip a "changed in this range" match over; three stand on their own.
-    if (overlap >= 2) {
-      score += overlap >= 3 ? 3 : 1;
+    // Share of the shorter text, so neither a long choice nor a long message dilutes a real match.
+    const share = overlap / Math.max(1, Math.min(own.size, words.size));
+    if (overlap >= 3 && share >= KEYWORD_SHARE) {
+      score += 3;
+      reasons.add('keywords');
+    } else if (overlap >= 2 && share >= KEYWORD_SHARE_WEAK) {
+      // Only enough to tip a "changed in this range" match over the threshold.
+      score += 1;
       reasons.add('keywords');
     }
     if (score >= MIN_SCORE) out.push({ decision: d, score, reasons: [...reasons] });

@@ -404,7 +404,12 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   }, [streamHandleSend, injectMessage, acceptsMidRunInput, isLoading, loadedSessionId, sessionId]);
 
   // Decision mode: related decisions shown before sending, removable, attached to the next send (§7.2).
-  const decisionCtx = useDecisionContext(initialCwd, draft, messages);
+  // Never on a message sent while a run is active: a mid-turn message is a nudge or a correction
+  // to the work in flight, and a decision preamble there only reads as noise to the agent.
+  const runActive = isLoading || liveRunning;
+  const runActiveRef = useRef(runActive);
+  runActiveRef.current = runActive;
+  const decisionCtx = useDecisionContext(initialCwd, draft, messages, runActive);
   const { picksRef: decisionPicksRef, reset: resetDecisionCtx } = decisionCtx;
 
   const wrappedHandleSend = useCallback(async (content: string, images?: ImageInfo[]) => {
@@ -459,7 +464,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       return;
     }
     // Plain sends only: /plan and !command are Cockpit controls, not requests to the agent.
-    const decisionPrefix = buildDecisionContext(decisionPicksRef.current);
+    const decisionPrefix = runActiveRef.current ? '' : buildDecisionContext(decisionPicksRef.current);
     handleSend(decisionPrefix + content, images);
     if (decisionPrefix) resetDecisionCtx();
   }, [handleSend, initialCwd, t, isClaudeEngine, setPlanMode, decisionPicksRef, resetDecisionCtx]);
@@ -1034,7 +1039,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           sessionModel={reviewSessionModel}
           onFillInput={fillDraft}
         />
-        <DecisionContextBar shown={decisionCtx.shown} onRemove={decisionCtx.remove} />
+        {!runActive && <DecisionContextBar shown={decisionCtx.shown} onRemove={decisionCtx.remove} />}
 
         {/* Input. In side-by-side the focused pane portals its composer into a
             slot below BOTH panes, so one composer spans the panel and neither

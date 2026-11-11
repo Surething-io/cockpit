@@ -51,10 +51,7 @@ import { EngineQuotaButton } from './EngineQuotaButton';
 import { COLUMN_HEADER_ROW } from './columnHeaderRow';
 import type { ApiKeyEngine, UserMessageIndexEntry } from './effect/agentClient';
 import { CommentsListModal, useHasComments } from '@cockpit/feature-comments';
-import { DecisionModeToggle } from '@cockpit/feature-decisions';
-import { ReviewStatusBar } from './review/ReviewStatusBar';
-import { buildDecisionContext, stripDecisionContext } from '../shared/decisionContext';
-import { DecisionContextBar, useDecisionContext } from './review/DecisionContextBar';
+import { stripDecisionContext } from '../shared/decisionContext';
 import { useTranslation } from 'react-i18next';
 
 // Migrated from src/components/project/Chat.tsx.
@@ -298,14 +295,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     engine === 'deepseek' || engine === 'kimi' || engine === 'glm' ? engine : null;
   const engineModel =
     apiKeyEngine === 'kimi' ? kimiModel : apiKeyEngine === 'glm' ? glmModel : deepseekModel;
-  // Decision-mode review fills the composer and never sends (docs/DECISION_MODE.md §4.2).
-  const fillDraft = useCallback((text: string) => setDraft((prev) => (prev.trim() ? `${prev}\n\n${text}` : text)), []);
-  // The session's current model, as the default for decision-mode extraction (§9).
-  const reviewSessionModel = isCodexEngine ? effectiveCodexModel
-    : engine === 'ollama' ? ollamaModel
-    : apiKeyEngine ? engineModel
-    : engine === 'grok' ? effectiveGrokModel
-    : effectiveClaudeModel;
   const piThinking = usePiThinking(engine, engine === 'ollama' ? ollamaModel : engineModel, initialCwd, sessionId, engineHasKey);
   const onEngineModelChange =
     apiKeyEngine === 'kimi'
@@ -406,14 +395,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     return streamHandleSend(content, images, overrides);
   }, [streamHandleSend, injectMessage, acceptsMidRunInput, isLoading, loadedSessionId, sessionId]);
 
-  // Decision mode: related decisions shown before sending, removable, attached to the next send (§7.2).
-  // Never on a message sent while a run is active: a mid-turn message is a nudge or a correction
-  // to the work in flight, and a decision preamble there only reads as noise to the agent.
-  const runActive = isLoading || liveRunning;
-  const runActiveRef = useRef(runActive);
-  runActiveRef.current = runActive;
-  const decisionCtx = useDecisionContext(initialCwd, draft, messages, runActive);
-  const { picksRef: decisionPicksRef, reset: resetDecisionCtx } = decisionCtx;
 
   const wrappedHandleSend = useCallback(async (content: string, images?: ImageInfo[]) => {
     const firstLine = content.split('\n')[0];
@@ -466,11 +447,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       }
       return;
     }
-    // Plain sends only: /plan and !command are Cockpit controls, not requests to the agent.
-    const decisionPrefix = runActiveRef.current ? '' : buildDecisionContext(decisionPicksRef.current);
-    handleSend(decisionPrefix + content, images);
-    if (decisionPrefix) resetDecisionCtx();
-  }, [handleSend, initialCwd, t, isClaudeEngine, setPlanMode, decisionPicksRef, resetDecisionCtx]);
+    handleSend(content, images);
+  }, [handleSend, initialCwd, t, isClaudeEngine, setPlanMode]);
 
   // Plan-card "approve & run": the user's approval for the presented plan. Persistent off —
   // the Plan toggle visibly turns off and stays off for subsequent turns (mirrors native
@@ -639,12 +617,12 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
 
     chatContext.registerChat((message: string) => {
       handleSendRef.current?.(message);
-    }, tabId, fillDraft);
+    }, tabId);
 
     return () => {
       chatContext.unregisterChat(tabId);
     };
-  }, [tabId, chatContext, fillDraft]);
+  }, [tabId, chatContext]);
 
   // Claim the destination for externally-routed messages (CodeViewer "send to
   // AI", comments, …). Gated on isFocused, not isActive: in side-by-side both
@@ -852,13 +830,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     </label>
   ) : null;
 
-  /* Decision mode (docs/DECISION_MODE.md): per-PROJECT feature switch, shared by every tab of
-     the project. Mounted in every engine's option row — the feature is engine-agnostic. */
-  const decisionModeToggle = useMemo(
-    () => (initialCwd ? <DecisionModeToggle cwd={initialCwd} /> : null),
-    [initialCwd],
-  );
-
   return (
     // Provider, not props: every tool row needs the store, including the ones inside a
     // SubagentTranscriptModal nested arbitrarily deep. Portals inherit context, so the modal
@@ -932,7 +903,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
               </label>
             )}
             {independentTaskToggle}
-            {decisionModeToggle}
           </div>
         )}
 
@@ -940,7 +910,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           <div className={ENGINE_OPTIONS_ROW}>
             <GrokModelTraitsPicker model={effectiveGrokModel} onModelChange={onGrokModelChange} reasoningEffort={grokReasoningEffort} onReasoningEffortChange={onGrokReasoningEffortChange} />
             {independentTaskToggle}
-            {decisionModeToggle}
           </div>
         )}
 
@@ -952,7 +921,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             )}
             <PiThinkingPicker {...piThinking} />
             {independentTaskToggle}
-            {decisionModeToggle}
           </div>
         )}
 
@@ -973,7 +941,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             )}
             <PiThinkingPicker {...piThinking} />
             {independentTaskToggle}
-            {decisionModeToggle}
             {/* Belongs to the key, not to the turn — pushed right so it reads as status
                 rather than as one more control in the sequence. */}
             <div className="ml-auto pl-2">
@@ -1030,19 +997,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           sessionId={sessionId || loadedSessionId}
         />
 
-        {/* Decision mode (docs/DECISION_MODE.md §4.1): changes since the last accepted
-            review + the way into the review. Renders nothing while the mode is off. */}
-        <ReviewStatusBar
-          cwd={initialCwd}
-          sessionId={sessionId}
-          messages={messages}
-          running={isLoading || liveRunning}
-          hasMoreHistory={hasMoreHistory}
-          engine={engine ?? 'claude'}
-          sessionModel={reviewSessionModel}
-          onFillInput={fillDraft}
-        />
-        {!runActive && <DecisionContextBar shown={decisionCtx.shown} onRemove={decisionCtx.remove} />}
 
         {/* Input. In side-by-side the focused pane portals its composer into a
             slot below BOTH panes, so one composer spans the panel and neither

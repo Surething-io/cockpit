@@ -38,7 +38,6 @@ import {
   type SnapshotCommit,
   type SnapshotDiff,
   type SnapshotRangeDiff,
-  type SnapshotWindowCommit,
   type SnapshotFileDiff,
   type SnapshotRecordResult,
 } from "@cockpit/effect-services"
@@ -1020,106 +1019,6 @@ const rangeDiffImpl = (
     return { base, head: headCommit, files, truncated } satisfies SnapshotRangeDiff
   }).pipe(Effect.withSpan("snapshot.rangeDiff", { attributes: { cwd, base: base ?? "empty-tree", head } }))
 
-const HASH = /^[0-9a-f]{6,40}$/i
-
-/** Snapshot repo dir for `cwd`, or null when the project has never been snapshotted. */
-const existingRepoDir = (
-  snapshotsRoot: string,
-  cwd: string
-): Effect.Effect<string | null, AppError> =>
-  Effect.gen(function* () {
-    const repoDir = yield* resolveRepoDir(snapshotsRoot, cwd)
-    const exists = yield* fsTry("stat HEAD", () =>
-      stat(join(repoDir, "HEAD")).then(() => true)
-    ).pipe(Effect.orElseSucceed(() => false))
-    return exists ? repoDir : null
-  })
-
-/**
- * Commits after `after` through `through` across ALL day branches, oldest
- * first, each with its changed paths. One `log --all` (bounded by retention,
- * like listByToolIds) — the window is cut by position, so a range spanning a
- * day rollover still lists both sides. Parentless roots report no files: a
- * rollover root re-commits the previous tip's tree, so `--name-only` would
- * list the whole project as "changed".
- */
-const listWindowImpl = (
-  snapshotsRoot: string,
-  cwd: string,
-  after: string | null,
-  through: string
-): Effect.Effect<ReadonlyArray<SnapshotWindowCommit>, AppError | ValidationError> =>
-  Effect.gen(function* () {
-    if (after !== null && !HASH.test(after)) {
-      return yield* Effect.fail(new ValidationError({ field: "after", reason: "invalid commit hash" }))
-    }
-    if (!HASH.test(through)) {
-      return yield* Effect.fail(new ValidationError({ field: "through", reason: "invalid commit hash" }))
-    }
-    const repoDir = yield* existingRepoDir(snapshotsRoot, cwd)
-    if (!repoDir) return []
-    const log = yield* runGitOk(repoDir, cwd, [
-      "-c",
-      "core.quotePath=false",
-      "log",
-      "--all",
-      "--date-order",
-      "--reverse",
-      "--name-only",
-      "--format=%x1e%H%x1f%P%x1f%ct%x1f%B%x1d",
-    ])
-    const commits: SnapshotWindowCommit[] = []
-    for (const record of log.stdout.split("\x1e")) {
-      if (!record) continue
-      const cut = record.lastIndexOf("\x1d")
-      if (cut < 0) continue
-      const commit = commitFromLogRecord(record.slice(0, cut))
-      if (!commit) continue
-      const files = commit.parent
-        ? record.slice(cut + 1).split("\n").filter((l) => l.length > 0)
-        : []
-      commits.push({ ...commit, files })
-    }
-    const matches = (c: SnapshotCommit, h: string) => c.hash.startsWith(h.toLowerCase())
-    const end = commits.findIndex((c) => matches(c, through))
-    if (end < 0) return yield* Effect.fail(new ValidationError({ field: "through", reason: "commit not found" }))
-    const start = after === null ? -1 : commits.findIndex((c) => matches(c, after))
-    return commits.slice(start < 0 || start > end ? 0 : start + 1, end + 1)
-  }).pipe(Effect.withSpan("snapshot.listWindow", { attributes: { cwd } }))
-
-/** `ls-tree` blob ids of `paths` at `rev`; paths absent at `rev` are left out. */
-const blobIdsImpl = (
-  snapshotsRoot: string,
-  cwd: string,
-  rev: string,
-  paths: ReadonlyArray<string>
-): Effect.Effect<ReadonlyMap<string, string>, AppError | ValidationError> =>
-  Effect.gen(function* () {
-    if (!HASH.test(rev)) {
-      return yield* Effect.fail(new ValidationError({ field: "rev", reason: "invalid commit hash" }))
-    }
-    const out = new Map<string, string>()
-    if (paths.length === 0) return out
-    const repoDir = yield* existingRepoDir(snapshotsRoot, cwd)
-    if (!repoDir) return out
-    const r = yield* runGitOk(repoDir, cwd, [
-      "-c",
-      "core.quotePath=false",
-      "ls-tree",
-      "-r",
-      "-z",
-      rev,
-      "--",
-      // ls-tree paths are literal prefixes, not pathspecs — no glob / magic to escape.
-      ...paths,
-    ])
-    for (const row of r.stdout.split("\0")) {
-      const m = /^\d+ blob ([0-9a-f]+)\t([^]*)$/.exec(row)
-      if (m) out.set(m[2], m[1])
-    }
-    return out
-  }).pipe(Effect.withSpan("snapshot.blobIds", { attributes: { cwd, rev } }))
-
 // ─────────────────────────────────────────────────────────
 // Cleanup (retention)
 // ─────────────────────────────────────────────────────────
@@ -1295,10 +1194,6 @@ export const SnapshotServiceLive = Layer.scoped(
       rangeDiff: (cwd: string, base: string | null, head: string) =>
         rangeDiffImpl(snapshotsRoot, cwd, base, head),
       blob: (cwd: string, rev: string, file: string) => blobImpl(snapshotsRoot, cwd, rev, file),
-      listWindow: (cwd: string, after: string | null, through: string) =>
-        listWindowImpl(snapshotsRoot, cwd, after, through),
-      blobIds: (cwd: string, rev: string, paths: ReadonlyArray<string>) =>
-        blobIdsImpl(snapshotsRoot, cwd, rev, paths),
       cleanup,
     })
   })

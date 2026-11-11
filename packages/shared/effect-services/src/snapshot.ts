@@ -105,12 +105,6 @@ export interface SnapshotRangeDiff {
   readonly truncated: boolean
 }
 
-/** A commit inside a window, with the files it changed against its parent. */
-export interface SnapshotWindowCommit extends SnapshotCommit {
-  /** cwd-relative paths; empty for parentless (first-ever / day-rollover) roots. */
-  readonly files: ReadonlyArray<string>
-}
-
 export interface SnapshotRecordResult {
   readonly committed: boolean
   readonly hash?: string
@@ -168,28 +162,6 @@ export interface SnapshotService {
     base: string | null,
     head: string
   ) => Effect.Effect<SnapshotRangeDiff, AppError | ValidationError | NotFoundError>
-  /**
-   * Every commit of the project's snapshot history strictly after `after` up to
-   * and including `through`, oldest first, each with the files it changed — from
-   * ALL sessions, which is the point: decision-mode review uses it to tell a
-   * task's own changes from concurrent ones (docs/DECISION_MODE.md §4.3).
-   * `after` null, or no longer present (retention), starts at the oldest commit.
-   */
-  readonly listWindow: (
-    cwd: string,
-    after: string | null,
-    through: string
-  ) => Effect.Effect<ReadonlyArray<SnapshotWindowCommit>, AppError | ValidationError>
-  /**
-   * Git blob ids of `paths` at snapshot revision `rev` (path → id). A path
-   * absent at that revision (deleted) is absent from the map. Blob ids are
-   * content hashes, so they match the same content in the project's own repo.
-   */
-  readonly blobIds: (
-    cwd: string,
-    rev: string,
-    paths: ReadonlyArray<string>
-  ) => Effect.Effect<ReadonlyMap<string, string>, AppError | ValidationError>
   /**
    * Raw bytes of an IMAGE blob at a snapshot revision — what makes the image
    * side of a snapshot diff renderable. The project's own repo has no such

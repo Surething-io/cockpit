@@ -650,7 +650,8 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   // Messages without it — user bubbles, optimistically inserted sends, system
   // rows — degrade to a single non-aside segment, i.e. exactly the DOM this
   // component rendered before parts existed.
-  // Decision-mode context Cockpit put in front of a user message: folded, never shown as the user's text.
+  // Context the retired decision mode put in front of some user messages (old transcripts still
+  // carry it): folded, never shown as the user's own text.
   const decisionContext = useMemo(
     () => (isUser && message.content ? splitDecisionContext(message.content) : null),
     [isUser, message.content],
@@ -1057,7 +1058,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
           {decisionContext && decisionContext.items.length > 0 && (
             <details className="mb-2 text-xs text-muted-foreground" data-testid="decision-context">
               <summary className="cursor-pointer select-none">
-                {t('decisions.context.attached', { defaultValue: '{{count}} related decisions attached', count: decisionContext.items.length })}
+                {t('chat.decisionContextAttached', { defaultValue: '{{count}} related decisions attached', count: decisionContext.items.length })}
               </summary>
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
                 {decisionContext.items.map((it) => (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractRuns, looksLikeNoTestsRan, resolveExit, type CommandToolCall } from './commandRuns';
+import { commandText, isShellTool, resolveExit, type CommandToolCall } from './commandRuns';
 
 const bash = (over: Partial<CommandToolCall>): CommandToolCall => ({ id: 'x', name: 'Bash', input: { command: 'npm test' }, ...over });
 
@@ -25,33 +25,12 @@ describe('resolveExit', () => {
   });
 });
 
-describe('looksLikeNoTestsRan', () => {
-  it.each([
-    'No test files found, exiting with code 0',
-    'Ran 0 tests in 0.000s',
-    'collected 0 items',
-    'testing: warning: no tests to run',
-    'Tests:       0 total',
-    'running 0 tests',
-  ])('%s', (s) => expect(looksLikeNoTestsRan(s)).toBe(true));
-  it('a real run is not flagged', () => {
-    expect(looksLikeNoTestsRan('Test Files  3 passed (3)\n      Tests  21 passed (21)')).toBe(false);
-    expect(looksLikeNoTestsRan('Ran 10 tests in 1.2s\n\nOK')).toBe(false);
-  });
-});
-
-describe('extractRuns', () => {
-  it('keeps shell calls only, ordered among all calls', () => {
-    const runs = extractRuns([
-      { call: { id: 'e', name: 'Edit', input: { file_path: 'a' } } },
-      { call: bash({ id: 'r1', isError: false, result: 'ok' }), at: '2026-11-10T00:00:00Z' },
-      { call: { id: 'p', name: 'bash', input: { command: 'pytest' }, isError: true, result: 'x\nCommand exited with code 1' } },
-      { call: bash({ id: 'empty', input: {} }) },
-    ]);
-    expect(runs.map((r) => [r.toolId, r.order, r.outcome])).toEqual([
-      ['r1', 1, { kind: 'exit', code: 0 }],
-      ['p', 2, { kind: 'exit', code: 1 }],
-    ]);
-    expect(runs[0].at).toBe('2026-11-10T00:00:00Z');
+describe('shell tool helpers', () => {
+  it('recognises shell tools across engines and reads their command', () => {
+    expect(['Bash', 'bash', 'exec_command'].every(isShellTool)).toBe(true);
+    expect(isShellTool('Edit')).toBe(false);
+    expect(commandText(bash({ input: { command: 'npm test' } }))).toBe('npm test');
+    expect(commandText(bash({ input: { cmd: ['go', 'test'] } }))).toBe('go test');
+    expect(commandText(bash({ input: {} }))).toBe('');
   });
 });

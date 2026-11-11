@@ -315,8 +315,8 @@ export function applyStreamEvent(
       if (b.tool_use_id) {
         const tid = b.tool_use_id;
         const result = typeof b.content === 'string' ? b.content : JSON.stringify(b.content);
-        // Keep the engine's own failure / exit signal: decision-mode review reads it as
-        // verification evidence (docs/DECISION_MODE.md §5). Absent stays absent — never guessed.
+        // Keep the engine's own failure / exit signal (see shared/commandRuns.ts resolveExit).
+        // Absent stays absent — never guessed.
         const outcome = {
           ...(typeof b.is_error === 'boolean' ? { isError: b.is_error } : {}),
           ...(typeof b.exit_code === 'number' ? { exitCode: b.exit_code } : {}),

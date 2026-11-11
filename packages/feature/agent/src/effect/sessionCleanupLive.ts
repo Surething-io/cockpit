@@ -1,10 +1,13 @@
-// Scoped retention for native Pi sessions. Claude and Codex retain their own stores.
+// Scoped retention for native Pi sessions. Claude and Codex retain their own stores;
+// only Cockpit's own per-session Claude context snapshots are swept beside them.
 import { readdir, readFile, rm, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { Context, Effect, Layer, Schedule } from "effect"
 import { AppError, CockpitConfig } from "@cockpit/effect-core"
 import { readPiManager } from "./piSessionLive"
 import { beginTranscriptEdit } from "../server/sessionRunHub"
+import { cleanupOrphanedContextUsage } from "../server/context/claudeContextStore"
+import { CLAUDE_PROJECTS_DIR } from "@cockpit/shared-utils"
 
 const DAY_MS = 24 * 3600 * 1000
 
@@ -154,9 +157,17 @@ export const SessionCleanupLive = Layer.scoped(
     // session (mirrors Claude Code rejecting cleanupPeriodDays: 0).
     const keepDays = Math.max(1, cfg.sessionKeepDays)
     // One pass per Built-in Agent store; a missing root is a no-op inside cleanupSessions.
-    const cleanup = Effect.forEach(roots, (root) => cleanupSessions(root, keepDays, pinnedFile), {
+    const sessions = Effect.forEach(roots, (root) => cleanupSessions(root, keepDays, pinnedFile), {
       discard: true,
     })
+    // Context snapshots outlive their session when the Claude CLI expires its
+    // transcript; sweep those whose transcript is gone (an hour's grace covers a
+    // transcript stashed by a running independent turn).
+    const contextSnapshots = cleanupOrphanedContextUsage(join(cfg.cockpitDir, "projects"), CLAUDE_PROJECTS_DIR, 3600 * 1000).pipe(
+      Effect.tap((removed) => removed > 0 ? Effect.logInfo(`session cleanup: removed ${removed} orphaned context snapshot(s)`) : Effect.void),
+      Effect.catchAll((error) => Effect.logWarning("session cleanup: context snapshot sweep failed", error)),
+    )
+    const cleanup = Effect.zipRight(sessions, contextSnapshots)
 
     yield* Effect.forkScoped(
       cleanup.pipe(

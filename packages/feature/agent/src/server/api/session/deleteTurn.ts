@@ -11,6 +11,7 @@ import { resolveSessionPath } from './sessionStore';
 import { rewriteTranscript } from '../../transcriptWrite';
 import { deleteClaudeTurnLines } from './deleteTurnLines';
 import { deleteCodexTurnLines } from './codexFork';
+import { removeClaudeContextUsage } from '../../context/claudeContextStore';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -77,6 +78,13 @@ export const DELETE = dynamicHandler<
 
     if (result.targetMissed) {
       return yield* Effect.fail(new NotFoundError({ resource: 'message', id: body.messageUuid }));
+    }
+    // The captured context snapshot still describes the deleted turn; drop it so the
+    // inspector falls back to the transcript until the next turn captures a fresh one.
+    if (store.engine === 'claude') {
+      yield* removeClaudeContextUsage(body.cwd, sessionId).pipe(
+        Effect.catchAll((error) => Effect.logWarning('Cannot drop stale context snapshot', error)),
+      );
     }
 
     return ok({ success: true, deletedLineCount: result.deletedLineCount,

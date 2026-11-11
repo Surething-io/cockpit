@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Effect } from 'effect';
@@ -344,5 +344,48 @@ describe('claude context', () => {
 
   it('rejects session ids that could escape the store directory', () => {
     expect(store.claudeContextUsagePath(cwd, '../evil')).toBeNull();
+  });
+});
+
+describe('claude context snapshot retention', () => {
+  const old = new Date(Date.now() - 2 * 3600 * 1000);
+  const setup = async () => {
+    const base = await mkdtemp(join(root, 'retention-'));
+    const projects = join(base, 'cockpit-projects');
+    const claudeProjects = join(base, 'claude-projects');
+    const snapDir = join(projects, '-repo', 'context-usage');
+    await mkdir(snapDir, { recursive: true });
+    await mkdir(join(claudeProjects, '-repo', 'stashed'), { recursive: true });
+    const snap = async (name: string, aged = true) => {
+      const path = join(snapDir, name);
+      await writeFile(path, '{}');
+      if (aged) await utimes(path, old, old);
+    };
+    await snap('orphan.json');
+    await snap('alive.json');
+    await writeFile(join(claudeProjects, '-repo', 'alive.jsonl'), '');
+    await snap('stashed.json');
+    await writeFile(join(claudeProjects, '-repo', 'stashed', 'nohistory-backup.jsonl'), '');
+    await snap('fresh.json', false);
+    await snap('alive.json.123.tmp');
+    return { projects, claudeProjects, snapDir };
+  };
+
+  it('removes snapshots whose transcript is gone, keeping live, stashed and recent ones', async () => {
+    const { projects, claudeProjects, snapDir } = await setup();
+    const removed = await Effect.runPromise(store.cleanupOrphanedContextUsage(projects, claudeProjects, 3600 * 1000));
+    expect(removed).toBe(2);
+    expect((await readdir(snapDir)).sort()).toEqual(['alive.json', 'fresh.json', 'stashed.json']);
+  });
+
+  it('is a no-op when the projects directory does not exist', async () => {
+    expect(await Effect.runPromise(store.cleanupOrphanedContextUsage(join(root, 'missing'), join(root, 'missing2'), 0))).toBe(0);
+  });
+
+  it('drops one session\'s snapshot on demand', async () => {
+    await Effect.runPromise(store.saveClaudeContextUsage('/repo-drop', 'gone', { categories: [] } as unknown as Parameters<typeof store.saveClaudeContextUsage>[2]));
+    expect(await Effect.runPromise(store.readClaudeContextUsage('/repo-drop', 'gone'))).not.toBeNull();
+    await Effect.runPromise(store.removeClaudeContextUsage('/repo-drop', 'gone'));
+    expect(await Effect.runPromise(store.readClaudeContextUsage('/repo-drop', 'gone'))).toBeNull();
   });
 });

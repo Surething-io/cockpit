@@ -1,9 +1,10 @@
 import { Effect, Duration } from 'effect';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { SDKControlGetContextUsageResponse } from '@anthropic-ai/claude-agent-sdk';
 import { FSError } from '@cockpit/effect-core';
 import { COCKPIT_PROJECTS_DIR, encodePath } from '@cockpit/shared-utils';
+import { noHistoryStashPath } from '../transcriptLayout';
 
 /**
  * Claude Code computes its context breakdown inside the CLI process and only
@@ -11,6 +12,10 @@ import { COCKPIT_PROJECTS_DIR, encodePath } from '@cockpit/shared-utils';
  * Cockpit, is only during a run. So the breakdown is captured at the end of
  * every turn and kept here, beside the session titles, for the inspector to
  * read while the session is idle.
+ *
+ * Cockpit never deletes a whole Claude session — the CLI expires its own
+ * transcripts — so snapshots are not removed on a delete event but swept once
+ * their transcript is gone (cleanupOrphanedContextUsage).
  */
 
 export interface StoredClaudeContextUsage {
@@ -20,10 +25,11 @@ export interface StoredClaudeContextUsage {
 }
 
 const SAFE_ID = /^[A-Za-z0-9_-]+$/;
+const CONTEXT_USAGE_DIR = 'context-usage';
 
 export function claudeContextUsagePath(cwd: string, sessionId: string): string | null {
   if (!SAFE_ID.test(sessionId)) return null;
-  return join(COCKPIT_PROJECTS_DIR, encodePath(cwd), 'context-usage', `${sessionId}.json`);
+  return join(COCKPIT_PROJECTS_DIR, encodePath(cwd), CONTEXT_USAGE_DIR, `${sessionId}.json`);
 }
 
 export const saveClaudeContextUsage = (cwd: string, sessionId: string, usage: SDKControlGetContextUsageResponse): Effect.Effect<void, FSError> => {
@@ -81,3 +87,62 @@ export function captureClaudeContextUsage(source: ContextUsageSource, cwd: strin
     Effect.withSpan('agent.context.claude.capture'),
   ));
 }
+
+
+/** Drop a session's snapshot: after a turn is deleted it describes history that no longer exists. */
+export const removeClaudeContextUsage = (cwd: string, sessionId: string): Effect.Effect<void, FSError> => {
+  const path = claudeContextUsagePath(cwd, sessionId);
+  if (!path) return Effect.void;
+  return Effect.tryPromise({
+    try: () => rm(path, { force: true }),
+    catch: (cause) => new FSError({ path, op: 'rm', cause }),
+  });
+};
+
+const exists = (path: string): Promise<boolean> => stat(path).then(() => true, (error: NodeJS.ErrnoException) => {
+  if (error.code === 'ENOENT') return false;
+  throw error;
+});
+
+/**
+ * Remove snapshots whose Claude transcript no longer exists, plus stale `.tmp`
+ * leftovers of interrupted writes. Both stores name project directories with the
+ * same encodePath, so `<projectsDir>/<p>/context-usage/<id>.json` belongs to
+ * `<claudeProjectsDir>/<p>/<id>.jsonl` without decoding the cwd.
+ *
+ * A transcript is briefly absent while an independent (noHistory) turn runs with
+ * it stashed aside, so the stash counts as present, and nothing touched within
+ * `minAgeMs` is removed. Returns how many files were removed.
+ */
+export const cleanupOrphanedContextUsage = (
+  projectsDir: string,
+  claudeProjectsDir: string,
+  minAgeMs: number,
+): Effect.Effect<number, FSError> => Effect.tryPromise({
+  try: async () => {
+    const readDir = (dir: string) => readdir(dir).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return [] as string[];
+      throw error;
+    });
+    const cutoff = Date.now() - minAgeMs;
+    let removed = 0;
+    for (const project of await readDir(projectsDir)) {
+      const dir = join(projectsDir, project, CONTEXT_USAGE_DIR);
+      for (const name of await readDir(dir)) {
+        const file = join(dir, name);
+        const info = await stat(file).catch(() => null);
+        if (!info?.isFile() || info.mtimeMs >= cutoff) continue;
+        if (!name.endsWith('.tmp')) {
+          const sessionId = name.replace(/\.json$/, '');
+          if (sessionId === name || !SAFE_ID.test(sessionId)) continue;
+          const transcript = join(claudeProjectsDir, project, `${sessionId}.jsonl`);
+          if (await exists(transcript) || await exists(noHistoryStashPath(transcript))) continue;
+        }
+        await rm(file, { force: true });
+        removed++;
+      }
+    }
+    return removed;
+  },
+  catch: (cause) => new FSError({ path: projectsDir, op: 'rm', cause }),
+}).pipe(Effect.withSpan('agent.context.claude.cleanup'));

@@ -209,7 +209,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, running, cw
   }, []);
 
   return (
-    <div className="border-t border-border bg-card relative">
+    <div className="bg-card relative">
       <ImagePreview images={images} onRemove={handleRemoveImage} disabled={disabled} />
 
       {/* Command candidate list */}

@@ -167,8 +167,11 @@ interface ChatProps {
  * does not know that — see PaneShell, which owns the ✕ for exactly that reason.
  * The cost is some empty right edge on the toolbar row of a pane whose corner
  * holds fewer controls, and nothing competes for that space.
+ *
+ * The shared bottom border is dropped here: this row sits flush on the message
+ * list and reads as part of it, so a rule under it only adds visual noise.
  */
-const ENGINE_OPTIONS_ROW = `${COLUMN_HEADER_ROW} pl-3 pr-20 bg-card/50`;
+const ENGINE_OPTIONS_ROW = `${COLUMN_HEADER_ROW.replace(' border-b border-border', '')} pl-3 pr-20 bg-card/50`;
 
 export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, grokModel, onGrokModelChange, grokReasoningEffort, onGrokReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, isFocused = isActive, peerTabId, peerSide, refreshSignal, onLoadingChange, onDraftPresenceChange, onSessionIdChange, onTitleChange, onBotChange, onShowGitStatus, onOpenNote, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();

@@ -1063,7 +1063,10 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="relative flex-1 min-h-0 overflow-y-auto px-8 py-4"
+        // Edge fade: content dissolves into the bars above and below instead of
+        // being cut by a hard line. A mask (not a gradient overlay) so it works
+        // on any background and never intercepts clicks.
+        className="relative flex-1 min-h-0 overflow-y-auto px-8 py-4 [mask-image:linear-gradient(to_bottom,transparent,black_24px,black_calc(100%-24px),transparent)]"
       >
         {messages.length === 0 && !isLoading ? (
           <div className="flex items-center justify-center h-full text-foreground-subtle">

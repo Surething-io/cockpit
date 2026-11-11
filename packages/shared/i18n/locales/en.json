@@ -657,7 +657,7 @@
     "codexResumeFailedPrevious": "Previous session",
     "codexResumeFailedNew": "New session",
     "codexContextCompacting": "Codex is compacting the context…",
-    "placeholder": "Type a message, Enter to send (Shift+Enter for new line, paste images; start a line with / (skill), /@ (skill in a subagent) or @ (bot in a subagent), multiple allowed)",
+    "placeholder": "Type a message, / for skills, @ for bots",
     "placeholderDisabled": "Generating... you can keep typing (ESC to cancel; if stuck, cancel and resend 'continue')",
     "placeholderRunning": "Generating... Enter sends now: it joins the current reply at its next step (ESC to stop)",
     "imageSizeLimit": "Image size exceeds limit (max 5MB), current: {{size}}MB",

@@ -150,26 +150,29 @@ interface ChatProps {
  * bar stay the same height when they are side by side; see that file for why it
  * is declared rather than derived from padding.
  *
- * The 49px reserved on the right is this bar's alone. PaneShell floats a group
- * of corner controls over it — maximise and close — at `right-1`, each `w-6`
- * with a `gap-0.5` between, so together they cover the first 47.25px of that
- * edge. Those are not the numbers the class names suggest: `--spacing` is
- * .25rem and this app sets `html { font-size: 14px }`, making one Tailwind unit
- * 3.5px here rather than 4px. At `px-3` (10.5px) the row's rightmost control sat
- * squarely under them and the icons drew on top of each other. `pr-14` = 49px
- * clears the group with 1.75px to spare.
+ * The 70px reserved on the right is this bar's alone. PaneShell floats a group
+ * of corner controls over it — maximise and close (hover-only, split mode), plus
+ * the always-visible single/split layout toggle on the corner pane — at
+ * `right-1`, each `w-6` with a `gap-0.5` between, so together the three cover
+ * the first 68.25px of that edge. Those are not the numbers the class names
+ * suggest: `--spacing` is .25rem and this app sets `html { font-size: 14px }`,
+ * making one Tailwind unit 3.5px here rather than 4px. At `px-3` (10.5px) the
+ * row's rightmost control sat squarely under them and the icons drew on top of
+ * each other. `pr-20` = 70px clears the group with 1.75px to spare.
  *
- * This number tracks the corner group's width, and has already had to grow once
- * when the maximise button joined the ✕ (28px → 49px). Add a third control there
- * and it has to grow again — there is no way for this to notice on its own.
+ * This number tracks the corner group's width, and has already had to grow
+ * twice — when the maximise button joined the ✕ (28px → 49px), and when the
+ * layout toggle moved there from the session list (49px → 70px). Add another
+ * control there and it has to grow again — there is no way for this to notice
+ * on its own.
  *
  * Reserved unconditionally, not only when the pane is split. Making it
  * conditional means telling Chat which column it is in, and Chat deliberately
  * does not know that — see PaneShell, which owns the ✕ for exactly that reason.
- * The cost is 17.5px of empty right edge on one toolbar row when there is no ✕
- * to clear, and nothing competes for that space.
+ * The cost is some empty right edge on the toolbar row of a pane whose corner
+ * holds fewer controls, and nothing competes for that space.
  */
-const ENGINE_OPTIONS_ROW = `${COLUMN_HEADER_ROW} pl-3 pr-14 bg-card/50`;
+const ENGINE_OPTIONS_ROW = `${COLUMN_HEADER_ROW} pl-3 pr-20 bg-card/50`;
 
 export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, grokModel, onGrokModelChange, grokReasoningEffort, onGrokReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, outputStyle: outputStyleProp, onOutputStyleChange, hideHeader, hideSidebar, isActive = true, isFocused = isActive, peerTabId, peerSide, refreshSignal, onLoadingChange, onDraftPresenceChange, onSessionIdChange, onTitleChange, onBotChange, onShowGitStatus, onOpenNote, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();

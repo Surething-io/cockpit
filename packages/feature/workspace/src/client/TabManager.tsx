@@ -86,7 +86,8 @@ function peerProps(tabId: string, layout: PaneLayout): { peerTabId?: string; pee
  * Small is not enough on its own: it still drew directly on top of that row's
  * rightmost control. The row keeps clear by reserving the width instead
  * (ENGINE_OPTIONS_ROW in Chat.tsx), which means the corner group's geometry
- * here — `right-1`, two `w-6` buttons, `gap-0.5` — is load bearing over there.
+ * here — `right-1`, up to three `w-6` buttons (maximise, ✕, and the layout
+ * toggle on the corner pane), `gap-0.5` — is load bearing over there.
  * Adding, removing or resizing a control here means changing that reservation
  * in the same commit; it has already had to grow once.
  *
@@ -113,6 +114,7 @@ function PaneShell({
   onFocusPane,
   onClosePane,
   onToggleMaximize,
+  layoutToggle,
   children,
 }: {
   tabId: string;
@@ -123,6 +125,9 @@ function PaneShell({
   onFocusPane: (pane: number) => void;
   onClosePane: (pane: number) => void;
   onToggleMaximize: (pane: number) => void;
+  /** The single / side-by-side toggle. Passed to exactly one pane — the one
+   *  whose top-right corner is the chat area's top-right corner. */
+  layoutToggle?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const { t } = useTranslation();
@@ -138,34 +143,41 @@ function PaneShell({
       style={row && at !== -1 && !maximized ? { order: at } : undefined}
       className={`group/pane ${paneClass(tabId, panes, activePane, row, maximized)}`}
     >
-      {split && at !== -1 && (
-        // Both corner controls in one hover-revealed group. The reveal moved
-        // from the buttons to this container so the two cannot fade
-        // independently, and `focus-within` replaces the per-button
-        // `focus-visible` for the same reason — opacity-0 keeps them in the tab
-        // order, and a Tab into either one must bring the pair into view.
-        <div className="absolute top-1 right-1 z-20 flex items-center gap-0.5 opacity-0 pointer-events-none transition-opacity focus-within:opacity-100 focus-within:pointer-events-auto group-hover/pane:opacity-100 group-hover/pane:pointer-events-auto">
-          <button
-            type="button"
-            onClick={() => onToggleMaximize(at)}
-            title={maximized ? t('chat.restorePane') : t('chat.maximizePane')}
-            aria-label={maximized ? t('chat.restorePane') : t('chat.maximizePane')}
-            aria-pressed={maximized}
-            className="flex items-center justify-center w-6 h-6 text-muted-foreground transition-colors hover:text-foreground"
-          >
-            {maximized ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
-          </button>
-          <button
-            type="button"
-            onClick={() => onClosePane(at)}
-            title={t('chat.closePane')}
-            aria-label={t('chat.closePane')}
-            className="flex items-center justify-center w-6 h-6 text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+      {(layoutToggle || (split && at !== -1)) && (
+        <div className="absolute top-1 right-1 z-20 flex items-center gap-0.5">
+          {split && at !== -1 && (
+            // Both pane controls in one hover-revealed group. The reveal lives
+            // on this container so the two cannot fade independently, and
+            // `focus-within` replaces the per-button `focus-visible` for the
+            // same reason — opacity-0 keeps them in the tab order, and a Tab
+            // into either one must bring the pair into view.
+            <div className="flex items-center gap-0.5 opacity-0 pointer-events-none transition-opacity focus-within:opacity-100 focus-within:pointer-events-auto group-hover/pane:opacity-100 group-hover/pane:pointer-events-auto">
+              <button
+                type="button"
+                onClick={() => onToggleMaximize(at)}
+                title={maximized ? t('chat.restorePane') : t('chat.maximizePane')}
+                aria-label={maximized ? t('chat.restorePane') : t('chat.maximizePane')}
+                aria-pressed={maximized}
+                className="flex items-center justify-center w-6 h-6 text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {maximized ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => onClosePane(at)}
+                title={t('chat.closePane')}
+                aria-label={t('chat.closePane')}
+                className="flex items-center justify-center w-6 h-6 text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
+          {/* Always visible, unlike the pair above: it is the only way into
+              split mode, so it cannot hide behind a hover. */}
+          {layoutToggle}
         </div>
       )}
       {children}
@@ -713,6 +725,31 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
     toggleSideBySide();
   }, [toggleSideBySide, handleCloseFileDiff]);
 
+  // Single / side-by-side toggle, at the chat area's top-right corner. It goes
+  // to the pane that owns that corner: the maximised one if any, else the
+  // right-most (panes are laid out left→right by index). Memoised so the one
+  // pane that gets it keeps one element identity between unrelated renders.
+  const layoutCornerTabId = maximizedTab ?? layout.panes[layout.panes.length - 1];
+  const layoutToggle = useMemo(() => {
+    const label = layout.split ? t('chat.singlePane') : t('chat.splitPane');
+    return (
+      <button
+        type="button"
+        onClick={handleToggleLayout}
+        title={label}
+        aria-label={label}
+        aria-pressed={layout.split}
+        className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground transition-colors hover:text-foreground hover:bg-hover"
+      >
+        {/* The icon shows the layout you will GET, not the one you are in. */}
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <rect x="3" y="4" width="18" height="16" rx="2" strokeWidth={2} />
+          {!layout.split && <path strokeWidth={2} d="M12 4v16" />}
+        </svg>
+      </button>
+    );
+  }, [layout.split, handleToggleLayout, t]);
+
   // Message "view all file changes": open the diff column and assert the agent
   // panel, which is where that column lives. Re-firing with a new message just
   // replaces its content.
@@ -788,8 +825,6 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                     titlesLoading={titlesLoading}
                     selectedTabId={activeTabId}
                     visibleTabIds={paneTabIds}
-                    sideBySide={layout.split}
-                    onToggleSideBySide={handleToggleLayout}
                     unreadTabs={unreadTabs}
                     globalLoadingTabs={globalLoadingTabs}
                     dragTabIndex={dragTabIndex}
@@ -824,6 +859,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                         activePane={layout.activePane}
                         row={layout.row}
                         maximized={maximizedTab === tab.id}
+                        layoutToggle={tab.id === layoutCornerTabId ? layoutToggle : undefined}
                         onFocusPane={focusPane}
                         onClosePane={closePane}
                         onToggleMaximize={handleToggleMaximizePane}
@@ -967,8 +1003,6 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
               titlesLoading={titlesLoading}
               selectedTabId={activeTabId}
               visibleTabIds={paneTabIds}
-              sideBySide={layout.split}
-              onToggleSideBySide={handleToggleLayout}
               unreadTabs={unreadTabs}
               globalLoadingTabs={globalLoadingTabs}
               dragTabIndex={dragTabIndex}
@@ -1001,6 +1035,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                   activePane={layout.activePane}
                   row={layout.row}
                   maximized={maximizedTab === tab.id}
+                  layoutToggle={tab.id === layoutCornerTabId ? layoutToggle : undefined}
                   onFocusPane={focusPane}
                   onClosePane={closePane}
                   onToggleMaximize={handleToggleMaximizePane}

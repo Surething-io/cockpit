@@ -7,7 +7,7 @@ import { SessionNumberChip, sessionNumberRing, sessionNumberWash, type SessionNu
 import { SessionTitle, COLUMN_HEADER_ROW, EngineBadge, EngineIcon, ENGINE_IDS, ENGINE_LABELS, ScheduleTaskPopover, type EngineAccentId, type ScheduleTaskParams } from '@cockpit/feature-agent';
 import { Portal, usePanelPortalTarget } from '@cockpit/shared-ui';
 import { useTranslation } from 'react-i18next';
-import { AlarmClock, History, ListX, Plus, Star } from 'lucide-react';
+import { AlarmClock, BrushCleaning, History, Plus, Star } from 'lucide-react';
 
 // ============================================
 // Session number: circular shape pairs with the project number while keeping
@@ -214,11 +214,6 @@ interface TabBarProps {
   onDragOver: (e: React.DragEvent, index: number) => void;
   onDrop: (index: number) => void;
   onDragEnd: () => void;
-  /** Single / side-by-side panes. Lives here rather than in the composer
-   *  because it is panel-level chrome, like the tabs themselves — and reaching
-   *  the composer meant a context purely to cross four component layers. */
-  sideBySide?: boolean;
-  onToggleSideBySide?: () => void;
 }
 
 // Same range as the Explorer file tree (FileBrowserModal TREE_WIDTH_*), so the
@@ -261,8 +256,6 @@ export function TabBar({
   onDragOver,
   onDrop,
   onDragEnd,
-  sideBySide,
-  onToggleSideBySide,
 }: TabBarProps) {
   const { t } = useTranslation();
   // Dragged width, not persisted — same transient policy as the Explorer tree.
@@ -328,37 +321,23 @@ export function TabBar({
             {t('sessions.projectSessions')}
             <span className="ml-1.5 text-xs font-normal text-muted-foreground tabular-nums">{tabs.length}</span>
           </span>
-          {/* The split toggle changes the chat area's layout, not the list. */}
-          {onToggleSideBySide && (
-            <button
-              onClick={onToggleSideBySide}
-              className="ml-auto flex-shrink-0 p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
-              title={sideBySide ? t('chat.singlePane') : t('chat.splitPane')}
-              aria-label={sideBySide ? t('chat.singlePane') : t('chat.splitPane')}
-              aria-pressed={sideBySide}
-            >
-              {/* The icon shows the layout you will GET, not the one you are in —
-                  it reads as the action, like every other button in this row. */}
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <rect x="3" y="4" width="18" height="16" rx="2" strokeWidth={2} />
-                {!sideBySide && <path strokeWidth={2} d="M12 4v16" />}
-              </svg>
-            </button>
-          )}
           {/* Close-all — one click closes every tab (resets to a single blank
-              tab). Last, behind a divider: destructive, kept apart from the rest. */}
+              tab). The split toggle used to sit here; it moved to the chat
+              column's top-right corner (PaneShell), since it changes that
+              area's layout, not this list. */}
           {onCloseAllTabs && (
             <>
-              {onToggleSideBySide && <div className="w-px h-4 mx-1 bg-border flex-shrink-0" aria-hidden />}
               <button
                 onClick={onCloseAllTabs}
-                className={`${onToggleSideBySide ? '' : 'ml-auto '}flex-shrink-0 p-1.5 text-muted-foreground hover:text-destructive hover:bg-hover rounded transition-colors`}
+                className={`ml-auto flex-shrink-0 p-1.5 text-muted-foreground hover:text-destructive hover:bg-hover rounded transition-colors`}
                 title={t('tabBar.closeAll')}
                 aria-label={t('tabBar.closeAll')}
               >
-                {/* List-with-x, not a bare x: a lone x at the column's corner reads as
-                    "close this sidebar", while this clears every row below it. */}
-                <ListX className="w-4 h-4" />
+                {/* A broom: "clear the list". Not a bare x (reads as "close this
+                    sidebar"), not a trash can (sessions are not deleted, only
+                    their tabs closed), and not ListX — its x is a few pixels at
+                    this size and the glyph read as a plain list. */}
+                <BrushCleaning className="w-4 h-4" />
               </button>
             </>
           )}

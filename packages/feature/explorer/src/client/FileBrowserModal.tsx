@@ -805,10 +805,16 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
     return () => window.removeEventListener('git-status-changed', handler);
   }, [gitStatus.fetchStatus]);
 
-  // Refresh data once when the iframe becomes visible again (changes may be missed while WS is paused)
+  // Refresh data once when the iframe becomes visible again (changes may be missed while WS is paused).
+  // Only a *re*-show counts: inside an iframe `pageVisible` starts false until the parent's first
+  // IFRAME_VISIBILITY message, so the first false→true edge is just boot and the mount effect
+  // above has already loaded everything.
   const prevVisibleRef = useRef(pageVisible);
+  const hasBeenVisibleRef = useRef(pageVisible);
   useEffect(() => {
-    if (pageVisible && !prevVisibleRef.current) {
+    if (pageVisible && !hasBeenVisibleRef.current) {
+      hasBeenVisibleRef.current = true;
+    } else if (pageVisible && !prevVisibleRef.current) {
       fileTree.loadFiles();
       fileTree.loadFileIndex();
       fileTree.loadRecentFiles();

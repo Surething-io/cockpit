@@ -5,7 +5,7 @@
  * verb combinations (GET / POST / PUT / DELETE) are collapsed into 4 wrappers.
  */
 import { Effect } from "effect"
-import { AppError } from "@cockpit/effect-core"
+import { AppError, forgetInFlight, shareInFlight } from "@cockpit/effect-core"
 import type { CodeComment } from "../../server/api/comments"
 
 const httpJson = <A>(
@@ -44,8 +44,13 @@ export const loadComments = (
   filePath?: string
 ): Effect.Effect<{ comments?: ReadonlyArray<CodeComment> }, AppError> => {
   const url = `/api/comments?cwd=${encodeURIComponent(cwd)}${filePath ? `&filePath=${encodeURIComponent(filePath)}` : ""}`
-  return httpJson(url)
+  // Every mounted Chat reads its chat comments plus the project-wide list on
+  // mount and on every comments-change event; share the concurrent reads.
+  return shareInFlight(url, httpJson(url))
 }
+
+/** Pending /api/comments reads must not be joined once a write has landed. */
+const forgetComments = Effect.sync(() => forgetInFlight("/api/comments"))
 
 /**
  * Full project comments (`?cwd=&all=true`); used by CommentsListModal for
@@ -72,11 +77,11 @@ export interface AddCommentBody {
 export const addComment = (
   body: AddCommentBody
 ): Effect.Effect<{ comment?: CodeComment }, AppError> =>
-  httpJson("/api/comments", {
+  httpJson<{ comment?: CodeComment }>("/api/comments", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  })
+  }).pipe(Effect.ensuring(forgetComments))
 
 // ─────────────────────────────────────────────────────────
 // PUT /api/comments
@@ -87,11 +92,11 @@ export const updateComment = (
   id: string,
   content: string
 ): Effect.Effect<{ comment?: CodeComment }, AppError> =>
-  httpJson("/api/comments", {
+  httpJson<{ comment?: CodeComment }>("/api/comments", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ cwd, id, content }),
-  })
+  }).pipe(Effect.ensuring(forgetComments))
 
 // ─────────────────────────────────────────────────────────
 // DELETE /api/comments?cwd=...&id=... (or &all=true)
@@ -104,10 +109,10 @@ export const deleteComment = (
   httpSend(
     `/api/comments?cwd=${encodeURIComponent(cwd)}&id=${encodeURIComponent(id)}`,
     { method: "DELETE" }
-  )
+  ).pipe(Effect.ensuring(forgetComments))
 
 export const deleteAllComments = (cwd: string): Effect.Effect<void, AppError> =>
   httpSend(
     `/api/comments?cwd=${encodeURIComponent(cwd)}&all=true`,
     { method: "DELETE" }
-  )
+  ).pipe(Effect.ensuring(forgetComments))

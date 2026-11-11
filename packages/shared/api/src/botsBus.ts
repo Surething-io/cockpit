@@ -7,7 +7,7 @@
  */
 import { createChangeBus } from "./changeBus"
 
-const bus = createChangeBus("cockpit-bots")
+const bus = createChangeBus("cockpit-bots", "/api/bots")
 
 export const notifyBotsChanged = bus.notify
 export const onBotsChanged = bus.subscribe

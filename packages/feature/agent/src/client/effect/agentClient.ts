@@ -10,7 +10,7 @@
  */
 import { Effect } from "effect"
 import type { GlobalSessionInfo } from "../../shared/sessionDto"
-import { AppError } from "@cockpit/effect-core"
+import { AppError, forgetInFlight, shareInFlight } from "@cockpit/effect-core"
 import type { ChatEngine } from '../types'
 import type { ContextSnapshot, ContextSummary } from '../../shared/contextSnapshot'
 
@@ -132,11 +132,14 @@ export const loadUserMessageIndex = (
 export const loadAgentSettings = <A = Record<string, unknown>>(): Effect.Effect<
   A,
   AppError
-> => httpJson<A>("/api/settings")
+> =>
+  // Every mounted Chat reads settings on mount; share the concurrent reads.
+  shareInFlight("/api/settings", httpJson<A>("/api/settings"))
 
 export const saveAgentSettings = (
   body: Record<string, unknown>
-): Effect.Effect<unknown, AppError> => httpPutJson("/api/settings", body)
+): Effect.Effect<unknown, AppError> =>
+  httpPutJson("/api/settings", body).pipe(Effect.ensuring(Effect.sync(() => forgetInFlight("/api/settings"))))
 
 // ─────────────────────────────────────────────────────────
 // /api/<engine>/credentials + /api/<engine>/models — the API-key engines
@@ -292,7 +295,7 @@ export const saveOllamaConfig = (patch: {
 export const loadSlashCommands = <T = unknown>(): Effect.Effect<
   ReadonlyArray<T>,
   AppError
-> => httpJson<ReadonlyArray<T>>("/api/commands")
+> => shareInFlight("/api/commands", httpJson<ReadonlyArray<T>>("/api/commands"))
 
 // ─────────────────────────────────────────────────────────
 // /api/skills
@@ -304,7 +307,7 @@ export interface SkillsResponse {
 }
 
 export const loadSkills = (): Effect.Effect<SkillsResponse, AppError> =>
-  httpJson("/api/skills")
+  shareInFlight("/api/skills", httpJson<SkillsResponse>("/api/skills"))
 
 // ─────────────────────────────────────────────────────────
 // /api/bash — execute shell command via Bash tool

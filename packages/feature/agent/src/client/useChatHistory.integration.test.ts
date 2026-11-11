@@ -220,6 +220,8 @@ describe.skipIf(!browser)('history and live replay in a browser', () => {
     const comments = join(directory, 'comments.ts');
     await writeFile(comments, `const noop=()=>{}; export const useComments=()=>({addComment:noop,refresh:noop}); export const fetchAllCommentsWithCode=async()=>[];
       export const buildAIMessage=noop; export const clearAllComments=noop; export const sendReferenceToAI=noop; export const CHAT_COMMENT_FILE='chat';`);
+    const core = join(directory, 'core.ts');
+    await writeFile(core, `export * from ${JSON.stringify(resolve('packages/shared/effect-core/src/errors.ts'))}; export * from ${JSON.stringify(resolve('packages/shared/effect-core/src/inFlight.ts'))};`);
     const bubble = join(directory, 'bubble.tsx');
     await writeFile(bubble, `import React from 'react'; export const MessageBubble=({message}:any)=><div style={{minHeight:80}}>{message.content}</div>;`);
     await build({
@@ -230,7 +232,7 @@ describe.skipIf(!browser)('history and live replay in a browser', () => {
       define: { 'process.env.NODE_ENV': '"development"', __STOPPED_RUN__: JSON.stringify(stoppedRun), __CLAUDE_RECOVERY_EVENTS__: JSON.stringify(claudeEvents), __HISTORY_FIXTURES__: JSON.stringify(fixtures), __WRITER_LIFECYCLE__: JSON.stringify(lifecycle), __HISTORY_ENDPOINT__: JSON.stringify(historyEndpoint) },
       alias: {
         '@cockpit/effect-runtime': runtime,
-        '@cockpit/effect-core': resolve('packages/shared/effect-core/src/errors.ts'),
+        '@cockpit/effect-core': core,
         '@cockpit/shared-ui': ui, '@cockpit/feature-comments': comments,
       },
     });

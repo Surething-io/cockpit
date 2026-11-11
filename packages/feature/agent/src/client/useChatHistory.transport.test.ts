@@ -80,7 +80,7 @@ describe.skipIf(!browser)('history ownership through real HTTP and WebSocket bou
     const runtime = join(directory, 'runtime.ts');
     await writeFile(runtime, `import {Effect} from ${JSON.stringify(resolve('node_modules/effect'))}; export const BrowserRuntime={runPromiseExit:Effect.runPromiseExit,runPromise:Effect.runPromise};`);
     const core = join(directory, 'core.ts');
-    await writeFile(core, `export * from ${JSON.stringify(resolve('packages/shared/effect-core/src/errors.ts'))}; export * from ${JSON.stringify(resolve('packages/shared/effect-core/src/schedule.ts'))};`);
+    await writeFile(core, `export * from ${JSON.stringify(resolve('packages/shared/effect-core/src/errors.ts'))}; export * from ${JSON.stringify(resolve('packages/shared/effect-core/src/schedule.ts'))}; export * from ${JSON.stringify(resolve('packages/shared/effect-core/src/inFlight.ts'))};`);
     const ui = join(directory, 'ui.ts');
     await writeFile(ui, `export {useWebSocket} from ${JSON.stringify(resolve('packages/shared/ui/src/useWebSocket.ts'))}; export const toast=()=>{};`);
     await build({

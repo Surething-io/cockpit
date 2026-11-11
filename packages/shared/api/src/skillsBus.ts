@@ -9,7 +9,7 @@
  */
 import { createChangeBus } from './changeBus';
 
-const bus = createChangeBus('cockpit-skills');
+const bus = createChangeBus('cockpit-skills', '/api/skills');
 
 /** Notify all frames/tabs that the skills list changed (added or removed). */
 export const notifySkillsChanged = bus.notify;

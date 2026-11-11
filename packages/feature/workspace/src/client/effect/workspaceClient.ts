@@ -12,7 +12,7 @@
  *     project-settings / fs-dirs / open-vscode / open-cursor / git-worktree
  */
 import { Effect } from "effect"
-import { AppError } from "@cockpit/effect-core"
+import { AppError, forgetInFlight, shareInFlight } from "@cockpit/effect-core"
 
 // ─────────────────────────────────────────────────────────
 // HTTP primitives
@@ -55,7 +55,7 @@ export interface SettingsResponse {
 }
 
 export const loadSettings = (): Effect.Effect<SettingsResponse, AppError> =>
-  httpJson("/api/settings")
+  shareInFlight("/api/settings", httpJson<SettingsResponse>("/api/settings"))
 
 /** Backend uses PUT for merge-update, not POST. */
 export const saveSettings = (
@@ -65,7 +65,7 @@ export const saveSettings = (
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  })
+  }).pipe(Effect.ensuring(Effect.sync(() => forgetInFlight("/api/settings"))))
 
 // ─────────────────────────────────────────────────────────
 // /api/version & /api/extension/version

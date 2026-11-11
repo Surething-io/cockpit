@@ -10,7 +10,7 @@
  * buttons) both need it, and homing it in feature-skills would cycle.
  */
 import { Effect } from "effect"
-import { AppError } from "@cockpit/effect-core"
+import { AppError, forgetInFlight, shareInFlight } from "@cockpit/effect-core"
 import { httpJson } from "./httpJson"
 
 
@@ -48,7 +48,10 @@ export interface AddSkillResult extends SkillInfoLite {
 export const loadSkillsList = <T = SkillInfoLite>(): Effect.Effect<
   ReadonlyArray<T>,
   AppError
-> => httpJson<ReadonlyArray<T>>("/api/skills")
+> => shareInFlight("/api/skills", httpJson<ReadonlyArray<T>>("/api/skills"))
+
+/** Pending /api/skills reads must not be joined once a write has landed. */
+const forgetSkills = Effect.sync(() => forgetInFlight("/api/skills"))
 
 /**
  * GET /api/skills/builtin — the builtin skills shipped with the package (hidden
@@ -67,10 +70,10 @@ export const addSkill = (
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path }),
-  })
+  }).pipe(Effect.ensuring(forgetSkills))
 
 export const deleteSkill = (id: string): Effect.Effect<unknown, AppError> =>
-  httpJson(`/api/skills/${encodeURIComponent(id)}`, { method: "DELETE" })
+  httpJson(`/api/skills/${encodeURIComponent(id)}`, { method: "DELETE" }).pipe(Effect.ensuring(forgetSkills))
 
 export const loadSkillContent = <T = SkillPreviewLite>(
   id: string

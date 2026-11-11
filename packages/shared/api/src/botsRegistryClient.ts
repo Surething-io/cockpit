@@ -8,7 +8,7 @@
  * "add" buttons) and feature-agent (`@` autocomplete) all use it.
  */
 import { Effect } from "effect"
-import { AppError } from "@cockpit/effect-core"
+import { AppError, forgetInFlight, shareInFlight } from "@cockpit/effect-core"
 import { httpJson, postJson } from "./httpJson"
 
 interface BotBase {
@@ -39,10 +39,13 @@ export type AddBotResult = BotInfo & {
 }
 
 export const loadBots = (): Effect.Effect<ReadonlyArray<BotInfo>, AppError> =>
-  httpJson<ReadonlyArray<BotInfo>>("/api/bots")
+  shareInFlight("/api/bots", httpJson<ReadonlyArray<BotInfo>>("/api/bots"))
+
+/** Pending /api/bots reads must not be joined once a write has landed. */
+const forgetBots = Effect.sync(() => forgetInFlight("/api/bots"))
 
 export const addBot = (path: string): Effect.Effect<AddBotResult, AppError> =>
-  postJson<AddBotResult>("/api/bots", { path })
+  postJson<AddBotResult>("/api/bots", { path }).pipe(Effect.ensuring(forgetBots))
 
 export const removeBot = (id: string): Effect.Effect<unknown, AppError> =>
-  httpJson(`/api/bots/${encodeURIComponent(id)}`, { method: "DELETE" })
+  httpJson(`/api/bots/${encodeURIComponent(id)}`, { method: "DELETE" }).pipe(Effect.ensuring(forgetBots))

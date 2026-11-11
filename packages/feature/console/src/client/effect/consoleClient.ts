@@ -7,7 +7,7 @@
  * call sites inside useConsoleState.
  */
 import { Effect } from "effect"
-import { AppError } from "@cockpit/effect-core"
+import { AppError, forgetInFlight, shareInFlight } from "@cockpit/effect-core"
 import type { CustomCommand } from "@/app/api/services/config/route"
 import type {
   BubbleOrderPatchRequest,
@@ -126,11 +126,23 @@ export const loadAliases = (): Effect.Effect<
 const bubbleOrderUrl = (cwd: string, tabId: string): string =>
   `/api/terminal/bubble-order?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}`
 
+/**
+ * One GET of the bubble-order document, shared by everyone reading it at the
+ * same moment: the console (order) and every bubble's ShortIdBadge (titles)
+ * all load it on mount, so a tab with N bubbles used to fetch it N+1 times.
+ */
+const loadBubbleOrderDoc = (cwd: string, tabId: string): Effect.Effect<BubbleOrderResponse, AppError> => {
+  const url = bubbleOrderUrl(cwd, tabId)
+  return shareInFlight(url, httpGet<BubbleOrderResponse>(url))
+}
+
+const forgetBubbleOrder = Effect.sync(() => forgetInFlight("/api/terminal/bubble-order"))
+
 export const loadBubbleOrder = (
   cwd: string,
   tabId: string
 ): Effect.Effect<string[], AppError> =>
-  httpGet<BubbleOrderResponse>(bubbleOrderUrl(cwd, tabId)).pipe(
+  loadBubbleOrderDoc(cwd, tabId).pipe(
     Effect.map((data) => data.order || [])
   )
 
@@ -142,7 +154,7 @@ export const loadBubbleTitles = (
   cwd: string,
   tabId: string
 ): Effect.Effect<Record<string, string>, AppError> =>
-  httpGet<BubbleOrderResponse>(bubbleOrderUrl(cwd, tabId)).pipe(
+  loadBubbleOrderDoc(cwd, tabId).pipe(
     Effect.map((data) => data.titles || {})
   )
 
@@ -157,7 +169,7 @@ export const saveBubbleOrder = (
     tabId,
     order,
     sourceId,
-  } satisfies BubbleOrderPatchRequest)
+  } satisfies BubbleOrderPatchRequest).pipe(Effect.ensuring(forgetBubbleOrder))
 
 /**
  * Partial patch of a single bubble's title. An empty string deletes the entry
@@ -173,7 +185,7 @@ export const saveBubbleTitle = (
     cwd,
     tabId,
     titles: { [fullId]: title },
-  } satisfies BubbleOrderPatchRequest)
+  } satisfies BubbleOrderPatchRequest).pipe(Effect.ensuring(forgetBubbleOrder))
 
 // ─────────────────────────────────────────────────────────
 // terminal/history

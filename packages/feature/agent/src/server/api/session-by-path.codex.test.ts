@@ -862,9 +862,11 @@ describe('session-by-path codex format drift', () => {
 
     const body = await loadSession(sessionId);
 
-    // last_token_usage (this request's context), matching claude's per-message usage.
+    // last_token_usage (this request's context), in claude's split: codex counts
+    // cached tokens inside input_tokens, claude reports them beside it, and the
+    // bar sums all three — so the parts must add back up to codex's 33051.
     expect(body.usage).toEqual({
-      input_tokens: 33051,
+      input_tokens: 33051 - 30464 - 128,
       output_tokens: 1269,
       cache_read_input_tokens: 30464,
       cache_creation_input_tokens: 128,

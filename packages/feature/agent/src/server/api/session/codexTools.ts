@@ -2,6 +2,7 @@ import type { ImageMediaType, MessageImage } from '@cockpit/shared-utils';
 import { fileURLToPath } from 'node:url';
 
 import { CODEX_IMAGE_ONLY_TEXT } from '../../../shared/codexPrompt';
+import { codexUsageToClaude } from '../../engines/shared/codexUsage';
 export { CODEX_IMAGE_ONLY_TEXT } from '../../../shared/codexPrompt';
 
 /**
@@ -576,9 +577,9 @@ export interface CodexTokenUsage {
  * at all.
  *
  * `last_token_usage` (this request) rather than `total_token_usage` (the session):
- * every request resends the whole conversation, so its `input_tokens` is the
- * context size — the same thing claude's per-message `usage` reports, which is what
- * the client's indicator is built for.
+ * every request resends the whole conversation, so its prompt is the context size —
+ * the same thing claude's per-message `usage` reports, once converted to claude's
+ * split of cached vs uncached input (codexUsageToClaude).
  */
 export function parseCodexTokenUsage(payload: {
   type?: string;
@@ -591,20 +592,13 @@ export function parseCodexTokenUsage(payload: {
   if (!last || typeof last !== 'object') return null;
 
   const raw = last as Record<string, unknown>;
-  const num = (key: string): number | undefined =>
-    typeof raw[key] === 'number' ? (raw[key] as number) : undefined;
-
-  const usage: CodexTokenUsage = {
-    ...(num('input_tokens') !== undefined ? { input_tokens: num('input_tokens') } : {}),
-    ...(num('output_tokens') !== undefined ? { output_tokens: num('output_tokens') } : {}),
-    // codex names the two cache halves differently from claude; the client only
-    // knows claude's spelling.
-    ...(num('cached_input_tokens') !== undefined
-      ? { cache_read_input_tokens: num('cached_input_tokens') } : {}),
-    ...(num('cache_write_input_tokens') !== undefined
-      ? { cache_creation_input_tokens: num('cache_write_input_tokens') } : {}),
-  };
-  return Object.keys(usage).length > 0 ? usage : null;
+  const num = (key: string): number => (typeof raw[key] === 'number' ? (raw[key] as number) : 0);
+  // Codex counts cached tokens inside input_tokens; the client reads claude's
+  // shape, where they sit beside it (see codexUsageToClaude).
+  return codexUsageToClaude({
+    input: num('input_tokens'), cached: num('cached_input_tokens'),
+    cacheWrite: num('cache_write_input_tokens'), output: num('output_tokens'),
+  });
 }
 
 /**

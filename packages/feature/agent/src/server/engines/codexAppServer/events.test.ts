@@ -85,12 +85,15 @@ describe('CodexEventShim', () => {
     expect(s.handle({ method: 'item/completed', params: { item: { type: 'agentMessage', text: 'hi' } } })).toEqual([]);
   });
 
-  it('carries the last token usage onto turn.completed', () => {
+  it('carries the latest request\'s token usage (not the thread total) onto turn.completed', () => {
     const s = shim();
     expect(
       s.handle({
         method: 'thread/tokenUsage/updated',
-        params: { tokenUsage: { total: { inputTokens: 19140, outputTokens: 69, cachedInputTokens: 11136, cacheWriteInputTokens: 0 } } },
+        params: { tokenUsage: {
+          total: { inputTokens: 250000, outputTokens: 4000, cachedInputTokens: 200000, cacheWriteInputTokens: 0 },
+          last: { inputTokens: 19140, outputTokens: 69, cachedInputTokens: 11136, cacheWriteInputTokens: 0 },
+        } },
       }),
     ).toEqual([]);
     expect(s.handle({ method: 'turn/completed', params: {} })).toEqual([

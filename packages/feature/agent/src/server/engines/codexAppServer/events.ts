@@ -128,9 +128,9 @@ function normalizeItem(raw: unknown): Record<string, unknown> | undefined {
 }
 
 /**
- * `turn/completed` carries no usage; the running totals arrive separately on
- * `thread/tokenUsage/updated`. Holding the last one lets the terminal event
- * report the same numbers the exec transport did.
+ * `turn/completed` carries no usage; it arrives separately on
+ * `thread/tokenUsage/updated`. Holding the latest request's figures lets the
+ * terminal event report the session's current context size.
  */
 export class CodexEventShim {
   private lastUsage: Record<string, number> | undefined;
@@ -280,7 +280,10 @@ export class CodexEventShim {
       }
 
       case 'thread/tokenUsage/updated': {
-        const usage = (n.params.tokenUsage as { total?: Record<string, number> } | undefined)?.total;
+        // `last` is the latest request — its input is the context size. `total` is
+        // the thread's running sum across every request, which grew without bound
+        // in the token bar.
+        const usage = (n.params.tokenUsage as { last?: Record<string, number> } | undefined)?.last;
         if (usage) {
           this.lastUsage = {
             input_tokens: usage.inputTokens ?? 0,

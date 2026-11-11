@@ -3,6 +3,7 @@ import { withCodexRunInput, type CodexRunInput } from '../../effect/codexRunInpu
 import { estimateOutputUnits } from '@cockpit/shared-utils/outputProgress';
 import { CodexAppServerClient, type CodexNotification } from './codexAppServer/client';
 import { CodexEventShim } from './codexAppServer/events';
+import { codexUsageToClaude } from './shared/codexUsage';
 import { sanitizedSpawnEnv } from '@cockpit/shared-utils';
 import { findCodexSession } from '../../effect/transcriptIndexLive';
 import { randomUUID } from 'crypto';
@@ -578,15 +579,14 @@ function createCodexEventAdapter(ctx: RunCtx, initialRolloutPath: string | null)
         // failed or un-bound sub-agent still leaves a bubble rather than vanishing.
         syncSubAgents(true);
         const usage = event.usage || {};
+        const normalized = codexUsageToClaude({
+          input: usage.input_tokens || 0, cached: usage.cached_input_tokens || 0,
+          cacheWrite: usage.cache_write_input_tokens || 0, output: usage.output_tokens || 0,
+        });
         ctx.emit({
           type: 'result',
           subtype: 'success',
-          usage: {
-            input_tokens: usage.input_tokens || 0,
-            output_tokens: usage.output_tokens || 0,
-            cache_creation_input_tokens: usage.cache_write_input_tokens || 0,
-            cache_read_input_tokens: usage.cached_input_tokens || 0,
-          },
+          ...(normalized ? { usage: normalized } : {}),
           total_cost_usd: 0,
         });
         break;

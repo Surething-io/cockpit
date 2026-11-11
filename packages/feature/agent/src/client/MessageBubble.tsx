@@ -7,7 +7,7 @@ import { Copy, FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, Me
 import { ToolCallModal } from './ToolCallModal';
 import { AskQuestionViewerModal } from './AskQuestionViewerModal';
 import { DiffViewerModal, resolveDiffCalls } from './DiffViewerModal';
-import { loadSnapshotsByToolIds } from './effect/snapshotClient';
+import { useMessageSnapshotChanges } from './useMessageSnapshotChanges';
 import type { ChatMessage, MessageImage, ToolCallInfo } from './types';
 import { isMutatingToolName } from '../shared/toolMutation';
 // Tech debt: cross-package imports into the main shell.
@@ -238,6 +238,7 @@ function ImageFilePreviewModal({ filePath, cwd, sessionId, onClose }: { filePath
 
 interface MessageBubbleProps {
   message: ChatMessage;
+  snapshotsEnabled?: boolean;
   cwd?: string;
   sessionId?: string | null;
   /**
@@ -594,7 +595,7 @@ function messageTimeFormatter(locale: string): Intl.DateTimeFormat {
 }
 
 // Use memo optimization — only re-render when message or cwd changes
-export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork, onDeleteTurn, forkSupported = true, onSendToPeer, peerSide, onApprovePlan, isLoading, onContentSearch, onShowFileDiff, onOpenFileLink, disableOverlays = false }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, snapshotsEnabled = true, onFork, onDeleteTurn, forkSupported = true, onSendToPeer, peerSide, onApprovePlan, isLoading, onContentSearch, onShowFileDiff, onOpenFileLink, disableOverlays = false }: MessageBubbleProps) {
   const { t, i18n } = useTranslation();
   const [previewImage, setPreviewImage] = useState<MessageImage | null>(null);
   // Single-tool case: default expanded so the content stays visible (we only need the header for special entries).
@@ -681,7 +682,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     () => resolveDiffCalls([], message.toolCalls ?? [], cwd).length > 0,
     [message.toolCalls, cwd],
   );
-  const [snapshotHasChanges, setSnapshotHasChanges] = useState(false);
+  const snapshotHasChanges = useMessageSnapshotChanges(cwd, sessionId, message.toolCalls, snapshotsEnabled && hasFileChanges && !paramsHaveChanges);
   const showFileDiff = paramsHaveChanges || snapshotHasChanges;
 
   // Keep an OPEN file-changes panel growing while this message keeps streaming
@@ -693,43 +694,6 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     if (!onShowFileDiff || !message.toolCalls?.length) return;
     onShowFileDiff(message.id, message.toolCalls, cwd, sessionId ?? undefined, true);
   }, [onShowFileDiff, message.id, message.toolCalls, cwd, sessionId]);
-
-  useEffect(() => {
-    // Params already prove non-empty, or nothing mutating / no cwd to query.
-    if (!hasFileChanges || paramsHaveChanges || !cwd) return;
-    const toolIds = (message.toolCalls ?? []).map(tc => tc.id).filter(Boolean);
-    if (toolIds.length === 0) return;
-    // Snapshot writes are fire-and-forget after tool_result. Bash/Codex and
-    // other mutating tools often have no file params to fall back to, so a
-    // single early list query can race the commit and hide the entry forever.
-    const snapshotBackedIds = (message.toolCalls ?? [])
-      .filter(tc => isMutatingToolName(tc.name))
-      .map(tc => tc.id);
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let attempt = 0;
-    const check = () => {
-      BrowserRuntime.runPromiseExit(loadSnapshotsByToolIds(cwd, toolIds, sessionId ?? undefined)).then((exit) => {
-        if (cancelled) return;
-        const commits = exit._tag === 'Success' ? exit.value : [];
-        if (commits.length > 0) {
-          setSnapshotHasChanges(true);
-          return;
-        }
-        const landed = new Set(commits.map(c => c.toolId));
-        const pending = snapshotBackedIds.some(id => !landed.has(id));
-        if (pending && attempt < 2) {
-          attempt += 1;
-          timer = setTimeout(check, 2000);
-        }
-      });
-    };
-    check();
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [hasFileChanges, paramsHaveChanges, cwd, sessionId, message.toolCalls]);
 
   // Last TodoWrite call
   const lastTodoWrite = useMemo(() => {

@@ -458,8 +458,8 @@ export const POST = handler((req) =>
       messages,
       sessionId,
       ...metadata,
-      defaultTitle: title,
-      title: metadata.customTitle ?? title,
+      defaultTitle: metadata.defaultTitle || title,
+      title: metadata.customTitle ?? (metadata.defaultTitle || title),
       // Set only for a session a Bot dispatch opened (shared/botSession.ts). The tab
       // strip and the running line render it beside the engine mark, so "a Bot is
       // driving this" is answered by the same payload that answers "which engine".

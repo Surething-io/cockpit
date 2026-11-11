@@ -346,10 +346,7 @@ export function TabBar({
 
       {/* Open sessions */}
       <div className="flex-1 min-h-0 overflow-y-auto p-1.5 space-y-0.5">
-        {/* Rows render at once, even while the project's title batch is in
-            flight — blocking the whole list on it made opening a project feel
-            stuck. A row without a title yet shows a skeleton bar until the
-            batch lands. */}
+        {/* Cached labels arrive with the restored rows; refresh never hides them. */}
         {tabs.map((tab, index) => {
           const isActive = tab.id === selectedTabId;
           const isVisible = !isActive && (visibleTabIds?.includes(tab.id) ?? false);
@@ -391,14 +388,7 @@ export function TabBar({
                 />
               </div>
               <span className="flex flex-1 items-center gap-1 min-w-0">
-                {titlesLoading && tab.titlePending ? (
-                  <span role="status" aria-label={t('sessions.loadingSessions')} className="h-3 w-full max-w-[10rem] rounded bg-muted-foreground/15 animate-pulse" />
-                ) : (
-                  // While the batch is in flight, report the title as ready so the row
-                  // does not fire its own request alongside it. Rows the batch did not
-                  // cover flip back to not-ready afterwards and fetch on their own.
-                  <SessionTitle cwd={tab.cwd || ''} sessionId={tab.sessionId || ''} title={tab.title} initialTitleReady={tab.titleReady || titlesLoading} />
-                )}
+                <SessionTitle cwd={tab.cwd || ''} sessionId={tab.sessionId || ''} title={tab.title} initialTitleReady={tab.titleReady || titlesLoading} />
               </span>
               {/* Hover actions (they used to sit in the composer toolbar): they act
                   on a session, so they live on its row. The scheduler stays shown

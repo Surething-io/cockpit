@@ -15,7 +15,7 @@ export const requestSessionTitle = (cwd: string, sessionId: string, customTitle?
   catch: (cause) => new AppError({ message: 'Session title request failed', cause }),
 });
 
-/** Fetch and publish one initial title batch, preserving updates received in flight. */
+/** Refresh titles in the background, preserving updates received in flight. */
 export const loadSessionTitles = (cwd: string, sessionIds: string[]) => Effect.suspend(() => {
   const baseline = titleSnapshot();
   return Effect.tryPromise({

@@ -33,11 +33,8 @@ export interface TabInfo {
   cwd?: string;
   sessionId?: string;
   title: string;
-  /** This tab's initial title was supplied by the project bootstrap batch. */
+  /** The project bootstrap owns this title, including its background refresh. */
   titleReady?: boolean;
-  /** Restored with only the `Session <id>` placeholder; the session list
-   *  draws a skeleton for it until the title batch lands. */
-  titlePending?: boolean;
   isLoading?: boolean;
   engine?: ChatEngine;
   /** Bot that dispatched this session, without the `@` — set by the transcript load
@@ -399,6 +396,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
           allSessions = [storedSessionId, ...allSessions];
         }
         setInitialTitleIds(allSessions);
+        const cachedTitles = new Map((data.sessionTitles ?? []).map((info) => [info.sessionId, info.title]));
 
         if (allSessions.length > 0) {
           // This load is async, so a tab may already have resolved its own engine/mode from
@@ -408,13 +406,13 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
           const live = tabsRef.current;
           const restoredTabs: TabInfo[] = allSessions.map((sessionId: string, index: number) => {
             const prev = live.find((t) => t.sessionId === sessionId);
-            const knownTitle = prev?.title;
+            const knownTitle = cachedTitles.get(sessionId) || prev?.title;
             return {
               id: `tab-${Date.now()}-${index}`,
               cwd: initialCwd,
               sessionId,
               title: knownTitle || placeholderTitle(sessionId),
-              ...(knownTitle ? {} : { titlePending: true }),
+              titleReady: true,
               engine: (savedEngines[sessionId] as ChatEngine) || prev?.engine || undefined,
               ollamaModel: savedOllamaModels[sessionId] || prev?.ollamaModel || undefined,
               deepseekModel: (savedDeepseekModels[sessionId] as DeepseekModel) || prev?.deepseekModel || undefined,
@@ -504,20 +502,24 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     loadSessions();
   }, [initialCwd, initialSessionId, initialBlank, finishInitializing]);
 
-  // Restore chat/layout immediately; only the sidebar rows wait for their titles.
+  // Show persisted titles first, then refresh without holding the list in a loading state.
   useEffect(() => {
     if (!initialCwd || initialTitleIds === null) return;
     if (initialTitleIds.length === 0) { setTitlesLoading(false); return; }
     let active = true;
+    const applyTitles = (titles: Array<{ sessionId: string; title: string }>) => Effect.sync(() => {
+      if (!active) return;
+      const byId = new Map(titles.map((info) => [info.sessionId, info]));
+      setTabs((current) => current.map((tab) => {
+        if (!tab.sessionId || (tab.cwd || initialCwd) !== initialCwd || !initialTitleIds.includes(tab.sessionId)) return tab;
+        const info = byId.get(tab.sessionId);
+        // The batch owns missing titles too, so rows do not issue duplicate requests.
+        return { ...tab, title: info?.title ?? tab.title, titleReady: true };
+      }));
+    });
+    setTitlesLoading(false);
     const fiber = BrowserRuntime.runFork(loadSessionTitles(initialCwd, initialTitleIds).pipe(
-      Effect.tap((titles) => Effect.sync(() => {
-        if (!active) return;
-        const byId = new Map(titles.map((info) => [info.sessionId, info]));
-        setTabs((current) => current.map((tab) => {
-          const info = tab.sessionId && (tab.cwd || initialCwd) === initialCwd ? byId.get(tab.sessionId) : undefined;
-          return info ? { ...tab, title: info.title, titleReady: true, titlePending: false } : tab;
-        }));
-      })),
+      Effect.tap(applyTitles),
       Effect.catchAll((error) => Effect.logWarning('Cannot load initial project titles', error)),
       Effect.ensuring(Effect.sync(() => { if (active) setTitlesLoading(false); })),
     ));
@@ -1187,7 +1189,6 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     setTabs((prev) => prev.map((tab) => tab.id === tabId ? {
       ...tab, ...updates,
       titleReady: updates.sessionId !== undefined && updates.sessionId !== tab.sessionId ? undefined : tab.titleReady,
-      titlePending: updates.title !== undefined ? false : tab.titlePending,
     } : tab));
   }, [requestSessionRead]);
 

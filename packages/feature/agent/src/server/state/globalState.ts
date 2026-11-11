@@ -265,7 +265,7 @@ const SUMMARY_TAIL = 5;
 export const UNTITLED_SESSION = 'Untitled Session';
 
 export interface SessionPreview extends SessionTitleInfo {
-  /** Live title (summary line preferred), regenerated from disk on every read. */
+  /** Custom title, cached native title, or the transcript fallback before bootstrap. */
   title: string;
   /** Bot that dispatched the session, from its first user message. */
   bot?: string;
@@ -301,7 +301,7 @@ async function getSessionContent(cwd: string, sessionId: string, cache: Transcri
 }
 
 /**
- * Read a session preview in a single pass: a live title, the last user message,
+ * Read a session preview in a single pass: the effective title, the last user message,
  * a first/last message preview (mirroring ProjectSessionsModal cards — ≤10
  * messages → all in firstMessages; otherwise first 5 + last 5, each truncated to
  * MAX_TEXT_LEN), and an untruncated `searchText` corpus for the search panel.
@@ -421,12 +421,9 @@ export async function getGlobalSessionsSnapshot(limit = 20): Promise<GlobalSessi
           customTitle: preview.customTitle,
           defaultTitle: preview.defaultTitle,
           titleRevision: preview.titleRevision,
-          // Re-derive the title from disk on every read (aiTitle > summary >
-          // first message) instead of trusting the value persisted in
-          // state.json — that snapshot is only refreshed when a run finishes,
-          // so it goes stale whenever the aiTitle lands after completion.
-          // Fall back to the persisted title only when the transcript is gone
-          // (preview degrades to UNTITLED_SESSION). Mirrors /api/global-state.
+          // Central title metadata wins over the teardown-time recent snapshot.
+          // Bootstrap refreshes that metadata in the background on project open.
+          // Keep the recent snapshot when neither metadata nor transcript has a title.
           title:
             preview.title !== UNTITLED_SESSION
               ? preview.title

@@ -46,6 +46,7 @@ interface ChatPanelProps {
   noHistory?: boolean;
   onNoHistoryChange?: (tabId: string, noHistory: boolean) => void;
   isActive?: boolean;
+  isVisible?: boolean;
   /** Side-by-side: which of the two live panes owns externally-routed
    *  messages. Forwarded verbatim; see Chat's own prop doc. */
   isFocused?: boolean;
@@ -66,7 +67,7 @@ interface ChatPanelProps {
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
 }
 
-export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, grokModel, onGrokModelChange, grokReasoningEffort, onGrokReasoningEffortChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, isActive, isFocused, peerTabId, peerSide, refreshSignal, onDraftChange, onStateChange, onShowGitStatus, onOpenNote, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink }: ChatPanelProps) {
+export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, grokModel, onGrokModelChange, grokReasoningEffort, onGrokReasoningEffortChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, isActive, isVisible, isFocused, peerTabId, peerSide, refreshSignal, onDraftChange, onStateChange, onShowGitStatus, onOpenNote, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink }: ChatPanelProps) {
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
   }, [tabId, onStateChange]);
@@ -188,6 +189,7 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollam
       hideHeader
       hideSidebar
       isActive={isActive}
+      isVisible={isVisible}
       isFocused={isFocused}
       peerTabId={peerTabId}
       peerSide={peerSide}

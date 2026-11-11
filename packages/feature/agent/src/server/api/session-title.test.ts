@@ -21,6 +21,7 @@ let titlePOST: typeof import('./session-title').POST;
 let detailPOST: typeof import('./session-by-path').POST;
 let pinGET: typeof import('../../../../../../src/app/api/pinned-sessions/route').GET;
 let pinPOST: typeof import('../../../../../../src/app/api/pinned-sessions/route').POST;
+let projectGET: typeof import('../../../../../../src/app/api/project-state/route').GET;
 let recent: typeof import('../state/globalState');
 beforeAll(async () => {
   mkdirSync(join(root, 'cockpit'), { recursive: true });
@@ -32,6 +33,7 @@ beforeAll(async () => {
   ({ POST: titlePOST } = await import('./session-title'));
   ({ POST: detailPOST } = await import('./session-by-path'));
   ({ GET: pinGET, POST: pinPOST } = await import('../../../../../../src/app/api/pinned-sessions/route'));
+  ({ GET: projectGET } = await import('../../../../../../src/app/api/project-state/route'));
   recent = await import('../state/globalState');
 }, 30_000);
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -39,6 +41,75 @@ const request = (body: unknown) => new Request('http://localhost/api/session-tit
 const identity = () => ({ cwd: root, sessionId: 'title-api-session' });
 
 describe('session title API and projections', () => {
+  it('returns cached labels with the session list on repeated page loads without reading transcripts', async () => {
+    const { Effect } = await import('effect');
+    const { getSessionFilePath, writeJsonFile } = await import('@cockpit/shared-utils');
+    const { refreshSessionTitle } = await import('../../effect/sessionTitles');
+    const cwd = join(root, 'bootstrap-project');
+    const ids = ['bootstrap-one', 'bootstrap-two'];
+    for (const [index, id] of ids.entries()) {
+      await Effect.runPromise(refreshSessionTitle(cwd, id, 'claude', Effect.succeed(`Cached subject ${index}`)));
+    }
+    await writeJsonFile(getSessionFilePath(cwd), { sessions: ids, activeSessionId: ids[0] });
+    const source = vi.spyOn(await import('../../effect/logicalTranscript'), 'readLogicalTranscript');
+    const lookup = vi.spyOn(await import('./session/sessionStore'), 'resolveSessionPath');
+    try {
+      for (let i = 0; i < 3; i++) {
+        const response = await projectGET(new Request(`http://localhost/api/project-state?cwd=${encodeURIComponent(cwd)}`));
+        expect(response.status).toBe(200);
+        const state = await response.json();
+        expect(state.sessions).toEqual(ids);
+        expect(state.sessionTitles.map((info: { title: string }) => info.title)).toEqual(['Cached subject 0', 'Cached subject 1']);
+      }
+      expect(source).not.toHaveBeenCalled();
+      expect(lookup).not.toHaveBeenCalled();
+    } finally { source.mockRestore(); lookup.mockRestore(); }
+  });
+
+  it('serves persisted titles without transcript IO, refreshes and broadcasts only changes, and keeps cache on failure', async () => {
+    const sessionId = 'cached-title-api';
+    const file = join(root, `${sessionId}.jsonl`);
+    const prompt = JSON.stringify({ type: 'user', sessionId, cwd: root, message: { role: 'user', content: 'Original subject' } }) + '\n';
+    writeFileSync(file, prompt);
+    sessions.set(sessionId, file);
+    const batch = { cwd: root, sessionIds: [sessionId] };
+    const cacheRequest = () => titlePOST(request({ ...batch, cachedOnly: true }));
+    const source = vi.spyOn(await import('../../effect/logicalTranscript'), 'readLogicalTranscript');
+    const lookup = vi.spyOn(await import('./session/sessionStore'), 'resolveSessionPath');
+    const shared = globalThis as unknown as { __cockpitGlobalStateClients?: Set<{ readyState: number; send: (data: string) => void }> };
+    const previousClients = shared.__cockpitGlobalStateClients;
+    const notifications: string[] = [];
+    shared.__cockpitGlobalStateClients = new Set([{ readyState: 1, send: (data) => { notifications.push(data); } }]);
+    try {
+      expect((await (await cacheRequest()).json()).titles).toEqual([]);
+      expect(source).not.toHaveBeenCalled();
+      expect(lookup).not.toHaveBeenCalled();
+      const initial = (await (await titlePOST(request(batch))).json()).titles[0];
+      expect(initial).toMatchObject({ title: 'Original subject', defaultTitle: 'Original subject' });
+      expect(notifications).toHaveLength(1);
+      const before = (await (await detailPOST(request({ cwd: root, sessionId }))).json()).fingerprint;
+      appendFileSync(file, JSON.stringify({ type: 'ai-title', aiTitle: 'Updated subject' }) + '\n');
+      source.mockClear(); lookup.mockClear();
+      expect((await (await cacheRequest()).json()).titles).toEqual([initial]);
+      expect(source).not.toHaveBeenCalled();
+      expect(lookup).not.toHaveBeenCalled();
+      const refreshed = (await (await titlePOST(request(batch))).json()).titles[0];
+      expect(refreshed).toMatchObject({ title: 'Updated subject', titleRevision: initial.titleRevision + 1 });
+      expect((await (await cacheRequest()).json()).titles).toEqual([refreshed]);
+      expect(notifications).toHaveLength(2);
+      expect(JSON.parse(notifications[1])).toMatchObject({ type: 'session-title-changed', data: refreshed });
+      expect((await (await detailPOST(request({ cwd: root, sessionId, ifFingerprint: before }))).json()).title).toBe('Updated subject');
+      await titlePOST(request(batch));
+      expect(notifications).toHaveLength(2);
+      rmSync(file);
+      expect((await (await titlePOST(request(batch))).json()).titles).toEqual([]);
+      expect((await (await cacheRequest()).json()).titles).toEqual([refreshed]);
+    } finally {
+      source.mockRestore(); lookup.mockRestore();
+      shared.__cockpitGlobalStateClients = previousClients;
+    }
+  });
+
   it('migrates the favorite, returns the same title in detail, and retains it after unpinning', async () => {
     const title = await (await titlePOST(request(identity()))).json();
     expect(title.title).toBe('Old favorite name');
@@ -50,13 +121,13 @@ describe('session title API and projections', () => {
   it('invalidates detail fingerprints on rename and reset without touching the transcript', async () => {
     const before = await (await detailPOST(request(identity()))).json();
     const renamed = await (await titlePOST(request({ ...identity(), customTitle: 'New task name' }))).json();
-    expect(renamed).toMatchObject({ title: 'New task name', defaultTitle: 'Native first prompt', customTitle: 'New task name', titleRevision: 1 });
+    expect(renamed).toMatchObject({ title: 'New task name', defaultTitle: 'Native first prompt', customTitle: 'New task name', titleRevision: before.titleRevision + 1 });
     const after = await (await detailPOST(request({ ...identity(), ifFingerprint: before.fingerprint }))).json();
     expect(after.notModified).toBeUndefined();
     expect(after.title).toBe('New task name');
     expect((await (await detailPOST(request({ ...identity(), ifFingerprint: after.fingerprint }))).json()).notModified).toBe(true);
     const reset = await (await titlePOST(request({ ...identity(), customTitle: null }))).json();
-    expect(reset).toMatchObject({ title: 'Native first prompt', customTitle: null, titleRevision: 2 });
+    expect(reset).toMatchObject({ title: 'Native first prompt', customTitle: null, titleRevision: renamed.titleRevision + 1 });
     expect((await (await detailPOST(request({ ...identity(), ifFingerprint: after.fingerprint }))).json()).title).toBe('Native first prompt');
   });
   it('enriches the running snapshot even when transcript preview is skipped', async () => {

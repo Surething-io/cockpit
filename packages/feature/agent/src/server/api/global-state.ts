@@ -48,9 +48,8 @@ export const GET = handler((req) =>
           getSessionPreview(session.cwd, session.sessionId, { includeSearchText: true, titleData: titleFiles.get(encodePath(session.cwd)) })
         ).pipe(
           Effect.map((preview) => {
-            // Live title (summary line preferred). The persisted title is a
-            // teardown-time snapshot that predates the summary, so prefer the
-            // freshly read one; fall back only when the transcript is gone.
+            // Prefer central title metadata, then the transcript fallback.
+            // Keep the recent snapshot if neither can supply a title.
             const title =
               preview.title && preview.title !== "Untitled Session"
                 ? preview.title

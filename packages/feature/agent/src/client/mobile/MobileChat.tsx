@@ -102,6 +102,8 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     loadedEngine,
     loadedBot,
   } = useChatHistory(sessionId, {
+    enabled: isActive,
+    liveRunning,
     reconcileLimit: null,
     cwd,
     initialSessionId,
@@ -156,7 +158,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   // the one currently sending. Lets a run started elsewhere (desktop / scheduled
   // task) stream live on the phone — the core "did it finish?" monitoring case.
   const liveSessionId = loadedSessionId || sessionId;
-  const liveViewerEnabled = !isLoading && !!liveSessionId;
+  const liveViewerEnabled = isActive && !isLoading && !!liveSessionId;
   useLiveStream(liveSessionId, setRunMessages, liveViewerEnabled, engine, {
     onSnapshotStart: onLiveSnapshotStart,
     onWriterIdle,

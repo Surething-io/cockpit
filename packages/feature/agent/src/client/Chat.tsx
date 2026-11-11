@@ -10,12 +10,12 @@ import { toast } from '@cockpit/shared-ui';
 import { useLiveStream } from './useLiveStream';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import {
-  querySessionByPath,
   runBashCommand,
   forkSession,
   deleteSessionTurn,
   loadSessionContextSummary,
 } from './effect/agentClient';
+import { requestSessionTitle } from './effect/sessionTitlesClient';
 import { publishTopic } from '@cockpit/effect-react';
 import { Topics } from '@cockpit/effect-services';
 import { ChatHeader } from './ChatHeader';
@@ -100,6 +100,8 @@ interface ChatProps {
   hideHeader?: boolean;
   hideSidebar?: boolean;
   isActive?: boolean; // Whether the tab is active (used to handle scroll issues for hidden tabs)
+  /** Actual content visibility, including covered panes; controls automatic IO. */
+  isVisible?: boolean;
   /** Whether this pane owns externally-routed messages. Defaults to isActive;
    *  only side-by-side ever passes it explicitly, to break the tie. */
   isFocused?: boolean;
@@ -170,7 +172,7 @@ interface ChatProps {
  */
 const ENGINE_OPTIONS_ROW = `${COLUMN_HEADER_ROW.replace(' border-b border-border', '')} pl-3 pr-20 bg-card/50`;
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, grokModel, onGrokModelChange, grokReasoningEffort, onGrokReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, isFocused = isActive, peerTabId, peerSide, refreshSignal, onLoadingChange, onDraftPresenceChange, onSessionIdChange, onTitleChange, onBotChange, onShowGitStatus, onOpenNote, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, grokModel, onGrokModelChange, grokReasoningEffort, onGrokReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, isVisible = isActive, isFocused = isActive, peerTabId, peerSide, refreshSignal, onLoadingChange, onDraftPresenceChange, onSessionIdChange, onTitleChange, onBotChange, onShowGitStatus, onOpenNote, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();
   const composerSlot = useComposerSlot();
   // Owned here, not in ChatInput: the composer is portalled when this pane is
@@ -214,7 +216,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   const fetchSessionTitle = useCallback(async (sid: string) => {
     if (!initialCwd) return;
     const exit = await BrowserRuntime.runPromiseExit(
-      querySessionByPath({ cwd: initialCwd, sessionId: sid })
+      requestSessionTitle(initialCwd, sid)
     );
     if (exit._tag === 'Success' && exit.value && typeof exit.value.title === 'string') {
       if (typeof exit.value.titleRevision === 'number') acceptSessionTitle({ ...exit.value, cwd: initialCwd, sessionId: sid } as SessionTitleChange);
@@ -270,6 +272,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     onSessionId: setSessionId,
     onTitleChange,
     onTokenUsage: setHistoryTokenUsage,
+    enabled: isVisible,
+    liveRunning,
   });
 
   // Restore the session's engine; provider selection is only available at creation.
@@ -469,7 +473,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   // originator currently sending). The session-stream snapshot's `status` — not the racy
   // global-state broadcast — decides whether a run is live. This is what lets a refreshed
   // originator (or any tab) reliably resume an in-flight run.
-  const liveViewerEnabled = isActive && !isLoading && !!liveSessionId;
+  const liveViewerEnabled = isVisible && !isLoading && !!liveSessionId;
   useLiveStream(liveSessionId, setRunMessages, liveViewerEnabled, engine, {
     // Update the ref synchronously (not just via the effect on liveRunning) so the initial
     // history load, resolving moments later, reliably sees that the live stream owns this run.
@@ -494,20 +498,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     }
   }, [liveViewerEnabled]);
 
-  // Incrementally fetch messages when becoming active (handles external writes like scheduled tasks)
-  // With limit to fetch only the last N rounds + fingerprint check + time throttle (inside useChatHistory)
-  const prevActiveRef = useRef(isActive);
-  useEffect(() => {
-    // Skip while a live run is in progress — the live stream owns the tail; a lagging
-    // disk fetch would momentarily regress it. Reconcile happens on completion instead.
-    if (isActive && !prevActiveRef.current && sessionId && initialCwd && !isLoading && !liveRunning) {
-      loadHistoryByCwdAndSessionId(initialCwd, sessionId, true, HISTORY_RECONCILE_TURNS);
-    }
-    prevActiveRef.current = isActive;
-  }, [isActive, sessionId, initialCwd, isLoading, liveRunning, loadHistoryByCwdAndSessionId]);
-
   // Forced refresh on explicit jump (SWITCH_SESSION → scheduled tasks / recent / pinned).
-  // The rising-edge fetch above never fires when the target tab is ALREADY active on the
+  // The history hook's activation fetch never fires when the target tab is ALREADY active on the
   // agent view — the common case for a scheduled-task session — so the host bumps
   // `refreshSignal` and we fetch unconditionally, bypassing the incremental throttle.
   const refreshNonceRef = useRef(0);
@@ -960,6 +952,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           <MessageList
             // #10: as a viewer, drive the "thinking" bubble from the live run status too.
             ref={messageListRef}
+            snapshotsEnabled={isVisible}
             messages={messages}
             recoveryCopies={recoveryCopies}
             onDismissRecoveryCopy={onRecoveryDismissed}

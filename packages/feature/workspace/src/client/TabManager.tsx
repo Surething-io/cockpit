@@ -899,6 +899,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                           noHistory={tab.noHistory}
                           onNoHistoryChange={updateTabNoHistory}
                           isActive={isChatSurfaceActive(tab.id, paneTabIds, activeView === 'agent', pageVisible)}
+                          isVisible={isChatSurfaceActive(tab.id, layout.panes, activeView === 'agent' && !diffFullscreen, pageVisible) && (!maximizedTab || maximizedTab === tab.id)}
                           isFocused={tab.id === activeTabId}
                           refreshSignal={sessionRefresh}
                           onDraftChange={handleDraftChange}
@@ -1073,6 +1074,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                     noHistory={tab.noHistory}
                     onNoHistoryChange={updateTabNoHistory}
                     isActive={isChatSurfaceActive(tab.id, paneTabIds, true, pageVisible)}
+                    isVisible={isChatSurfaceActive(tab.id, layout.panes, !diffFullscreen, pageVisible) && (!maximizedTab || maximizedTab === tab.id)}
                     isFocused={tab.id === activeTabId}
                     refreshSignal={sessionRefresh}
                     onDraftChange={handleDraftChange}

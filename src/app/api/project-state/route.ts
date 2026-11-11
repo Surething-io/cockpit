@@ -14,6 +14,7 @@ import {
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { FSError, ValidationError } from "@cockpit/effect-core"
 import { broadcastToGlobalState } from "../../../lib/globalStateBroadcast"
+export { GET } from "@cockpit/feature-workspace/server/api/project-state"
 
 interface ProjectState {
   sessions: string[]
@@ -47,23 +48,6 @@ function normalizeCodexEngineMap(engines?: Record<string, string>): Record<strin
   }
   return out
 }
-
-export const GET = handler((req) =>
-  Effect.gen(function* () {
-    const cwd = new URL(req.url).searchParams.get("cwd")
-    if (!cwd) {
-      return yield* Effect.fail(
-        new ValidationError({ field: "cwd", reason: "missing" })
-      )
-    }
-    const filePath = getSessionFilePath(cwd)
-    const state = yield* Effect.tryPromise({
-      try: () => readJsonFile<ProjectState>(filePath, { sessions: [] }),
-      catch: (cause) => new FSError({ path: filePath, op: "read", cause }),
-    })
-    return ok(state)
-  })
-)
 
 export const POST = handler((req) =>
   Effect.gen(function* () {

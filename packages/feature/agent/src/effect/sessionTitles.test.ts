@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -23,8 +23,60 @@ const read = (cwd: string, id: string, fallback = 'First prompt', store = 'claud
   Effect.runPromise(titles.readSessionTitle(cwd, id, fallback, store));
 const save = (cwd: string, id: string, value: unknown, store = 'claude') =>
   Effect.runPromise(titles.writeSessionTitle(cwd, id, store, value));
+const refresh = (cwd: string, id: string, title: string) =>
+  Effect.runPromise(titles.refreshSessionTitle(cwd, id, 'claude', Effect.succeed(title)));
+const cached = async (cwd: string, id: string) =>
+  titles.cachedSessionTitle(await Effect.runPromise(titles.readProjectTitles(paths.encodePath(cwd))), cwd, id);
 
 describe('session title lifecycle', () => {
+  it('persists native titles, skips unchanged writes, and preserves them across renames and resets', async () => {
+    const cwd = join(root, 'native-cache');
+    expect(await cached(cwd, 's')).toBeUndefined();
+    expect((await refresh(cwd, 's', 'Original')).changed).toBe(true);
+    const file = titles.sessionTitlesPath(paths.encodePath(cwd));
+    const before = await readFile(file, 'utf8');
+    expect((await refresh(cwd, 's', 'Original')).changed).toBe(false);
+    expect(await readFile(file, 'utf8')).toBe(before);
+    await save(cwd, 's', 'Custom');
+    expect((await refresh(cwd, 's', 'Latest native')).info).toMatchObject({ title: 'Custom', defaultTitle: 'Latest native', customTitle: 'Custom' });
+    await save(cwd, 's', null);
+    expect(await cached(cwd, 's')).toMatchObject({ title: 'Latest native', customTitle: null });
+    expect((await refresh(cwd, 's', 'Untitled Session')).changed).toBe(false);
+    expect((await cached(cwd, 's'))?.title).toBe('Latest native');
+    expect((await refresh(cwd, 'empty', 'Untitled Session')).changed).toBe(false);
+    expect(await cached(cwd, 'empty')).toBeUndefined();
+  });
+
+  it('serves cached titles during slow refreshes and rejects a late older result', async () => {
+    const cwd = join(root, 'refresh-race');
+    await refresh(cwd, 's', 'Cached');
+    let release!: (title: string) => void;
+    const started = vi.fn();
+    const slow = Effect.runPromise(titles.refreshSessionTitle(cwd, 's', 'claude', Effect.tryPromise({
+      try: () => new Promise<string>((resolve) => { release = resolve; started(); }),
+      catch: (cause) => cause,
+    })));
+    await vi.waitFor(() => expect(started).toHaveBeenCalledOnce());
+    try {
+      expect((await cached(cwd, 's'))?.title).toBe('Cached');
+      await refresh(cwd, 's', 'Newer');
+      await save(cwd, 's', 'User rename');
+    } finally { release('Older'); }
+    expect((await slow).changed).toBe(false);
+    expect(await cached(cwd, 's')).toMatchObject({ title: 'User rename', defaultTitle: 'Newer' });
+  });
+
+  it('preserves cached data after refresh failure and separates ambiguous native stores', async () => {
+    const cwd = join(root, 'refresh-failure');
+    await refresh(cwd, 's', 'Keep');
+    await expect(Effect.runPromise(titles.refreshSessionTitle(cwd, 's', 'claude', Effect.fail('Unavailable')))).rejects.toThrow();
+    expect((await cached(cwd, 's'))?.title).toBe('Keep');
+    await Effect.runPromise(titles.refreshSessionTitle(cwd, 's', 'codex', Effect.succeed('Other store')));
+    expect(await cached(cwd, 's')).toBeUndefined();
+    expect(await read(cwd, 's', '', 'claude')).toMatchObject({ title: 'Keep' });
+    expect(await read(cwd, 's', '', 'codex')).toMatchObject({ title: 'Other store' });
+  });
+
   it('preserves favorite names after unpinning and does not resurrect a cleared name', async () => {
     const cwd = join(root, 'legacy-project');
     await writeFile(paths.PINNED_SESSIONS_FILE, JSON.stringify([{ cwd, sessionId: 'old', customTitle: 'My task' }]));

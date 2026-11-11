@@ -108,3 +108,5 @@ export type {
 
 export { SessionTitle, SessionTitlesBridge, useSessionTitleOverrides, effectiveTitle } from './SessionTitle';
 export { loadSessionTitles } from './effect/sessionTitlesClient';
+export { acceptSessionTitles } from './sessionTitleState';
+export type { SessionTitleChange } from '../shared/sessionTitle';

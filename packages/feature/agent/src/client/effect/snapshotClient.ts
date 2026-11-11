@@ -61,8 +61,8 @@ export interface SnapshotRangeDiffDto {
 
 const httpJson = <A>(url: string): Effect.Effect<A, AppError> =>
   Effect.tryPromise({
-    try: async () => {
-      const res = await fetch(url)
+    try: async (signal) => {
+      const res = await fetch(url, { signal })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return (await res.json()) as A
     },

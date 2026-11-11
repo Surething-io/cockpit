@@ -88,6 +88,9 @@ interface SessionPageData extends Partial<SessionTitleInfo> {
 // ============================================
 
 interface UseChatHistoryOptions {
+  /** Automatic disk reads run only while this conversation is visible. */
+  enabled?: boolean;
+  liveRunning?: boolean;
   /** null keeps the mobile full-history reconciliation contract. */
   reconcileLimit?: number | null;
   cwd?: string;
@@ -174,7 +177,7 @@ function reconciliationDemand(history: ChatHistoryState): string | null {
 
 export function useChatHistory(
   sessionId: string | null,
-  { cwd, initialSessionId, onSessionId, onTitleChange, onTokenUsage, reconcileLimit = TURNS_PER_PAGE }: UseChatHistoryOptions
+  { cwd, initialSessionId, onSessionId, onTitleChange, onTokenUsage, reconcileLimit = TURNS_PER_PAGE, enabled = true, liveRunning = false }: UseChatHistoryOptions
 ): UseChatHistoryReturn {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -250,13 +253,22 @@ export function useChatHistory(
   // modal, so it must not take a new identity every time a page lands.
   const loadedSessionIdRef = useRef<string | null>(null);
   loadedSessionIdRef.current = loadedSessionId;
+  // Painting a cached page is not a completed initial validation. In particular,
+  // React's effect replay must repeat that first page, not expand it to a tail read.
+  const initializedHistoryRef = useRef<string | null>(null);
   const displayedSessionId = loadedSessionId ?? sessionId ?? initialSessionId;
   const displayedSessionIdRef = useRef(displayedSessionId);
   displayedSessionIdRef.current = displayedSessionId;
   // Loading a target selects the session; painting its cache/response only hydrates it.
   // SDK session ids may drift, so they do not invalidate the displayed transcript.
   const readTargetRef = useRef({ cwd, sessionId: initialSessionId ?? sessionId });
-  useEffect(() => invalidateReads, [cwd, invalidateReads]);
+  const wasVisibleRef = useRef(false);
+  const pendingActivationRef = useRef(false);
+  useEffect(() => () => {
+    wasVisibleRef.current = false;
+    pendingActivationRef.current = false;
+    invalidateReads();
+  }, [cwd, invalidateReads]);
 
   // Use ref to ensure callbacks use the latest reference
   const onTitleChangeRef = useRef(onTitleChange);
@@ -344,6 +356,7 @@ export function useChatHistory(
             reconciles: authoritative ? reconciles : undefined, fromCache: !authoritative,
           });
           setLoadedSessionId(sid);
+          loadedSessionIdRef.current = sid;
         }
         if (data.sessionId) {
           onSessionId(data.sessionId);
@@ -422,6 +435,7 @@ export function useChatHistory(
       if (requestId !== requestIdRef.current) return;
       if (exit._tag === 'Success' && exit.value) {
         const data = exit.value as SessionPageData;
+        if (data.messages || data.notModified) initializedHistoryRef.current = JSON.stringify([cwdPath, sid]);
 
         // Content equality does not prove that its writer has finished.
         if (data.notModified) {
@@ -455,7 +469,29 @@ export function useChatHistory(
   const pendingReconciliation = reconciliationDemand(history);
   const pendingAdmission = history.runs.some((run) => run.phase === 'pending');
   useEffect(() => {
-    if (!pendingReconciliation || activeReadRef.current || !cwd || !displayedSessionId) return;
+    const becomingVisible = enabled && !wasVisibleRef.current;
+    wasVisibleRef.current = enabled;
+    if (!enabled) { pendingActivationRef.current = false; return; }
+    if (!becomingVisible && !pendingActivationRef.current) return;
+    // A new visit may retry a failed final read, without polling while hidden.
+    if (becomingVisible) lastReconcileRef.current = null;
+    const sid = loadedSessionIdRef.current ?? initialSessionId;
+    if (!cwd || !sid) return;
+    // A response admitted before leaving may predate work done while hidden.
+    // Let it settle, then validate this return visit once instead of racing it.
+    if (activeReadRef.current) { pendingActivationRef.current = true; return; }
+    pendingActivationRef.current = false;
+    if (pendingReconciliation) return;
+    const runs = historyRef.current.runs;
+    const initialized = initializedHistoryRef.current === JSON.stringify([cwd, sid]);
+    // A first read still supplies the preceding disk history while live replay
+    // owns the current run. Only revisits defer their ordinary refresh to it.
+    if (initialized && (liveRunning || runs.some((run) => run.phase !== 'released'))) return;
+    void loadHistoryByCwdAndSessionId(cwd, sid, initialized, initialized ? reconcileLimit ?? undefined : TURNS_PER_PAGE);
+  }, [enabled, settledReadId, cwd, initialSessionId, liveRunning, pendingReconciliation, reconcileLimit, loadHistoryByCwdAndSessionId]);
+
+  useEffect(() => {
+    if (!enabled || !pendingReconciliation || activeReadRef.current || !cwd || !displayedSessionId) return;
     if (readTargetRef.current.cwd !== cwd || (readTargetRef.current.sessionId && readTargetRef.current.sessionId !== displayedSessionId)) return;
     const demand = JSON.stringify([cwd, displayedSessionId, pendingReconciliation]);
     const previous = lastReconcileRef.current;
@@ -465,7 +501,7 @@ export function useChatHistory(
     if (previous?.demand === demand && (pendingAdmission || previous.requestId === requestIdRef.current)) return;
     void loadHistoryByCwdAndSessionId(cwd, displayedSessionId, true, reconcileLimit ?? undefined, undefined, true);
     lastReconcileRef.current = { demand, requestId: requestIdRef.current };
-  }, [pendingReconciliation, pendingAdmission, settledReadId, cwd, displayedSessionId, reconcileLimit, loadHistoryByCwdAndSessionId]);
+  }, [enabled, pendingReconciliation, pendingAdmission, settledReadId, cwd, displayedSessionId, reconcileLimit, loadHistoryByCwdAndSessionId]);
 
   // Load more history messages (called when scrolling up)
   const loadMoreHistory = useCallback(async () => {
@@ -608,14 +644,6 @@ export function useChatHistory(
       releaseRead(requestId);
     }
   }, [cwd, sessionId, cancelTurnLoad, releaseRead]);
-
-  // Load history messages on page load (runs once only)
-  useEffect(() => {
-    if (cwd && initialSessionId) {
-      loadHistoryByCwdAndSessionId(cwd, initialSessionId, false, TURNS_PER_PAGE);
-    }
-
-  }, []); // Run only on component mount
 
   return {
     messages,

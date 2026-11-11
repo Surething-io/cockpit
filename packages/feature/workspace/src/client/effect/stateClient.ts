@@ -13,7 +13,7 @@
  */
 import { Effect } from "effect"
 import { AppError } from "@cockpit/effect-core"
-import type { MarkReadBySessionIdRequest } from "@cockpit/feature-agent"
+import { acceptSessionTitles, type MarkReadBySessionIdRequest, type SessionTitleChange } from "@cockpit/feature-agent"
 import { publishTopic } from "@cockpit/effect-react"
 import { Topics } from "@cockpit/effect-services"
 
@@ -23,6 +23,8 @@ import { Topics } from "@cockpit/effect-services"
 
 export interface LoadedProjectState {
   sessions: string[]
+  /** Persisted labels arrive in the same response as the rows they name. */
+  sessionTitles?: SessionTitleChange[]
   /** `null` means the active tab is a blank New Chat. */
   activeSessionId?: string | null
   /** Pane layout, by session, in on-screen order. `null` = a pane holding a chat
@@ -61,7 +63,7 @@ export const loadProjectState = (
     },
     catch: (cause) =>
       new AppError({ message: "loadProjectState failed", cause }),
-  })
+  }).pipe(Effect.tap((state) => Effect.sync(() => acceptSessionTitles(state.sessionTitles ?? []))))
 
 export interface ProjectStateSave {
   cwd: string

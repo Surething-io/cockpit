@@ -1,11 +1,24 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { Effect } from 'effect';
-import { markSessionRead } from './stateClient';
+import { loadProjectState, markSessionRead } from './stateClient';
+import * as agent from '@cockpit/feature-agent';
 import { publishTopic } from '@cockpit/effect-react';
 
 vi.mock('@cockpit/effect-react', () => ({ publishTopic: vi.fn() }));
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.clearAllMocks(); });
 const boundary = () => Response.json({ readBefore: 123 });
+
+it('hydrates titles from the session-list response before returning the restored project', async () => {
+  const titles = [{ cwd: '/bootstrap', sessionId: 'cached', title: 'Cached subject', defaultTitle: 'Cached subject', customTitle: null, titleRevision: 1 }];
+  const state = { sessions: ['cached'], activeSessionId: 'cached', sessionTitles: titles };
+  const accept = vi.spyOn(agent, 'acceptSessionTitles');
+  const fetch = vi.fn(async () => Response.json(state));
+  vi.stubGlobal('fetch', fetch);
+  for (let i = 0; i < 3; i++) expect(await Effect.runPromise(loadProjectState('/bootstrap'))).toEqual(state);
+  expect(accept).toHaveBeenCalledWith(titles);
+  expect(accept).toHaveBeenCalledTimes(3);
+  expect(fetch.mock.calls).toHaveLength(3);
+});
 
 it('attempts both stores and notifies the task list even if session clearing fails', async () => {
   const fetch = vi.fn(async (url: string, init?: RequestInit) => init?.method

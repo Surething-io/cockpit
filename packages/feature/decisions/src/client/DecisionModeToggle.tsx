@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Scale } from 'lucide-react';
 import { confirm, toast, useAIBridge } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
-import { loadDecisionList } from './effect/decisionsClient';
+import { loadCandidates, loadDecisionList } from './effect/decisionsClient';
 import { DecisionListModal } from './DecisionListModal';
 import { useDecisionMode } from './useDecisionMode';
 
@@ -23,12 +23,16 @@ export const DecisionModeToggle = memo(function DecisionModeToggle({ cwd }: { cw
   const aiBridge = useAIBridge();
   const [listOpen, setListOpen] = useState(false);
   const [count, setCount] = useState<number | null>(null);
+  const [waiting, setWaiting] = useState(0);
   // Active decisions, refreshed when the mode turns on and when the list closes.
   useEffect(() => {
     if (!enabled || listOpen) return;
     let cancelled = false;
     void BrowserRuntime.runPromiseExit(loadDecisionList(cwd)).then((exit) => {
       if (!cancelled && exit._tag === 'Success') setCount(exit.value.decisions.filter((d) => d.status === 'active').length);
+    });
+    void BrowserRuntime.runPromiseExit(loadCandidates(cwd)).then((exit) => {
+      if (!cancelled && exit._tag === 'Success') setWaiting(exit.value.candidates.length);
     });
     return () => {
       cancelled = true;
@@ -125,6 +129,7 @@ export const DecisionModeToggle = memo(function DecisionModeToggle({ cwd }: { cw
           title={t('decisions.list.title', { defaultValue: 'Project decisions' })}
         >
           {t('decisions.list.entry', { defaultValue: 'Decisions {{count}}', count: count ?? 0 })}
+          {waiting > 0 && <span className="ml-1 text-amber-11">{t('decisions.inbox.waitingBadge', { defaultValue: '· {{count}} waiting', count: waiting })}</span>}
         </button>
       )}
       {listOpen && <DecisionListModal cwd={cwd} onClose={closeList} onFillInput={aiBridge?.fillInput} />}

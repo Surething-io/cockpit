@@ -115,3 +115,29 @@ export const supersedeDecision = (cwd: string, old: Decision, content: DecisionC
 /** Decisions without derived state — cheap, for counts. */
 export const loadDecisionList = (cwd: string): Effect.Effect<{ decisions: Decision[] }, AppError> =>
   httpJson(`/api/decisions?cwd=${encodeURIComponent(cwd)}`);
+
+// ─────────────────────────────────────────────────────────
+// Candidate inbox
+// ─────────────────────────────────────────────────────────
+
+export interface InboxCandidate {
+  key: string;
+  /** Every key merged into this candidate (near-duplicates from other turns). */
+  keys: string[];
+  content: DecisionContent;
+  source: DecisionSource;
+  files: string[];
+  cwd?: string;
+  sessionId?: string;
+  seenAt: number;
+}
+
+export const loadCandidates = (cwd: string): Effect.Effect<{ candidates: InboxCandidate[] }, AppError> =>
+  httpJson(`/api/decisions/candidates?cwd=${encodeURIComponent(cwd)}`);
+
+/** Keep a candidate as a decision (optionally with edited text). */
+export const keepCandidate = (cwd: string, key: string, content?: DecisionContent): Effect.Effect<{ decision: Decision }, AppError> =>
+  sendJson('POST', '/api/decisions/candidates', { cwd, key, action: 'keep', ...(content ? { content } : {}) });
+
+export const dismissCandidate = (cwd: string, key: string): Effect.Effect<{ ok: true }, AppError> =>
+  sendJson('POST', '/api/decisions/candidates', { cwd, key, action: 'dismiss' });

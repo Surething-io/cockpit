@@ -13,8 +13,10 @@ import { Effect } from 'effect';
 import type { AgentError, AppError, FSError, NotFoundError, ValidationError } from '@cockpit/effect-core';
 import { SnapshotService } from '@cockpit/effect-services';
 import {
+  cleanDecisionContent,
   computeReview,
   requireProject,
+  stripEvidenceLabels,
   type DecisionCandidate,
   type EvidenceRef,
   type ExtractionEngine,
@@ -153,8 +155,7 @@ export const normalizeForQuote = (s: string): string =>
 const str = (v: unknown, max = 2000): string => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const strs = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => str(x, 500)).filter(Boolean) : []);
 const stripLabel = (s: string) => s.replace(/^\[|\]$/g, '').trim();
-/** Labels belong in refs; some models still write `[M1]` into prose. */
-const unlabel = (s: string) => s.replace(/\s*\[(?:M|F|R)\d+\]/g, '').trim();
+const unlabel = stripEvidenceLabels;
 
 export function validateExtraction(
   raw: unknown,
@@ -194,7 +195,7 @@ export function validateExtraction(
     const verbatim = !!cited && !!quote && normalizeForQuote(cited.text).includes(normalizeForQuote(quote));
     candidates.push({
       key: `c${i}`,
-      content: { choice, alternatives: strs(r.alternatives), rationale: str(r.rationale), tradeoffs: str(r.tradeoffs), premises: strs(r.premises) },
+      content: cleanDecisionContent({ choice, alternatives: strs(r.alternatives), rationale: str(r.rationale), tradeoffs: str(r.tradeoffs), premises: strs(r.premises) }),
       source: verbatim
         ? { kind: cited!.role === 'user' ? 'user' : 'agent', quote, messageId: cited!.id, ...(sessionId ? { sessionId } : {}) }
         : { kind: 'inferred', ...(quote ? { quote } : {}) },
@@ -270,7 +271,15 @@ export const extract = (
         ),
       { concurrency: 1 },
     );
-    const result: ExtractionResult = { ...mergeChunks(parts), engine: req.engine, model: req.model, chunks: prompts.length, cached: false };
+    const result: ExtractionResult = {
+      ...mergeChunks(parts),
+      engine: req.engine,
+      model: req.model,
+      chunks: prompts.length,
+      cached: false,
+      cwd: req.cwd,
+      ...(req.sessionId ? { sessionId: req.sessionId } : {}),
+    };
 
     yield* Effect.tryPromise(async () => {
       await mkdir(join(projectDir(project.projectId), 'extractions'), { recursive: true, mode: 0o700 });

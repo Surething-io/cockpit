@@ -1388,6 +1388,16 @@
     "removeFailed": "移除机器人失败"
   },
   "decisions": {
+    "inbox": {
+      "tab": "待确认 {{count}}",
+      "keptTab": "已保留 {{count}}",
+      "keep": "保留",
+      "dismiss": "丢弃",
+      "editFirst": "修改后保留",
+      "empty": "没有待确认的候选。每次生成审阅结果时，候选决策会出现在这里。",
+      "hint": "这些是从过去的对话里找到的候选决策。值得记住的点“保留”；丢弃的不会再出现。",
+      "waitingBadge": "· {{count}} 待确认"
+    },
     "card": {
       "failed": "保存失败",
       "edited": "已修改",

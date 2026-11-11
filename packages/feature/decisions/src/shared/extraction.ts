@@ -60,6 +60,9 @@ export interface ExtractionResult {
   /** Input was split into this many model calls to fit the context window. */
   chunks: number;
   cached: boolean;
+  /** Where the range came from — lets the candidate inbox trace a kept decision back. */
+  cwd?: string;
+  sessionId?: string;
 }
 
 /** Low-end default per engine (§12.4); engines without a low tier use the session's model. */
@@ -68,3 +71,18 @@ export const LOW_END_MODEL: Partial<Record<ExtractionEngine, string>> = {
   codex: 'gpt-6-luna',
   deepseek: 'deepseek-flash',
 };
+
+/** Evidence labels (`[M3]`, `[F1]`, `[R2]`) belong in refs; models still write them into prose. */
+export const stripEvidenceLabels = (s: string): string => s.replace(/\s*\[(?:M|F|R)\d+\]/g, '').trim();
+
+/** Strip labels from every text field; a premise / alternative that was only a label disappears. */
+export function cleanDecisionContent(c: DecisionContent): DecisionContent {
+  const list = (xs: string[]) => xs.map(stripEvidenceLabels).filter(Boolean);
+  return {
+    choice: stripEvidenceLabels(c.choice),
+    alternatives: list(c.alternatives),
+    rationale: stripEvidenceLabels(c.rationale),
+    tradeoffs: stripEvidenceLabels(c.tradeoffs),
+    premises: list(c.premises),
+  };
+}

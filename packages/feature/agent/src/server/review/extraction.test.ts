@@ -70,9 +70,18 @@ describe('validateExtraction', () => {
   });
 
   it('strips evidence labels a model wrote into prose', () => {
-    const r = validateExtraction({ goal: 'Fix duplicate sends. [M1]', summary: [{ text: 'Adds dedupe [F1] [R1]', refs: ['F1'] }], decisions: [] }, input, undefined);
+    const r = validateExtraction(
+      {
+        goal: 'Fix duplicate sends. [M1]',
+        summary: [{ text: 'Adds dedupe [F1] [R1]', refs: ['F1'] }],
+        decisions: [decision({ choice: 'In memory [M1]', rationale: 'restarts are rare [M2]', premises: ['[M1]', 'single process [M2]'], alternatives: ['[F1]'], quote: '先别落盘', ref: 'M1' })],
+      },
+      input,
+      undefined,
+    );
     expect(r.goal).toBe('Fix duplicate sends.');
     expect(r.summary[0].text).toBe('Adds dedupe');
+    expect(r.candidates[0].content).toEqual({ choice: 'In memory', alternatives: [], rationale: 'restarts are rare', tradeoffs: '', premises: ['single process'] });
   });
 
   it('survives garbage', () => {

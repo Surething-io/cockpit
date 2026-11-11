@@ -1391,6 +1391,16 @@
     "removeFailed": "Failed to remove bot"
   },
   "decisions": {
+    "inbox": {
+      "tab": "Waiting {{count}}",
+      "keptTab": "Kept {{count}}",
+      "keep": "Keep",
+      "dismiss": "Dismiss",
+      "editFirst": "Edit, then keep",
+      "empty": "No candidates waiting. They appear here whenever a review generates them.",
+      "hint": "Candidate decisions found in past conversations. Keep the ones worth remembering; dismissed ones do not come back.",
+      "waitingBadge": "· {{count}} waiting"
+    },
     "card": {
       "failed": "Could not save",
       "edited": "edited",

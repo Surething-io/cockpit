@@ -12,7 +12,8 @@ import { Effect } from 'effect';
 import { useEffectQuery } from '@cockpit/effect-react';
 import { Portal, blurActiveElement } from '@cockpit/shared-ui';
 import type { Decision, DecisionContent, DecisionEvent, DerivedDecisionState } from '../shared/types';
-import { decisionsExportUrl, loadDecisionHistory, loadDecisionsWithState } from './effect/decisionsClient';
+import { decisionsExportUrl, loadCandidates, loadDecisionHistory, loadDecisionsWithState } from './effect/decisionsClient';
+import { CandidateInbox } from './CandidateInbox';
 import { DecisionCard } from './DecisionCard';
 
 type StateFilter = 'current' | 'all' | DerivedDecisionState;
@@ -51,6 +52,20 @@ export const DecisionListModal = memo(function DecisionListModal({
   const q = useEffectQuery(loadDecisionsWithState(cwd), [cwd, tick]);
   const data = q.status === 'success' ? q.data : null;
   const [stateFilter, setStateFilter] = useState<StateFilter>('current');
+  // Candidate inbox: handled keys are dropped locally so the list does not re-fetch per click.
+  const inboxQ = useEffectQuery(loadCandidates(cwd), [cwd]);
+  const [handled, setHandled] = useState<Set<string>>(new Set());
+  const pending = useMemo(
+    () => (inboxQ.status === 'success' ? inboxQ.data.candidates.filter((c) => !handled.has(c.key)) : []),
+    [inboxQ, handled],
+  );
+  const [tab, setTab] = useState<'pending' | 'kept' | null>(null);
+  // Open on the inbox when there is something waiting, else on the decisions.
+  const activeTab = tab ?? (pending.length > 0 ? 'pending' : 'kept');
+  const onCandidateHandled = useCallback((key: string, kept: boolean) => {
+    setHandled((s) => new Set(s).add(key));
+    if (kept) setTick((n) => n + 1);
+  }, []);
   const [keyword, setKeyword] = useState('');
   const [file, setFile] = useState('');
   const [focusId, setFocusId] = useState<string | null>(null);
@@ -114,6 +129,27 @@ export const DecisionListModal = memo(function DecisionListModal({
               <X className="h-4 w-4" />
             </button>
           </div>
+          <div className="flex items-center gap-1 border-b border-border px-4 pt-2 text-xs">
+            {(['pending', 'kept'] as const).map((k) => (
+              <button
+                key={k}
+                onClick={() => setTab(k)}
+                className={`rounded-t px-3 py-1 ${activeTab === k ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-hover'}`}
+              >
+                {k === 'pending'
+                  ? t('decisions.inbox.tab', { defaultValue: 'Waiting {{count}}', count: pending.length })
+                  : t('decisions.inbox.keptTab', { defaultValue: 'Kept {{count}}', count: data?.decisions.length ?? 0 })}
+              </button>
+            ))}
+          </div>
+          {activeTab === 'pending' ? (
+            <div className="flex-1 space-y-2 overflow-y-auto p-3">
+              {inboxQ.status === 'loading' && <div className="text-xs text-muted-foreground">{t('common.loading', { defaultValue: 'Loading…' })}</div>}
+              {inboxQ.status === 'error' && <div className="text-xs text-red-11">{t('decisions.list.loadFailed', { defaultValue: 'Could not load decisions' })}</div>}
+              {inboxQ.status === 'success' && <CandidateInbox cwd={cwd} candidates={pending} onHandled={onCandidateHandled} />}
+            </div>
+          ) : (
+          <>
           <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 text-xs">
             <select value={stateFilter} onChange={(e) => { setFocusId(null); setStateFilter(e.target.value as StateFilter); }} className="rounded border border-border bg-background px-1 py-0.5 text-foreground">
               {STATES.map((s) => (
@@ -161,6 +197,8 @@ export const DecisionListModal = memo(function DecisionListModal({
               </div>
             )}
           </div>
+          </>
+          )}
         </div>
       </div>
     </Portal>

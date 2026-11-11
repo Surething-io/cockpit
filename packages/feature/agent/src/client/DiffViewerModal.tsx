@@ -17,6 +17,7 @@ import {
   DiffUnifiedView,
   DiffDensityToggle,
   DiffViewModeToggle,
+  ChangeSummaryBar,
   GitFileTree,
   buildGitFileTree,
   collectGitTreeDirPaths,
@@ -861,6 +862,8 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
                           {t('diffViewer.aggregateLoading')}
                         </div>
                       ) : (
+                      <>
+                      {activeFiles.length > 0 && <ChangeSummaryBar files={activeFiles} />}
                       <GitFileTree
                         files={tree as GitFileNode<unknown>[]}
                         selectedPath={selectedFilePath}
@@ -899,6 +902,7 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
                           );
                         }}
                       />
+                      </>
                       )}
                     </ResizableSidebar>
                   )}

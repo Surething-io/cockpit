@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, ReactNode } from 'react';
+import React, { useCallback, useMemo, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChangeClassChip, FileContextMenu, FileIcon, useFileContextMenu } from '@cockpit/shared-ui';
 import { classifyPath } from '@cockpit/shared-utils';
@@ -347,3 +347,62 @@ export function collectFilesUnderNode<T>(node: GitFileNode<T>): GitFileNode<T>[]
   traverse(node);
   return files;
 }
+
+// ============================================================================
+// Change totals — the "+N -M" summary every changed-file tree carries
+// ============================================================================
+
+interface LineStatsInput {
+  additions?: number;
+  deletions?: number;
+}
+
+/** Sum per-file line stats; files without stats (binary) count as 0/0. */
+export function sumLineStats(files: readonly LineStatsInput[]): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const f of files) {
+    additions += f.additions ?? 0;
+    deletions += f.deletions ?? 0;
+  }
+  return { additions, deletions };
+}
+
+/** Inline "+N -M" totals, for section headers that already carry a label. */
+export const ChangeTotals = React.memo(function ChangeTotals({
+  files,
+  className = '',
+}: {
+  files: readonly LineStatsInput[];
+  className?: string;
+}) {
+  const { additions, deletions } = useMemo(() => sumLineStats(files), [files]);
+  return (
+    <span className={`flex flex-shrink-0 items-center gap-1.5 text-xs tabular-nums ${className}`}>
+      <span className="text-green-11">+{additions}</span>
+      <span className="text-red-11">-{deletions}</span>
+    </span>
+  );
+});
+
+/**
+ * Header row above a changed-file tree: "N files changed  +a -d". `label`
+ * overrides the default wording (e.g. branch compare names its base).
+ */
+export const ChangeSummaryBar = React.memo(function ChangeSummaryBar({
+  files,
+  label,
+}: {
+  files: readonly LineStatsInput[];
+  label?: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
+      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+        {label ?? t('fileBrowser.nFilesChangedPlain', { count: files.length })}
+      </span>
+      <ChangeTotals files={files} />
+    </div>
+  );
+});

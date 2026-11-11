@@ -25,7 +25,7 @@ import { DiffDensityToggle } from './DiffDensityToggle';
 import { DiffViewModeToggle } from './DiffViewModeToggle';
 import { toast, confirm } from '@cockpit/shared-ui';
 import { FileTree, type GitStatusMap, type GitStatusCode } from './FileTree';
-import { GitFileTree, buildGitFileTree, collectFilesUnderNode } from './GitFileTree';
+import { ChangeSummaryBar, ChangeTotals, GitFileTree, buildGitFileTree, collectFilesUnderNode } from './GitFileTree';
 import { MenuContainerProvider } from '@cockpit/shared-ui';
 import { CodeViewer } from '@cockpit/feature-explorer';
 import { isMarkdownFile, isHtmlFile, isJsonFile, isCsvFile, isSkillFile, isBotFile, formatAsHumanReadable, THEME_JSON_COLORS, JsonCollapseContext } from './toolCallUtils';
@@ -269,17 +269,6 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
   const closeJsonPreview = useCallback(() => setJsonPreview(null), []);
   // A different compare file (or leaving compare mode) drops a stale preview.
   useEffect(() => { setCompareMdPreview(null); }, [compareFileDiff]);
-  // Totals for the compare-mode header. Binary files report 0/0 from numstat,
-  // so they add nothing here, matching their per-row "+0 -0".
-  const compareTotals = useMemo(() => {
-    let additions = 0;
-    let deletions = 0;
-    for (const f of gitHistory.compareFiles) {
-      additions += f.additions;
-      deletions += f.deletions;
-    }
-    return { additions, deletions };
-  }, [gitHistory.compareFiles]);
 
   // Compare mode has no commit pair to name, so the prompt has to spell the
   // range the route actually ran (branch-diff.ts) — otherwise the agent reads a
@@ -1585,6 +1574,9 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                             </svg>
                           </button>
+                          {gitStatus.status && gitStatus.status.staged.length > 0 && (
+                            <ChangeTotals files={gitStatus.status.staged} className="ml-1" />
+                          )}
                         </div>
                         {(gitStatus.status?.staged.length || 0) > 0 && (
                           <button
@@ -1649,9 +1641,14 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                     {/* Unstaged Section */}
                     <div>
                       <div className="flex items-center justify-between px-3 py-2 bg-secondary">
-                        <span className="text-sm font-medium text-muted-foreground">
-                          {t('fileBrowser.workspace', { count: gitStatus.status?.unstaged.length || 0 })}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-medium text-muted-foreground">
+                            {t('fileBrowser.workspace', { count: gitStatus.status?.unstaged.length || 0 })}
+                          </span>
+                          {gitStatus.status && gitStatus.status.unstaged.length > 0 && (
+                            <ChangeTotals files={gitStatus.status.unstaged} className="ml-1" />
+                          )}
+                        </div>
                         {(gitStatus.status?.unstaged.length || 0) > 0 && (
                           <div className="flex items-center gap-2">
                             <button
@@ -1787,15 +1784,10 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                       </div>
                     ) : (
                       <>
-                        <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
-                          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                            {t(gitHistory.compareDiffMode === 'worktree' ? 'fileBrowser.nFilesChangedWorktree' : 'fileBrowser.nFilesChanged', { count: gitHistory.compareFiles.length, branch: gitHistory.compareBaseBranch })}
-                          </span>
-                          <span className="flex flex-shrink-0 items-center gap-1.5 text-xs tabular-nums">
-                            <span className="text-green-11">+{compareTotals.additions}</span>
-                            <span className="text-red-11">-{compareTotals.deletions}</span>
-                          </span>
-                        </div>
+                        <ChangeSummaryBar
+                          files={gitHistory.compareFiles}
+                          label={t(gitHistory.compareDiffMode === 'worktree' ? 'fileBrowser.nFilesChangedWorktree' : 'fileBrowser.nFilesChanged', { count: gitHistory.compareFiles.length, branch: gitHistory.compareBaseBranch })}
+                        />
                         <GitFileTree
                           files={gitHistory.compareFileTree}
                           expandedPaths={gitHistory.compareExpandedPaths}

@@ -512,6 +512,7 @@
     "stageFile": "暂存文件",
     "loadingDiff": "加载对比文件中...",
     "noDiffFiles": "无差异文件",
+    "nFilesChangedPlain": "{{count}} 个文件变更",
     "nFilesChanged": "{{count}} 个文件变更（vs {{branch}}）",
     "nFilesChangedWorktree": "{{count}} 个文件变更（vs {{branch}}，含未提交）",
     "noDiffFilesHeadHint": "本分支尚无已提交的改动，切到「工作区」可看到未提交的部分",

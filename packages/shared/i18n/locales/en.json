@@ -515,6 +515,7 @@
     "stageFile": "Stage file",
     "loadingDiff": "Loading diff...",
     "noDiffFiles": "No diff files",
+    "nFilesChangedPlain": "{{count}} files changed",
     "nFilesChanged": "{{count}} files changed (vs {{branch}})",
     "nFilesChangedWorktree": "{{count}} files changed (vs {{branch}}, incl. uncommitted)",
     "noDiffFilesHeadHint": "Nothing committed on this branch yet — switch to Worktree to see uncommitted changes",

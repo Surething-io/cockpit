@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { DiffView, DiffUnifiedView, HtmlPreviewModal, InteractiveMarkdownPreview } from '@cockpit/feature-explorer';
 import { DiffDensityToggle } from './DiffDensityToggle';
 import { DiffViewModeToggle } from './DiffViewModeToggle';
-import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, type GitFileNode } from './GitFileTree';
+import { ChangeSummaryBar, GitFileTree, buildGitFileTree, collectGitTreeDirPaths, type GitFileNode } from './GitFileTree';
 import { GitImageDiffView } from './fileBrowser/GitImageDiffView';
 import { FilePathActions } from './fileBrowser/FilePathActions';
 import { isImageFile } from './fileBrowser/utils';
@@ -307,6 +307,8 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
           {isLoadingFiles ? (
             <div className="p-4 text-center text-muted-foreground text-sm">{t('commitDetail.loadingFiles')}</div>
           ) : (
+            <>
+            {files.length > 0 && <ChangeSummaryBar files={files} />}
             <GitFileTree
               files={fileTree}
               selectedPath={selectedFile?.path || null}
@@ -321,6 +323,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
               onExplain={aiBridge && commitShortHash ? handleExplainFile : undefined}
               explainDisabled={aiBridge?.isLoading}
             />
+            </>
           )}
         </ResizableSidebar>
 

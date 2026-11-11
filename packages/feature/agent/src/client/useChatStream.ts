@@ -61,8 +61,6 @@ interface UseChatStreamOptions {
   planMode?: boolean;
   /** Independent-task mode: send each user message with no prior history */
   noHistory?: boolean;
-  /** Output style id; '' / undefined = none. Resolved to text server-side. */
-  outputStyleId?: string;
   ollamaModel?: string;
   /** Model for the API-key engines (deepseek / kimi) — whichever of them is running. */
   engineModel?: EngineModelId;
@@ -144,7 +142,7 @@ function DrainingRun({ run, update, engine, onAccepted, onEnd, onDeleted, onSett
 export function useChatStream(
   messages: ChatMessage[],
   updateRunMessages: RunMessageUpdate,
-  { sessionId, cwd, engine, planMode, noHistory, outputStyleId, ollamaModel, engineModel, piThinkingLevel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, onSessionId, onFetchTitle, onSendStart, onRunEnd, onRunAccepted, onSendFailure, onInputRejected, onRecoveryDeleted, taskStore }: UseChatStreamOptions
+  { sessionId, cwd, engine, planMode, noHistory, ollamaModel, engineModel, piThinkingLevel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, onSessionId, onFetchTitle, onSendStart, onRunEnd, onRunAccepted, onSendFailure, onInputRejected, onRecoveryDeleted, taskStore }: UseChatStreamOptions
 ): UseChatStreamReturn {
   // Each subscriber needs its own initial snapshot, including a sender/viewer handoff.
   const subscriptionId = useId();
@@ -863,8 +861,6 @@ export function useChatStream(
             ...(usePlanMode && isClaudeEngine && { permissionMode: 'plan' }),
             // Independent task (see canDropHistory). Omitted when off.
             ...(canDropHistory && noHistory && { noHistory: true }),
-            // Output style: every engine appends it (orchestrator resolves id → text).
-            ...(outputStyleId && { outputStyleId }),
           }),
         });
 
@@ -920,7 +916,7 @@ export function useChatStream(
         setActiveRun(null);
       }
     },
-    [cwd, engine, planMode, noHistory, outputStyleId, ollamaModel, engineModel, piThinkingLevel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, setMessages, endRun, onSendStart, onRunAccepted, onSendFailure]
+    [cwd, engine, planMode, noHistory, ollamaModel, engineModel, piThinkingLevel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, setMessages, endRun, onSendStart, onRunAccepted, onSendFailure]
   );
 
   const injectMessage = useCallback(
@@ -938,9 +934,9 @@ export function useChatStream(
         cwd,
         language: i18n.language,
         inject: true,
-        ...(isPiProvider ? { model: engine === 'ollama' ? ollamaModel : engineModel, piThinkingLevel, noHistory, outputStyleId } : {}),
-        ...(engine === 'codex' ? { model: codexModel, codexReasoningEffort, noHistory, outputStyleId } : {}),
-        ...(engine === 'grok' ? { model: grokModel && grokModel !== 'grok-build' ? grokModel : GROK_DEFAULT_MODEL, grokReasoningEffort: grokReasoningEffort || GROK_DEFAULT_REASONING, noHistory, outputStyleId } : {}),
+        ...(isPiProvider ? { model: engine === 'ollama' ? ollamaModel : engineModel, piThinkingLevel, noHistory } : {}),
+        ...(engine === 'codex' ? { model: codexModel, codexReasoningEffort, noHistory } : {}),
+        ...(engine === 'grok' ? { model: grokModel && grokModel !== 'grok-build' ? grokModel : GROK_DEFAULT_MODEL, grokReasoningEffort: grokReasoningEffort || GROK_DEFAULT_REASONING, noHistory } : {}),
       }).pipe(Effect.tapError((error) => Effect.sync(() => {
         // Rejection owns a copy, never the active run or its writer lifecycle.
         onInputRejected?.(targetSessionId, { id: inputId, startedAt, messages: [
@@ -949,7 +945,7 @@ export function useChatStream(
         ] });
       }))));
     },
-    [cwd, engine, ollamaModel, engineModel, piThinkingLevel, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, noHistory, outputStyleId, onInputRejected]
+    [cwd, engine, ollamaModel, engineModel, piThinkingLevel, codexModel, codexReasoningEffort, grokModel, grokReasoningEffort, noHistory, onInputRejected]
   );
 
   return {

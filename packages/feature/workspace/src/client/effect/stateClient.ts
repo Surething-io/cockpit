@@ -46,7 +46,6 @@ export interface LoadedProjectState {
   grokReasoningEfforts?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>
-  outputStyles?: Record<string, string>
 }
 
 export const loadProjectState = (
@@ -90,7 +89,6 @@ export interface ProjectStateSave {
   grokReasoningEfforts?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>
-  outputStyles?: Record<string, string>
   /** sessions explicitly closed in THIS tab — the server removes them from the shared
    *  union (the only removal path; plain saves never shrink the set). */
   closedSessionIds?: string[]

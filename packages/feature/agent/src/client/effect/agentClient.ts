@@ -594,23 +594,3 @@ export const saveInstructionsConfig = (
   body: { cwd?: string; scope?: "global"; instructions: InstructionNode[] }
 ): Effect.Effect<InstructionsConfigResponse & { success?: boolean }, AppError> =>
   httpPostJson("/api/instructions/config", body)
-
-// ─────────────────────────────────────────────────────────
-// /api/output-styles/config — global output styles (system-prompt appendices)
-// ─────────────────────────────────────────────────────────
-
-/** A named block of text appended to the system prompt. Sessions select it by `id`. */
-export interface OutputStyle {
-  id: string
-  name: string
-  content: string
-}
-
-export const loadOutputStylesConfig = (): Effect.Effect<{ styles?: OutputStyle[] }, AppError> =>
-  httpJson("/api/output-styles/config")
-
-/** Full-list overwrite. Returns the list as PERSISTED (normalized, new ids issued). */
-export const saveOutputStylesConfig = (
-  styles: OutputStyle[]
-): Effect.Effect<{ styles?: OutputStyle[]; success?: boolean }, AppError> =>
-  httpPostJson("/api/output-styles/config", { styles })

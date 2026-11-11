@@ -170,7 +170,7 @@ export function runGrok(ctx: RunCtx, options: GrokRunOptions = {}): Effect.Effec
     if (typeof ctx.params.runId === 'string') ctx.emit({ type: 'system', subtype: 'input_binding', inputId: ctx.params.runId, sourceId: inputSourceId });
     const promptId = randomUUID();
     const prompt = [
-      ...(ctx.prompt || ctx.outputStyle ? [{ type: 'text', text: [ctx.prompt, ctx.outputStyle].filter(Boolean).join('\n\n') }] : []),
+      ...(ctx.prompt ? [{ type: 'text', text: ctx.prompt }] : []),
       ...(ctx.images ?? []).map((image) => ({ type: 'image', mimeType: image.media_type, data: image.data })),
     ];
     yield* Effect.forkScoped(Effect.tryPromise({

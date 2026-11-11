@@ -37,8 +37,6 @@ interface ProjectState {
   grokReasoningEfforts?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>
-  /** Output style id per session; '' (none) is the default and is not stored. */
-  outputStyles?: Record<string, string>
 }
 
 function normalizeCodexEngineMap(engines?: Record<string, string>): Record<string, string> | undefined {
@@ -158,7 +156,6 @@ export const POST = handler((req) =>
           const grokReasoningEfforts = carryOver(existing.grokReasoningEfforts, body.grokReasoningEfforts)
           const planModes = carryOver(existing.planModes, body.planModes, (v) => !v)
           const noHistories = carryOver(existing.noHistories, body.noHistories, (v) => !v)
-          const outputStyles = carryOver(existing.outputStyles, body.outputStyles, (v) => !v)
           // `null` is intentional state, not an omitted value: it records that the
           // selected tab is a blank New Chat. Using `?? existing.activeSessionId`
           // here used to resurrect the previous session on refresh.
@@ -210,7 +207,6 @@ export const POST = handler((req) =>
             ...(Object.keys(grokReasoningEfforts).length ? { grokReasoningEfforts } : {}),
             ...(Object.keys(planModes).length ? { planModes } : {}),
             ...(Object.keys(noHistories).length ? { noHistories } : {}),
-            ...(Object.keys(outputStyles).length ? { outputStyles } : {}),
           }
           await writeJsonFile(filePath, next)
           return next

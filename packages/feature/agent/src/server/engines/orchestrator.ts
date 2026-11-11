@@ -8,7 +8,6 @@ import { resolveCommandPrompt } from '../lib/slashCommands';
 import { randomUUID } from 'crypto';
 import type { DispatchParams, DispatchOutcome, RunCtx, RunEvent, EngineSpec } from './types';
 import { formatProviderError } from './shared/providerError';
-import { formatOutputStyleSection, resolveOutputStyleText } from '../lib/outputStyles';
 import { isRecoverySettlement } from '../../shared/recoveryCopy';
 
 /**
@@ -85,12 +84,6 @@ export async function dispatchChat(
 
   const promptText = typeof prompt === 'string' ? prompt : undefined;
 
-  // Output style: resolved and framed once here rather than in each runner, so every engine
-  // sees the same section for the same id. Never rejects — a deleted or unreadable style means
-  // no injection.
-  const outputStyleText = await resolveOutputStyleText(body.outputStyleId);
-  const outputStyle = outputStyleText ? formatOutputStyleSection(outputStyleText) : undefined;
-
   // #10 ws-converge: the run is fully detached. Start synchronously (client can subscribe by
   // runKey at once), run in the background, return the runKey.
   const abort = new AbortController();
@@ -145,7 +138,6 @@ export async function dispatchChat(
     cwd: cwd || '',
     sessionId,
     params: { ...body, runId },
-    outputStyle,
     signal: abort.signal,
     emit(event: RunEvent) {
       if (isClosed) return;

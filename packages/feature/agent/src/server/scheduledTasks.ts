@@ -219,7 +219,6 @@ const dispatchEngineMessageEff = (
       // instance. The run registers in sessionRunHub and streams to viewers via
       // /ws/session-stream exactly like an interactive request.
       const noHistory = await readSessionNoHistory(task, engine);
-      const outputStyleId = await readSessionOutputStyleId(task);
       const outcome = await dispatchChat(spec, {
         prompt: buildTaskPrompt(task),
         // Omit sessionId to start a brand-new session when the resume target is gone;
@@ -229,7 +228,6 @@ const dispatchEngineMessageEff = (
         engine,
         ...(task.model && { model: task.model }),
         ...(noHistory && { noHistory: true }),
-        ...(outputStyleId && { outputStyleId }),
       });
       if (!outcome.ok) {
         // 409 = session/run already active (the guard fired). Surface as a task error
@@ -288,7 +286,6 @@ const dispatchEngineMessageEff = (
 /** Per-session slice of the project state file the chat tabs persist (see /api/project-state). */
 interface ProjectSessionState {
   noHistories?: Record<string, boolean>;
-  outputStyles?: Record<string, string>;
 }
 
 /**
@@ -312,18 +309,6 @@ export async function readSessionNoHistory(
   if (!isPiEngine(engine) && engine !== 'claude' && engine !== 'codex') return false;
   const state = await readJsonFile<ProjectSessionState>(getSessionFilePath(task.cwd), {});
   return state.noHistories?.[task.sessionId] === true;
-}
-
-/**
- * Output style selected for this session, READ AT FIRE TIME — same reasoning as
- * readSessionNoHistory: it is a per-session UI preference, so switching it in the toolbar
- * applies to the next fire instead of being frozen at task creation. Every engine injects it,
- * so there is no engine gate. The id is resolved to text by the orchestrator.
- */
-export async function readSessionOutputStyleId(task: ScheduledTask): Promise<string | undefined> {
-  const state = await readJsonFile<ProjectSessionState>(getSessionFilePath(task.cwd), {});
-  const id = state.outputStyles?.[task.sessionId];
-  return typeof id === 'string' && id ? id : undefined;
 }
 
 /**

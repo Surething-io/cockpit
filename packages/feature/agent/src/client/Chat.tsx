@@ -46,7 +46,6 @@ import {
   resolveClaudeEffortForModel,
   resolveCodexReasoningEffortForModel,
 } from './AgentModelTraitsPicker';
-import { OutputStylePicker } from './OutputStylePicker';
 import { DeepseekBalanceButton } from './DeepseekBalanceButton';
 import { EngineQuotaButton } from './EngineQuotaButton';
 import { COLUMN_HEADER_ROW } from './columnHeaderRow';
@@ -101,9 +100,6 @@ interface ChatProps {
   onPlanModeChange?: (planMode: boolean) => void;
   noHistory?: boolean;
   onNoHistoryChange?: (noHistory: boolean) => void;
-  /** Output style id appended to the system prompt; '' = none. */
-  outputStyle?: string;
-  onOutputStyleChange?: (outputStyle: string) => void;
   hideHeader?: boolean;
   hideSidebar?: boolean;
   isActive?: boolean; // Whether the tab is active (used to handle scroll issues for hidden tabs)
@@ -174,7 +170,7 @@ interface ChatProps {
  */
 const ENGINE_OPTIONS_ROW = `${COLUMN_HEADER_ROW} pl-3 pr-20 bg-card/50`;
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, grokModel, onGrokModelChange, grokReasoningEffort, onGrokReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, outputStyle: outputStyleProp, onOutputStyleChange, hideHeader, hideSidebar, isActive = true, isFocused = isActive, peerTabId, peerSide, refreshSignal, onLoadingChange, onDraftPresenceChange, onSessionIdChange, onTitleChange, onBotChange, onShowGitStatus, onOpenNote, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, grokModel, onGrokModelChange, grokReasoningEffort, onGrokReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, isFocused = isActive, peerTabId, peerSide, refreshSignal, onLoadingChange, onDraftPresenceChange, onSessionIdChange, onTitleChange, onBotChange, onShowGitStatus, onOpenNote, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();
   const composerSlot = useComposerSlot();
   // Owned here, not in ChatInput: the composer is portalled when this pane is
@@ -207,14 +203,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     setLocalNoHistory(v);
     onNoHistoryChange?.(v);
   }, [onNoHistoryChange]);
-  // Output style (per-tab, every engine): same controlled-with-local-fallback shape;
-  // persisted via TabInfo.outputStyle, read by scheduled tasks at fire time.
-  const [localOutputStyle, setLocalOutputStyle] = useState('');
-  const outputStyle = outputStyleProp ?? localOutputStyle;
-  const setOutputStyle = useCallback((v: string) => {
-    setLocalOutputStyle(v);
-    onOutputStyleChange?.(v);
-  }, [onOutputStyleChange]);
   // Owned by EngineConfigPicker (the only component that reads/writes the credential
   // endpoint); lifted here so the balance/quota button on the execution-mode row above it
   // can gate on a live value rather than a copy that goes stale after a key is saved.
@@ -364,7 +352,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     engine,
     planMode,
     noHistory,
-    outputStyleId: outputStyle,
     ollamaModel,
     engineModel,
     piThinkingLevel: piThinking.level,
@@ -857,10 +844,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     </label>
   ) : null;
 
-  /* Output style: mounted beside the independent-task toggle in every engine's option row —
-     all engines inject it, so unlike that toggle there is no support gate. */
-  const outputStyleControl = <OutputStylePicker value={outputStyle} onChange={setOutputStyle} />;
-
   /* Decision mode (docs/DECISION_MODE.md): per-PROJECT feature switch, shared by every tab of
      the project. Mounted in every engine's option row — the feature is engine-agnostic. */
   const decisionModeToggle = useMemo(
@@ -941,7 +924,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
               </label>
             )}
             {independentTaskToggle}
-            {outputStyleControl}
             {decisionModeToggle}
           </div>
         )}
@@ -950,7 +932,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           <div className={ENGINE_OPTIONS_ROW}>
             <GrokModelTraitsPicker model={effectiveGrokModel} onModelChange={onGrokModelChange} reasoningEffort={grokReasoningEffort} onReasoningEffortChange={onGrokReasoningEffortChange} />
             {independentTaskToggle}
-            {outputStyleControl}
             {decisionModeToggle}
           </div>
         )}
@@ -963,7 +944,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             )}
             <PiThinkingPicker {...piThinking} />
             {independentTaskToggle}
-            {outputStyleControl}
             {decisionModeToggle}
           </div>
         )}
@@ -985,7 +965,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             )}
             <PiThinkingPicker {...piThinking} />
             {independentTaskToggle}
-            {outputStyleControl}
             {decisionModeToggle}
             {/* Belongs to the key, not to the turn — pushed right so it reads as status
                 rather than as one more control in the sequence. */}

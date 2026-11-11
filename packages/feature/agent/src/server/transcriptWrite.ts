@@ -4,8 +4,8 @@
  * Every derived view of a transcript (TranscriptIndex) is maintained on the premise
  * that the file only grows: a refresh parses the bytes past the last offset and
  * nothing before it. Engines' CLIs keep that premise by only appending. Cockpit's own
- * edits do not — deleting a turn, splicing an independent turn back onto its history,
- * reconciling a codex output style — so they all come through here, which keeps it
+ * edits do not — deleting a turn, splicing an independent turn back onto its history —
+ * so they all come through here, which keeps it
  * by construction:
  *
  *   1. write a sibling temp file, then rename it over the transcript — the path gets a

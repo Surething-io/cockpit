@@ -712,17 +712,6 @@
     "noHistory": "No history context",
     "noHistoryDesc": "each prompt is independent",
     "noHistoryHint": "No history context: each message is sent to the model on its own, with no prior conversation. The transcript above still records everything.",
-    "outputStyle": "Output style",
-    "outputStyleNone": "None",
-    "noOutputStyles": "No output styles yet — add one with the pencil",
-    "editOutputStyles": "Edit output styles",
-    "outputStylesMarkdownHint": "Start each style with \"# Name\". Everything up to the next \"# \" is appended verbatim to the end of the system prompt (multi-line; deeper headings like ## are content).",
-    "outputStylesMarkdownPlaceholder": "# Concise\nAnswer in at most three sentences, no preamble.\n\n# Teacher\nExplain why before how.",
-    "outputStylesError": {
-      "content-before-heading": "Line {{line}}: content must come after a \"# Name\" heading.",
-      "empty-style": "Line {{line}}: a style needs both a name and content.",
-      "duplicate-name": "Line {{line}}: duplicate style name."
-    },
     "planTitle": "Plan (awaiting your review)",
     "approvePlan": "Approve & run",
     "planApproveHint": "No approval dialog here — click to exit plan mode and execute",

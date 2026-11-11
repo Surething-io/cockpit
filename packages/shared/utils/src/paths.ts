@@ -280,14 +280,6 @@ export function getGlobalInstructionsConfigPath(): string {
   return join(COCKPIT_DIR, 'instructions.json');
 }
 
-/**
- * Global output-styles library: named system-prompt appendices the chat
- * toolbar can switch on per session. Global only — there is no project scope.
- */
-export function getGlobalOutputStylesConfigPath(): string {
-  return join(COCKPIT_DIR, 'output-styles.json');
-}
-
 /** Pre-rename global location — see getLegacyPromptsConfigPath. */
 export function getLegacyGlobalPromptsConfigPath(): string {
   return join(COCKPIT_DIR, 'prompts.json');

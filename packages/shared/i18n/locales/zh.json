@@ -709,17 +709,6 @@
     "noHistory": "不带历史上下文",
     "noHistoryDesc": "每次提问均独立",
     "noHistoryHint": "不带历史上下文：每条消息单独发给模型，不带之前的对话。上方的会话记录照常保留。",
-    "outputStyle": "输出风格",
-    "outputStyleNone": "无",
-    "noOutputStyles": "暂无输出风格，点右上角铅笔添加",
-    "editOutputStyles": "编辑输出风格",
-    "outputStylesMarkdownHint": "每个风格以「# 名称」开头，下面直到下一个「# 」之间的内容原样追加到 System Prompt 末尾（可多行，## 等更深标题视为正文）。",
-    "outputStylesMarkdownPlaceholder": "# 简洁\n回答不超过三句话，不要开场白。\n\n# 教学\n先讲为什么，再讲怎么做。",
-    "outputStylesError": {
-      "content-before-heading": "第 {{line}} 行：内容必须写在「# 名称」之后。",
-      "empty-style": "第 {{line}} 行：风格需要名称和内容。",
-      "duplicate-name": "第 {{line}} 行：风格名称重复。"
-    },
     "planTitle": "计划（待你确认）",
     "approvePlan": "批准并执行",
     "planApproveHint": "本环境无审批弹窗，点此退出计划模式并执行",

@@ -85,7 +85,7 @@ export const runPiAgent = (ctx: RunCtx, config: PiAgentConfig): Effect.Effect<vo
       const resources = new DefaultResourceLoader({
         cwd, agentDir: PI_AGENT_DIR, settingsManager: settings,
         noExtensions: true, noPromptTemplates: true, noThemes: true,
-        appendSystemPrompt: ["Reply in the user's language. End completed tasks with a concise response.", 'Prefer the subagent tool for independent Pi work so results and native child history are managed.', ...(ctx.outputStyle ? [ctx.outputStyle] : [])],
+        appendSystemPrompt: ["Reply in the user's language. End completed tasks with a concise response.", 'Prefer the subagent tool for independent Pi work so results and native child history are managed.'],
         extensionFactories: [subagents, (pi) => {
           if (ctx.params.noHistory) pi.on('context', (event) => ({ messages: event.messages.filter((m) => m.role === 'system' || m.timestamp >= startedAt) }));
           if (config.engine === 'ollama') pi.on('before_provider_request', (event) => {

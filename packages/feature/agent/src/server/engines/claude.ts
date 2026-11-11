@@ -140,18 +140,13 @@ function buildClaudeOptions(ctx: RunCtx, independent: boolean): BuildSdkOptions 
     // `systemPrompt === undefined → ""`), which is how sessions here ran without Claude Code's
     // instructions for a long time unnoticed.
     //
-    // Output style rides on it as `append`, so selecting one adds a little text after the
-    // preset instead of changing the base.
-    //
     // `snapshot: false`: where system-prompt recording is enabled (a per-account rollout) the
     // SDK records the prompt on a session's first request and replays it on every resume. That
-    // would ignore a style switched mid-session, and keep sessions recorded before this fix on
-    // their empty prompt until compaction. Rendering per request behaves the same on every
+    // would keep sessions recorded before this fix on their empty prompt until compaction. Rendering per request behaves the same on every
     // account; an unchanged prompt renders byte-identical, so the prompt cache still hits.
     systemPrompt: {
       type: 'preset' as const,
       preset: 'claude_code' as const,
-      ...(ctx.outputStyle ? { append: ctx.outputStyle } : {}),
       snapshot: SYSTEM_PROMPT_SNAPSHOT,
     },
     settingSources: ['user', 'project', 'local'] as Array<'user' | 'project' | 'local'>,

@@ -29,7 +29,7 @@ describe('Grok CLI subscription ACP runner', () => {
     const ctx: RunCtx = {
       prompt: 'Read hello.ts', images: undefined, cwd: home,
       sessionId: resume ? 'grok-test-session' : undefined,
-      params: { model: 'custom-grok-model', runId: 'test-input' }, outputStyle: 'Use concise replies.', signal: controller.signal,
+      params: { model: 'custom-grok-model', runId: 'test-input' }, signal: controller.signal,
       emit: (event) => events.push(event), rekey: vi.fn(), currentKey: () => 'test-run', acceptInput: vi.fn(),
     };
     const run = () => runGrokTurn(ctx, {
@@ -52,7 +52,7 @@ describe('Grok CLI subscription ACP runner', () => {
     expect(trace).toContainEqual(expect.objectContaining(scenario === 'v2'
       ? { method: 'session/set_config_option', params: { sessionId: 'grok-test-session', configId: 'effort', value: 'low' } }
       : { method: 'session/set_model', params: { sessionId: 'grok-test-session', modelId: 'custom-grok-model', _meta: { reasoningEffort: 'low' } } }));
-    expect(trace.find((frame) => frame.method === 'session/prompt').params.prompt[0].text).toContain('Use concise replies.');
+    expect(trace.find((frame) => frame.method === 'session/prompt').params.prompt[0].text).toBe('Read hello.ts');
     expect(test.ctx.rekey).toHaveBeenCalledWith('grok-test-session');
     expect(JSON.stringify(test.events)).not.toContain('old replay');
     expect(JSON.stringify(test.events)).not.toContain('foreign text');

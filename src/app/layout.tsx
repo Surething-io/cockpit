@@ -2,6 +2,9 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Lora } from "next/font/google";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { headers } from "next/headers";
+import { Effect } from "effect";
+import { SETTINGS_FILE, readJsonFile } from "@cockpit/shared-utils";
 import "./globals.css";
 import { BootstrapScripts, Providers } from "@cockpit/feature-workspace";
 
@@ -54,13 +57,35 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({
+/**
+ * The UI language for this render, decided on the server so the first paint is
+ * already in it. The client used to start in English and switch only after
+ * fetching /api/settings, so every load flashed English before Chinese.
+ *
+ * Same rule as the client's I18nProvider: an explicit `en` / `zh` setting wins;
+ * `auto` (or no setting) follows the browser, read here from Accept-Language,
+ * whose first entry is what `navigator.language` reports.
+ */
+async function resolveInitialLanguage(): Promise<"en" | "zh"> {
+  const setting = await Effect.runPromise(
+    Effect.tryPromise(() => readJsonFile<{ language?: string }>(SETTINGS_FILE, {})).pipe(
+      Effect.map((s) => s.language),
+      Effect.orElseSucceed(() => undefined)
+    )
+  );
+  if (setting === "en" || setting === "zh") return setting;
+  const accept = (await headers()).get("accept-language") ?? "";
+  return accept.trim().toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const language = await resolveInitialLanguage();
   return (
-    <html lang="en" suppressHydrationWarning className="overflow-hidden">
+    <html lang={language === "zh" ? "zh-CN" : "en"} suppressHydrationWarning className="overflow-hidden">
       <head>
         {/*
          * Stamp the build this HTML was served from. After an upgrade the
@@ -88,7 +113,7 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${lora.variable} antialiased overflow-hidden`}
       >
-        <Providers>
+        <Providers initialLanguage={language}>
           {children}
         </Providers>
       </body>

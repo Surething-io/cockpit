@@ -35,6 +35,9 @@ export interface TabInfo {
   title: string;
   /** This tab's initial title was supplied by the project bootstrap batch. */
   titleReady?: boolean;
+  /** Restored with only the `Session <id>` placeholder; the session list
+   *  draws a skeleton for it until the title batch lands. */
+  titlePending?: boolean;
   isLoading?: boolean;
   engine?: ChatEngine;
   /** Bot that dispatched this session, without the `@` — set by the transcript load
@@ -405,11 +408,13 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
           const live = tabsRef.current;
           const restoredTabs: TabInfo[] = allSessions.map((sessionId: string, index: number) => {
             const prev = live.find((t) => t.sessionId === sessionId);
+            const knownTitle = prev?.title;
             return {
               id: `tab-${Date.now()}-${index}`,
               cwd: initialCwd,
               sessionId,
-              title: prev?.title || placeholderTitle(sessionId),
+              title: knownTitle || placeholderTitle(sessionId),
+              ...(knownTitle ? {} : { titlePending: true }),
               engine: (savedEngines[sessionId] as ChatEngine) || prev?.engine || undefined,
               ollamaModel: savedOllamaModels[sessionId] || prev?.ollamaModel || undefined,
               deepseekModel: (savedDeepseekModels[sessionId] as DeepseekModel) || prev?.deepseekModel || undefined,
@@ -510,7 +515,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
         const byId = new Map(titles.map((info) => [info.sessionId, info]));
         setTabs((current) => current.map((tab) => {
           const info = tab.sessionId && (tab.cwd || initialCwd) === initialCwd ? byId.get(tab.sessionId) : undefined;
-          return info ? { ...tab, title: info.title, titleReady: true } : tab;
+          return info ? { ...tab, title: info.title, titleReady: true, titlePending: false } : tab;
         }));
       })),
       Effect.catchAll((error) => Effect.logWarning('Cannot load initial project titles', error)),
@@ -1182,6 +1187,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     setTabs((prev) => prev.map((tab) => tab.id === tabId ? {
       ...tab, ...updates,
       titleReady: updates.sessionId !== undefined && updates.sessionId !== tab.sessionId ? undefined : tab.titleReady,
+      titlePending: updates.title !== undefined ? false : tab.titlePending,
     } : tab));
   }, [requestSessionRead]);
 

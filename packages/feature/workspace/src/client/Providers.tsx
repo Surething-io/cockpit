@@ -10,6 +10,8 @@ import { UpdateProgressCard } from './UpdateProgressCard';
 
 interface ProvidersProps {
   children: React.ReactNode;
+  /** Server-resolved UI language, applied before the first render. */
+  initialLanguage?: string;
 }
 
 /**
@@ -25,14 +27,14 @@ interface ProvidersProps {
  * see UpdateProgressCard. Per-frame surfaces (toasts, which belong to whatever
  * acted) are fine as they are.
  */
-export function Providers({ children }: ProvidersProps) {
+export function Providers({ children, initialLanguage }: ProvidersProps) {
   // Suppress the native right-click menu across Cockpit; app-owned React context
   // menus keep working because they preventDefault before this bubble listener.
   // See useSuppressNativeContextMenu for the full rationale.
   useSuppressNativeContextMenu();
 
   return (
-    <I18nProvider>
+    <I18nProvider initialLanguage={initialLanguage}>
       <ThemeProvider>
         <ToastProvider>
           <SessionTitlesBridge />

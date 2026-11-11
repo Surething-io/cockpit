@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { I18nextProvider } from 'react-i18next';
 import i18n from '@cockpit/shared-i18n';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
@@ -8,6 +8,11 @@ import { loadSettings } from './effect/workspaceClient';
 
 interface I18nProviderProps {
   children: React.ReactNode;
+  /** Language the server rendered with (root layout). Applied synchronously on
+   *  the first render, so neither SSR nor hydration paints the English default
+   *  first. The settings fetch below still runs, as a correction for `auto`
+   *  when the browser and Accept-Language disagree. */
+  initialLanguage?: string;
 }
 
 /** Broadcast language change to all child iframes */
@@ -28,7 +33,14 @@ function resolveLanguage(setting: string): string {
   return setting;
 }
 
-export function I18nProvider({ children }: I18nProviderProps) {
+export function I18nProvider({ children, initialLanguage }: I18nProviderProps) {
+  // Lazy initializer = runs once, during the first render, before any child
+  // reads a translation. Resources are bundled, so the switch is synchronous.
+  useState(() => {
+    if (initialLanguage && i18n.language !== initialLanguage) i18n.changeLanguage(initialLanguage);
+    return null;
+  });
+
   // Fetch language from backend on mount, then apply
   useEffect(() => {
     BrowserRuntime.runPromiseExit(loadSettings()).then((exit) => {

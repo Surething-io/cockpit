@@ -37,6 +37,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { getHeapStatistics } from 'node:v8';
+import { Effect, Schedule } from 'effect';
 import { getServerParser, grammarForExtension } from './serverTreeSitter';
 import { SUPPORTED_GRAMMARS } from '../languageMap';
 import {
@@ -795,6 +796,10 @@ export async function buildCodeIndex(cwd: string): Promise<CodeIndex> {
 // ============================================================================
 
 const indexCache = new Map<string, CodeIndex>();
+/** ms epoch of the last read of each cached index — what the idle sweep
+ *  (`evictIdleCodeIndexes`) measures. Entries outlive their index harmlessly
+ *  and are pruned by the sweep. */
+const indexLastUsed = new Map<string, number>();
 const inflight = new Map<string, Promise<CodeIndex>>();
 
 /** Total flattened symbols in one index. O(files) — a few ms at 60K files.
@@ -824,16 +829,16 @@ export function countIndexSymbols(index: CodeIndex): number {
  * it only decides which one is dropped, and whether that happens as an
  * eviction or as an OOM.
  *
- * Derived from the heap the process actually got rather than fixed: the
- * launcher raises the limit on machines with RAM to spare (bin/heapLimit.mjs),
- * and a fixed 1M would leave that headroom unused. At Node's default ~4.2 GB
- * this comes out at the original ~1M.
+ * Derived from the heap the process actually got, but capped at
+ * MAX_BUDGET_BYTES (~2 GB) however large that heap is. Scaling it uncapped
+ * with a 16 GB heap let five large worktrees stay resident at once — 7.3 GB
+ * live, ~3 s full-GC pauses that stalled every request on the server. A big
+ * heap is headroom against OOM, not room to cache more. At Node's default
+ * ~4.2 GB heap the cap is what applies.
  */
 export function codeMapBudgetForHeap(heapLimitBytes: number): number {
-  return Math.max(
-    MIN_CACHED_SYMBOLS,
-    Math.floor((heapLimitBytes - HEAP_RESERVED_BYTES) / BYTES_PER_SYMBOL),
-  );
+  const fromHeap = Math.floor((heapLimitBytes - HEAP_RESERVED_BYTES) / BYTES_PER_SYMBOL);
+  return Math.max(MIN_CACHED_SYMBOLS, Math.min(fromHeap, MAX_BUDGET_SYMBOLS));
 }
 /** Measured index density; see above. */
 const BYTES_PER_SYMBOL = 3_300;
@@ -841,6 +846,9 @@ const BYTES_PER_SYMBOL = 3_300;
 const HEAP_RESERVED_BYTES = 1024 ** 3;
 /** Floor for tiny heaps, so the cache never degenerates to "evict everything". */
 const MIN_CACHED_SYMBOLS = 250_000;
+/** Hard ceiling on the Code Map's share of the heap, whatever the heap size. */
+const MAX_BUDGET_BYTES = 2 * 1024 ** 3;
+const MAX_BUDGET_SYMBOLS = Math.floor(MAX_BUDGET_BYTES / BYTES_PER_SYMBOL);
 export const MAX_CACHED_SYMBOLS = codeMapBudgetForHeap(getHeapStatistics().heap_size_limit);
 
 /**
@@ -902,8 +910,9 @@ export function registerAnalyticsResidency(residency: AnalyticsResidency | null)
  * in millions of symbols, far past what a real fixture repo could reach.
  */
 export const __indexCacheTesting = {
-  seed(cwd: string, index: CodeIndex): void {
+  seed(cwd: string, index: CodeIndex, lastUsedAt = Date.now()): void {
     indexCache.set(cwd, index);
+    indexLastUsed.set(cwd, lastUsedAt);
   },
   has(cwd: string): boolean {
     return indexCache.has(cwd);
@@ -913,6 +922,7 @@ export const __indexCacheTesting = {
   },
   clear(): void {
     indexCache.clear();
+    indexLastUsed.clear();
     dirtyCwds.clear();
   },
   evict(keep: string, reserve = 0): void {
@@ -1004,6 +1014,62 @@ export function enforceCodeMapBudget(keep: string, reserve = 0): void {
         `MAX_CACHED_SYMBOLS=${MAX_CACHED_SYMBOLS}`,
     );
   }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Idle eviction — release projects nobody is using, budget or not.
+//
+// The size budget only evicts when a NEW project needs room, so indexes built
+// once and never read again stayed resident for the life of the server. An
+// index (and its analytics) unread for INDEX_IDLE_MS is dropped; the next
+// code-graph request rebuilds it.
+// ────────────────────────────────────────────────────────────────────────────
+
+/** An index unread for this long is released. */
+export const INDEX_IDLE_MS = 15 * 60_000;
+const IDLE_SWEEP_EVERY = '5 minutes';
+
+/** Drop every cached index — and its analytics — unread since
+ *  `now - INDEX_IDLE_MS`. Analytics reads count as use. In-flight builds are
+ *  never touched. Returns the evicted cwds. */
+export function evictIdleCodeIndexes(now = Date.now()): string[] {
+  const cutoff = now - INDEX_IDLE_MS;
+  const evicted: string[] = [];
+  for (const [cwd, idx] of [...indexCache]) {
+    if (inflight.has(cwd)) continue;
+    const lastUsed = Math.max(indexLastUsed.get(cwd) ?? 0, analyticsResidency?.lastUsedAt(cwd) ?? 0);
+    if (lastUsed >= cutoff) continue;
+    analyticsResidency?.drop(cwd);
+    invalidateAnalyticsAsync(cwd);
+    indexCache.delete(cwd);
+    dirtyCwds.delete(cwd);
+    evicted.push(cwd);
+    console.log(
+      `[codeIndex] released idle ${cwd} (${countIndexSymbols(idx)} symbols, unread for ` +
+        `${Math.round((now - lastUsed) / 60_000)} min)`,
+    );
+  }
+  for (const cwd of indexLastUsed.keys()) {
+    if (!indexCache.has(cwd)) indexLastUsed.delete(cwd);
+  }
+  return evicted;
+}
+
+let idleSweeperStarted = false;
+
+/** Start the periodic idle sweep. Idempotent; called once at server boot
+ *  (src/lib/codeIndexSync.ts), not on import, so tests stay timer-free. */
+export function startCodeIndexIdleSweeper(): void {
+  if (idleSweeperStarted) return;
+  idleSweeperStarted = true;
+  Effect.runFork(
+    Effect.sync(() => {
+      evictIdleCodeIndexes();
+    }).pipe(
+      Effect.delay(IDLE_SWEEP_EVERY),
+      Effect.repeat(Schedule.spaced(IDLE_SWEEP_EVERY)),
+    ),
+  );
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -1129,6 +1195,7 @@ export async function getCodeIndex(cwd: string, opts: GetIndexOptions = {}): Pro
     // Map. `enforceCodeMapBudget` relies on Map order being recency order.
     indexCache.delete(cwd);
     indexCache.set(cwd, cached);
+    indexLastUsed.set(cwd, Date.now());
     // Lazy flush: drain dirty before returning. Sync runs in the foreground so
     // the caller sees fresh data. We delete the flag BEFORE the sync to make
     // overlapping reads see consistent state (no thundering herd of syncs).
@@ -1147,23 +1214,18 @@ export async function getCodeIndex(cwd: string, opts: GetIndexOptions = {}): Pro
   if (pending) return pending;
   const p = buildCodeIndex(cwd).then((index) => {
     indexCache.set(cwd, index);
+    indexLastUsed.set(cwd, Date.now());
     enforceCodeMapBudget(cwd);
     inflight.delete(cwd);
     buildFailures.delete(cwd);
     // Fresh build subsumes any dirty flag that arrived during the build.
     dirtyCwds.delete(cwd);
-    // Kick off analytics precompute in the background. Lazy-require to
-    // avoid a cycle: analytics/cache imports codeIndex types, but at
-    // module-load time only — this dynamic import is evaluated after
-    // both modules are fully initialised. Fire-and-forget; analytics
-    // routes degrade gracefully if it hasn't completed yet.
-    import('../analytics/cache')
-      .then((m) => m.precomputeAnalytics(cwd, index))
-      .catch((err) => {
-        // Refused for budget: logged once by the analytics module, not a failure.
-        if (err instanceof Error && err.message === 'analytics-over-budget') return;
-        console.error('[codeIndex] analytics precompute failed:', err);
-      });
+    // No analytics precompute here. Analytics (graph, pagerank, TF-IDF,
+    // communities) is the larger half of a project's footprint — ~1.25 GB on
+    // a large repo — and its passes run synchronously on the main thread.
+    // Building it for every index meant every index request paid for it,
+    // including ones that never touch context / related / risk. Those routes
+    // build it on first use via getOrTriggerAnalytics and degrade until then.
     return index;
   }).catch((err) => {
     // Failure cleanup. Two things must happen that the success path does:
@@ -1232,6 +1294,7 @@ export function peekCodeIndex(cwd: string): CodeIndex | null {
   if (!cached) return null;
   indexCache.delete(cwd);
   indexCache.set(cwd, cached);
+  indexLastUsed.set(cwd, Date.now());
   if (dirtyCwds.has(cwd)) {
     dirtyCwds.delete(cwd);
     syncDirtyIndex(cwd, cached).catch(() => {
@@ -1252,6 +1315,13 @@ export function ensureCodeIndex(cwd: string, opts: GetIndexOptions = {}): void {
     buildFailures.set(cwd, err);
     console.error(`[codeIndex] background build failed for ${cwd}:`, err);
   });
+}
+
+/** True while a project index build for `cwd` is in flight. Lets callers
+ *  that must not START a build (file-functions, review) still tell the client
+ *  that cross-file data is on its way when someone else started one. */
+export function codeIndexBuilding(cwd: string): boolean {
+  return inflight.has(cwd);
 }
 
 /** True when the last background build for `cwd` failed and nothing has

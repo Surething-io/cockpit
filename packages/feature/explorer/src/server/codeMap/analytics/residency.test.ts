@@ -19,8 +19,10 @@ import {
 } from './cache';
 import {
   ANALYTICS_SYMBOLS_PER_NODE,
+  INDEX_IDLE_MS,
   MAX_CACHED_SYMBOLS,
   codeMapBudgetForHeap,
+  evictIdleCodeIndexes,
   __indexCacheTesting as T,
 } from '../projectGraph/codeIndex';
 import type { CodeIndex } from '../projectGraph/codeIndex';
@@ -150,15 +152,48 @@ describe('analytics admission without thrashing', () => {
 
 describe('codeMapBudgetForHeap', () => {
   const GB = 1024 ** 3;
-  it('is about the original 1M symbols at Node\'s default heap', () => {
-    const n = codeMapBudgetForHeap(4.2 * GB);
-    expect(n).toBeGreaterThan(900_000);
-    expect(n).toBeLessThan(1_100_000);
+  const CAP = Math.floor((2 * GB) / 3_300);
+  it('is capped at ~2 GB of symbols at Node\'s default heap', () => {
+    expect(codeMapBudgetForHeap(4.2 * GB)).toBe(CAP);
   });
-  it('grows with a raised heap', () => {
-    expect(codeMapBudgetForHeap(16 * GB)).toBeGreaterThan(4 * codeMapBudgetForHeap(4.2 * GB) * 0.9);
+  it('does not grow past the cap with a raised heap', () => {
+    // An uncapped budget on a 16 GB heap let five large worktrees stay
+    // resident: 7.3 GB live, ~3 s full-GC pauses.
+    expect(codeMapBudgetForHeap(16 * GB)).toBe(CAP);
   });
-  it('never drops below the floor on a tiny heap', () => {
+  it('shrinks with a smaller heap, down to the floor', () => {
+    expect(codeMapBudgetForHeap(2 * GB)).toBeLessThan(CAP);
     expect(codeMapBudgetForHeap(0.5 * GB)).toBe(250_000);
+  });
+});
+
+describe('idle eviction', () => {
+  const MIN = 60_000;
+  beforeEach(() => {
+    invalidateAnalytics();
+    T.clear();
+  });
+
+  it('releases an index unread for INDEX_IDLE_MS, with its analytics', async () => {
+    const now = Date.now();
+    T.seed('/idle', smallIndex('/idle', ['a', 'b']), now - INDEX_IDLE_MS - MIN);
+    T.seed('/busy', smallIndex('/busy', ['c']), now - MIN);
+    await precomputeAnalytics('/idle', smallIndex('/idle', ['a', 'b']));
+    // The analytics build above counts as a read; age it again.
+    const entry = getAnalytics('/idle')!;
+    entry.lastUsedAt = now - INDEX_IDLE_MS - MIN;
+
+    expect(evictIdleCodeIndexes(now)).toEqual(['/idle']);
+    expect(T.has('/idle')).toBe(false);
+    expect(getAnalytics('/idle')).toBeNull();
+    expect(T.has('/busy')).toBe(true);
+  });
+
+  it('counts a recent analytics read as use of the project', async () => {
+    const now = Date.now();
+    T.seed('/p', smallIndex('/p', ['a']), now - INDEX_IDLE_MS - MIN);
+    await precomputeAnalytics('/p', smallIndex('/p', ['a']));
+    expect(evictIdleCodeIndexes(now)).toEqual([]);
+    expect(T.has('/p')).toBe(true);
   });
 });

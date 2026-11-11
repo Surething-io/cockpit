@@ -22,7 +22,6 @@ import { appendFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileS
 import { createServer } from 'http';
 import { createRequire } from 'module';
 import { dirname, join } from 'path';
-import { totalmem } from 'os';
 
 const PKG = '@surething/cockpit';
 const EXIT_WAIT_MS = 30_000;
@@ -289,9 +288,7 @@ function runNpm(args) {
 function heapArgs(env = process.env) {
   if (/--max-old-space-size/.test(env.NODE_OPTIONS ?? '')) return [];
   const override = Number(env.COCKPIT_MAX_HEAP_MB);
-  const quarter = Math.floor(totalmem() / 4 / 1024 / 1024);
-  const mb = override > 0 ? Math.floor(override) : quarter > 4096 ? Math.min(quarter, 16384) : null;
-  return mb ? [`--max-old-space-size=${mb}`] : [];
+  return override > 0 ? [`--max-old-space-size=${Math.floor(override)}`] : [];
 }
 
 function startServer() {

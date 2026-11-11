@@ -5,7 +5,7 @@ import { readFile, stat } from "node:fs/promises"
 import path from "node:path"
 import { Effect } from "effect"
 import {
-  codeIndexBuildFailed,
+  codeIndexBuilding,
   ensureCodeIndex,
   fileFunctionsFromIndex,
   fileFunctionsLocal,
@@ -84,19 +84,26 @@ export const GET = handler((req) =>
       try: async () => {
         // Never wait for the project index: a cold build is O(project)
         // (~45s at 12.8K files), and this route is asked about ONE file.
-        // Without an index, answer the file-local layer and let the build
-        // run in the background — see `crossFilePending` in types.ts.
+        //
+        // Never START one either, except on an explicit rebuild. Every
+        // project stays mounted, so after a server restart each one with a
+        // file open in the block view asked this route at once, and each
+        // ask kicked off a whole-project build plus analytics — ~1.3 GB per
+        // large repo, ~7 GB across five worktrees, and multi-second GC
+        // pauses that stalled every request on the server. Cross-file data
+        // in the block view is a by-product of an index someone already
+        // wanted (Code Map, the graph routes); without one, the file-local
+        // layer is the whole answer.
         if (forceRefresh) ensureCodeIndex(cwd, { forceRefresh: true })
         const index = peekCodeIndex(cwd)
-        // A failed background build will not deliver cross-file data on its
-        // own; don't promise it (the client would wait for nothing).
-        const crossFilePending = !index && !codeIndexBuildFailed(cwd)
+        // Only promise cross-file data when a build is actually running —
+        // otherwise the client would wait for a `done` frame that never comes.
+        const crossFilePending = !index && codeIndexBuilding(cwd)
         if (index) {
           await refreshFocalFile(cwd, normalizedPath, index)
           const payload = fileFunctionsFromIndex(index, normalizedPath)
           if (payload) return { kind: "indexed" as const, payload }
         } else {
-          ensureCodeIndex(cwd)
           const local = await fileFunctionsLocal(cwd, normalizedPath)
           if (local) {
             return {

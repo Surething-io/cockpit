@@ -23,7 +23,7 @@
  * src/lib/wsServer.ts invokes it once at boot.
  */
 
-import { registerWatcherSubscriber } from '@cockpit/feature-explorer/server/codeMap/projectGraph/codeIndex';
+import { registerWatcherSubscriber, startCodeIndexIdleSweeper } from '@cockpit/feature-explorer/server/codeMap/projectGraph/codeIndex';
 import { fileWatcher } from './fileWatcher';
 
 let wired = false;
@@ -32,6 +32,10 @@ export function wireCodeIndexToFileWatcher(): void {
   // Idempotent — webpack HMR / Next.js dual-bundle topology can call us twice.
   if (wired) return;
   wired = true;
+
+  // Release Code Map indexes nobody has read for a while (see
+  // evictIdleCodeIndexes). Started here because this runs exactly once at boot.
+  startCodeIndexIdleSweeper();
 
   registerWatcherSubscriber((cwd, onDirty) => {
     fileWatcher.subscribe(cwd, (events) => {

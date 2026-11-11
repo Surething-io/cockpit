@@ -12,6 +12,7 @@ import { Effect } from "effect"
 import type { GlobalSessionInfo } from "../../shared/sessionDto"
 import { AppError } from "@cockpit/effect-core"
 import type { ChatEngine } from '../types'
+import type { ContextSnapshot, ContextSummary } from '../../shared/contextSnapshot'
 
 /** Deliver input through the selected engine, including when its previous run just ended. */
 export const injectChatMessage = (engine: ChatEngine | undefined, body: Record<string, unknown>): Effect.Effect<void, AppError> =>
@@ -525,6 +526,17 @@ export const readFileForPreview = (
 // ─────────────────────────────────────────────────────────
 // /api/claude-stats (token usage)
 // ─────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────
+// /api/session-context — per-session context breakdown (context inspector)
+// ─────────────────────────────────────────────────────────
+
+export const loadSessionContext = (cwd: string, sessionId: string): Effect.Effect<ContextSnapshot, AppError> =>
+  httpPostJson<ContextSnapshot>('/api/session-context', { cwd, sessionId })
+
+/** Figures only (window size for the token bar); no categories or item contents. */
+export const loadSessionContextSummary = (cwd: string, sessionId: string): Effect.Effect<ContextSummary, AppError> =>
+  httpPostJson<ContextSummary>('/api/session-context', { cwd, sessionId, summary: true })
 
 export const loadClaudeStats = <A = Record<string, unknown>>(): Effect.Effect<A, AppError> =>
   httpJson('/api/claude-stats')

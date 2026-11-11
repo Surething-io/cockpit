@@ -108,6 +108,7 @@ describe('Grok native context operations', () => {
       { type: 'assistant', content: 'INDEPENDENT-ANSWER' },
     ]));
     await writeFile(join(dir, 'updates.jsonl'), lines([{ method: 'session/update', params: { sessionId: branch, update: { sessionUpdate: 'user_message_chunk', _meta: { promptIndex: 0 } } } }]));
+    await writeFile(join(dir, 'signals.json'), JSON.stringify({ contextTokensUsed: 321, contextWindowTokens: 256000 }));
     // A new run recovers a previous process's unfinished independent turn.
     expect(await Effect.runPromise(native.prepareGrokContext(cwd, source.id, false))).toBe(source.id);
     await Effect.runPromise(native.finishGrokContext(cwd, source.id));
@@ -117,6 +118,9 @@ describe('Grok native context operations', () => {
     expect((await readLines(join(source.dir, 'chat_history.jsonl'))).filter((entry) => 'prompt_index' in entry).map((entry) => entry.prompt_index)).toEqual([0, 1, 2, 3]);
     expect((await readLines(join(source.dir, 'updates.jsonl'))).at(-1).params).toMatchObject({ sessionId: source.id, update: { _meta: { promptIndex: 3 } } });
     expect(await readdir(source.dir)).not.toContain('cockpit-independent.json');
+    // The merge records where the independent turn sits and the branch's usage, for the context inspector.
+    const record = JSON.parse(await readFile(join(source.dir, native.GROK_INDEPENDENT_CONTEXT_FILE), 'utf8'));
+    expect(record).toEqual({ start: 14, length: 16, signals: { contextTokensUsed: 321, contextWindowTokens: 256000 } });
   });
 
   it('runs independent prompts on the native branch while keeping the visible session identity', async () => {

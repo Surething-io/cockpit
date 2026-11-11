@@ -1,6 +1,7 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { randomUUID } from 'crypto';
 import type { RunCtx, ImageData, InjectedInput } from '../types';
+import { captureClaudeContextUsage } from '../../context/claudeContextStore';
 
 type SdkOptions = Record<string, unknown>;
 
@@ -342,6 +343,12 @@ export async function runSdkLoop(ctx: RunCtx, buildOptions: BuildSdkOptions): Pr
           }
 
           ctx.emit(message as { type: string; [k: string]: unknown });
+
+          // The CLI only answers get_context_usage while it is alive, i.e. now —
+          // before closeInput below lets it exit. Bounded and failure-tolerant.
+          if (msg.type === 'result' && !msg.is_error && !ctx.signal.aborted && msg.parent_tool_use_id == null) {
+            await captureClaudeContextUsage(response, ctx.cwd, ctx.currentKey());
+          }
 
           // Turn produced a result, nothing is still running in the background, and every message we
           // sent has had its turn → close the input so the process winds down. If a task is still

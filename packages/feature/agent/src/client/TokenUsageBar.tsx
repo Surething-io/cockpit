@@ -15,9 +15,23 @@ import type { TokenUsage, RateLimitInfo } from './types';
 interface TokenUsageBarProps {
   tokenUsage: TokenUsage;
   rateLimitInfo?: RateLimitInfo | null;
+  /** Opens the context inspector; the context figure becomes a button when set. */
+  onOpenContext?: () => void;
+  /** Model context window, when the engine reports one; adds `/ window · %` and a meter. */
+  contextWindow?: number | null;
 }
 
-export function TokenUsageBar({ tokenUsage, rateLimitInfo }: TokenUsageBarProps) {
+// Fill thresholds for the context meter: past these the next turns risk compaction or a hard limit.
+const CONTEXT_WARN = 0.7;
+const CONTEXT_CRITICAL = 0.9;
+
+function compactTokens(n: number): string {
+  if (n >= 1_000_000) return `${+(n / 1_000_000).toFixed(n % 1_000_000 ? 1 : 0)}M`;
+  if (n >= 1_000) return `${+(n / 1_000).toFixed(n >= 100_000 ? 0 : 1)}K`;
+  return String(n);
+}
+
+export function TokenUsageBar({ tokenUsage, rateLimitInfo, onOpenContext, contextWindow }: TokenUsageBarProps) {
   const { t } = useTranslation();
 
   // "Now" updates every 30s so the countdown stays fresh without calling Date.now()
@@ -61,6 +75,40 @@ export function TokenUsageBar({ tokenUsage, rateLimitInfo }: TokenUsageBarProps)
     if (!type) return '';
     return type.replace(/_/g, ' ');
   };
+
+  // What the next request resends: the whole last prompt plus the reply to it. Same
+  // figure the context inspector reports as "used", so the two never disagree.
+  const prompt = tokenUsage.inputTokens + tokenUsage.cacheReadInputTokens + tokenUsage.cacheCreationInputTokens;
+  const contextTokens = prompt + tokenUsage.outputTokens;
+  const fill = contextWindow ? contextTokens / contextWindow : null;
+  const fillTone = fill === null ? '' : fill >= CONTEXT_CRITICAL ? 'text-red-11' : fill >= CONTEXT_WARN ? 'text-amber-11' : '';
+  const meterColor = fill === null ? '' : fill >= CONTEXT_CRITICAL ? 'bg-red-9' : fill >= CONTEXT_WARN ? 'bg-amber-9' : 'bg-brand';
+  const contextTooltip = [
+    contextWindow ? `${contextTokens.toLocaleString()} / ${contextWindow.toLocaleString()}` : null,
+    onOpenContext ? t('contextInspector.open') : null,
+  ].filter(Boolean).join(' · ') || undefined;
+
+  const contextFigure = (
+    <>
+      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+      </svg>
+      {fill === null ? (
+        <span>{t('chat.context')}: <strong className="text-foreground">{contextTokens.toLocaleString()}</strong></span>
+      ) : (
+        <>
+          <span>
+            {t('chat.context')}: <strong className="text-foreground">{compactTokens(contextTokens)}</strong>
+            {' / '}{compactTokens(contextWindow!)}
+          </span>
+          <span className="w-10 h-1 rounded-full bg-muted overflow-hidden" aria-hidden>
+            <span className={`block h-full rounded-full ${meterColor}`} style={{ width: `${Math.min(100, Math.max(2, fill * 100))}%` }} />
+          </span>
+          <strong className={`tabular-nums ${fillTone || 'text-foreground'}`}>{Math.round(fill * 100)}%</strong>
+        </>
+      )}
+    </>
+  );
 
   return (
     <div className="px-4 py-1.5 border-t border-border ">
@@ -111,12 +159,18 @@ export function TokenUsageBar({ tokenUsage, rateLimitInfo }: TokenUsageBarProps)
           </span>
         )}
 
-        <span className="flex items-center gap-1">
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-          </svg>
-          <span>{t('chat.context')}: <strong className="text-foreground">{(tokenUsage.inputTokens + tokenUsage.cacheReadInputTokens + tokenUsage.cacheCreationInputTokens).toLocaleString()}</strong></span>
-        </span>
+        {onOpenContext ? (
+          <button
+            type="button"
+            onClick={onOpenContext}
+            className="flex items-center gap-1.5 rounded px-1 -mx-1 hover:bg-hover hover:text-foreground transition-colors"
+            data-tooltip={contextTooltip}
+          >
+            {contextFigure}
+          </button>
+        ) : (
+          <span className="flex items-center gap-1.5" data-tooltip={contextTooltip}>{contextFigure}</span>
+        )}
         <span className="flex items-center gap-1">
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />

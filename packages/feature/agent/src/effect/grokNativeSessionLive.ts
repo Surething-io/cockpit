@@ -37,6 +37,23 @@ async function readNative(dir: string): Promise<Native> {
     updates: parseLines(await optionalText(join(dir, 'updates.jsonl')) ?? '') };
 }
 const indexOf = (item: AcpObject): number | undefined => typeof item.prompt_index === 'number' ? item.prompt_index : undefined;
+
+/** Marker present while an independent turn runs in its temporary native branch. */
+export const GROK_INDEPENDENT_MARKER = 'cockpit-independent.json';
+/**
+ * Written with each independent-turn merge: where that turn's items sit in the merged
+ * chat, plus the branch's own usage counters (its signals.json is deleted with the
+ * branch). Valid only while chat_history still has `length` items — any later turn or
+ * edit changes the length, and from then on Grok resumes the whole merged history.
+ */
+export const GROK_INDEPENDENT_CONTEXT_FILE = 'cockpit-independent-context.json';
+export interface GrokIndependentContext { start: number; length: number; signals?: unknown }
+
+/** Session setup an independent turn keeps: the system prompt and the unindexed <user_info> preamble. */
+export function isGrokPreamble(item: AcpObject): boolean {
+  return item.type === 'system' || (item.type === 'user' && indexOf(item) === undefined &&
+    String(JSON.stringify(item.content)).includes('<user_info>'));
+}
 function nextIndex(data: Native): number {
   let index = -1;
   for (const entry of data.chat) index = Math.max(index, indexOf(entry) ?? -1);
@@ -200,7 +217,7 @@ type Independent = { sessionId: string; offset: number; preambleCount: number };
 async function mergeIndependent(cwd: string, sessionId: string): Promise<void> {
   const dir = grokNativeSessionPath(cwd, sessionId);
   await recoverEdit(dir);
-  const marker = join(dir, 'cockpit-independent.json');
+  const marker = join(dir, GROK_INDEPENDENT_MARKER);
   const text = await optionalText(marker);
   if (!text) return;
   const branch = JSON.parse(text) as Independent;
@@ -216,7 +233,11 @@ async function mergeIndependent(cwd: string, sessionId: string): Promise<void> {
       const merged = { summary: { ...original.summary, num_chat_messages: original.chat.length + chat.length,
         num_messages: original.updates.length + updates.length, next_trace_turn: branch.offset + nextIndex(turn) + 1,
         cockpit_merged_independent: branch.sessionId }, chat: [...original.chat, ...chat], updates: [...original.updates, ...updates] };
-      await transaction(dir, nativeFiles(dir, merged));
+      // Display-only metadata: an unreadable counters file must never block the merge.
+      const signals = await optionalText(join(temporary, 'signals.json')).then((text) => text ? JSON.parse(text) as unknown : undefined).catch(() => undefined);
+      const context: GrokIndependentContext = { start: original.chat.length, length: merged.chat.length,
+        ...(signals !== undefined ? { signals } : {}) };
+      await transaction(dir, { ...nativeFiles(dir, merged), [join(dir, GROK_INDEPENDENT_CONTEXT_FILE)]: JSON.stringify(context) });
     }
   }
   await rm(marker, { force: true });
@@ -231,12 +252,11 @@ export const prepareGrokContext = (cwd: string, sessionId: string, noHistory: bo
   if (!noHistory) return sessionId;
   const data = await readNative(dir);
   const newId = randomUUID();
-  const chat = data.chat.filter((item) => item.type === 'system' || (item.type === 'user' && indexOf(item) === undefined &&
-    String(JSON.stringify(item.content)).includes('<user_info>')));
+  const chat = data.chat.filter(isGrokPreamble);
   const empty = { summary: { ...data.summary, num_messages: 0, num_chat_messages: chat.length, next_trace_turn: 1,
     last_turn_summary: null, last_turn_summary_prompt_id: null, last_recap: null }, chat, updates: [] };
   await writeClone(cwd, sessionId, newId, empty);
-  await rewriteTranscript(join(dir, 'cockpit-independent.json'), JSON.stringify({ sessionId: newId, offset: nextIndex(data), preambleCount: chat.length } satisfies Independent));
+  await rewriteTranscript(join(dir, GROK_INDEPENDENT_MARKER), JSON.stringify({ sessionId: newId, offset: nextIndex(data), preambleCount: chat.length } satisfies Independent));
   return newId;
 });
 export const finishGrokContext = (cwd: string, sessionId: string) => io(grokNativeSessionPath(cwd, sessionId), () => mergeIndependent(cwd, sessionId));

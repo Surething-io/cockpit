@@ -1574,5 +1574,61 @@
     "ambiguousSeparate": "Start a separate decision record for this repository?",
     "separateProject": "Separate project",
     "pathProjectWarning": "This folder is not a git repository with commits, so decisions are tied to its path. Moving or renaming the folder loses them. Turn on decision mode?"
+  },
+  "contextInspector": {
+    "title": "Session context",
+    "open": "View context contents",
+    "used": "Used",
+    "window": "Window",
+    "free": "Free",
+    "unknownWindow": "Window size unknown",
+    "capturedAt": "Recorded {{time}}",
+    "refresh": "Refresh",
+    "loadFailed": "Failed to read context",
+    "noSession": "The session has not started yet; there is no context",
+    "empty": "No context items to show",
+    "selectItem": "Select an item on the left to see its content",
+    "noContent": "The engine does not expose the text of this item, only its name and token count",
+    "truncated": "Content is long; showing the first {{count}} characters",
+    "estimated": "≈ marks character-based estimates",
+    "items": "{{count}} items",
+    "copy": "Copy",
+    "copied": "Copied",
+    "groups": {
+      "prompt": "Prompt",
+      "memory": "Memory files",
+      "tools": "Tools",
+      "skills": "Skills & agents",
+      "messages": "Messages",
+      "tool_io": "Tool calls",
+      "reasoning": "Reasoning",
+      "other": "Other"
+    },
+    "categories": {
+      "system": "System prompt",
+      "instructions": "Extra instructions",
+      "memory": "Memory files",
+      "tools": "Tool definitions",
+      "mcp": "MCP tools",
+      "skills": "Skills",
+      "agents": "Custom agents",
+      "environment": "Environment",
+      "messages": "Messages",
+      "tool_io": "Tool calls & results",
+      "reasoning": "Reasoning",
+      "summary": "Compaction summary",
+      "other": "Other"
+    },
+    "notes": {
+      "system_prompt_hidden": "The engine assembles its system prompt internally and does not expose the text; only section names and token counts are listed.",
+      "tool_schemas_hidden": "Built-in tools expose names and token counts only, not their schemas.",
+      "skills_listing_only": "Skills occupy only their name and description in context; the full body loads when a skill is used.",
+      "snapshot_from_last_turn": "The breakdown was recorded at the end of the last turn, not live.",
+      "no_snapshot_yet": "No breakdown has been recorded for this session yet; exact numbers appear after the next turn. Showing estimates from the transcript.",
+      "reasoning_encrypted": "Some reasoning or compaction content is encrypted: its text cannot be shown and its size cannot be estimated.",
+      "after_compaction": "The session has been compacted; only content after the latest compaction is included.",
+      "estimated_breakdown": "Per-category token counts are estimates; the total at the top is the engine's own number.",
+      "usage_unknown": "The engine reported no context size for this session."
+    }
   }
 }

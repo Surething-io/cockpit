@@ -1571,5 +1571,61 @@
     "ambiguousSeparate": "为这个仓库单独建立决策记录？",
     "separateProject": "独立项目",
     "pathProjectWarning": "这个目录不是有提交记录的 git 仓库，决策会按目录路径保存，挪动或重命名目录后将失去关联。仍然开启决策模式？"
+  },
+  "contextInspector": {
+    "title": "会话上下文",
+    "open": "查看上下文内容",
+    "used": "已用",
+    "window": "窗口",
+    "free": "剩余",
+    "unknownWindow": "窗口大小未知",
+    "capturedAt": "统计于 {{time}}",
+    "refresh": "刷新",
+    "loadFailed": "读取上下文失败",
+    "noSession": "会话还没有开始，暂无上下文",
+    "empty": "没有可展示的上下文条目",
+    "selectItem": "点左侧条目查看具体内容",
+    "noContent": "该引擎没有暴露这一项的原文，只有名称和 token 数",
+    "truncated": "内容过长，只显示前 {{count}} 个字符",
+    "estimated": "≈ 为按字符估算",
+    "items": "{{count}} 项",
+    "copy": "复制",
+    "copied": "已复制",
+    "groups": {
+      "prompt": "提示词",
+      "memory": "记忆文件",
+      "tools": "工具",
+      "skills": "Skills 与 Agents",
+      "messages": "消息",
+      "tool_io": "工具调用",
+      "reasoning": "推理",
+      "other": "其他"
+    },
+    "categories": {
+      "system": "System prompt",
+      "instructions": "附加指令",
+      "memory": "记忆文件",
+      "tools": "工具定义",
+      "mcp": "MCP 工具",
+      "skills": "Skills",
+      "agents": "自定义 Agents",
+      "environment": "环境信息",
+      "messages": "对话消息",
+      "tool_io": "工具调用与结果",
+      "reasoning": "推理内容",
+      "summary": "压缩摘要",
+      "other": "其他"
+    },
+    "notes": {
+      "system_prompt_hidden": "System prompt 由引擎内部拼接，不对外提供原文，这里只列出各段名称和 token 数。",
+      "tool_schemas_hidden": "内置工具只提供名称和 token 数，不提供 schema 原文。",
+      "skills_listing_only": "Skills 在上下文里只占名称和描述；完整内容要等调用时才加载。",
+      "snapshot_from_last_turn": "分类数据是上一轮结束时记录的，不是实时数据。",
+      "no_snapshot_yet": "这个会话还没有记录过分类快照，下一轮对话结束后会有精确的分类数据；当前显示的是从记录中估算的结果。",
+      "reasoning_encrypted": "部分推理或压缩内容是加密的，看不到原文，也无法估算大小。",
+      "after_compaction": "会话已压缩过，这里只包含最近一次压缩之后的内容。",
+      "estimated_breakdown": "各分类的 token 数是估算值，顶部的总数以引擎上报为准。",
+      "usage_unknown": "引擎没有上报这个会话的上下文大小。"
+    }
   }
 }

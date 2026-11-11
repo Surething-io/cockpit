@@ -14,12 +14,14 @@ import {
   runBashCommand,
   forkSession,
   deleteSessionTurn,
+  loadSessionContextSummary,
 } from './effect/agentClient';
 import { publishTopic } from '@cockpit/effect-react';
 import { Topics } from '@cockpit/effect-services';
 import { ChatHeader } from './ChatHeader';
 import { createPortal } from 'react-dom';
 import { TokenUsageBar } from './TokenUsageBar';
+import { ContextInspectorModal } from './ContextInspectorModal';
 import { useComposerSlot } from './ComposerSlot';
 import { UserMessagesModal } from './UserMessagesModal';
 import { useChatContextOptional } from './ChatContext';
@@ -546,6 +548,27 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     loadHistoryByCwdAndSessionId(initialCwd, sid, true, 10, undefined, true);
   }, [refreshSignal, sessionId, loadedSessionId, initialCwd, isLoading, liveRunning, loadHistoryByCwdAndSessionId]);
 
+  const [contextInspectorOpen, setContextInspectorOpen] = useState(false);
+  const openContextInspector = useCallback(() => setContextInspectorOpen(true), []);
+  const closeContextInspector = useCallback(() => setContextInspectorOpen(false), []);
+
+  // Window size for the token bar's "/ window · %" meter. Fetched per session and
+  // again whenever a run ends (the model, and with it the window, may have changed).
+  const [contextWindow, setContextWindow] = useState<{ key: string; value: number | null } | null>(null);
+  const contextSessionId = sessionId || loadedSessionId;
+  const contextRunActive = isLoading || liveRunning;
+  useEffect(() => {
+    if (!initialCwd || !contextSessionId || contextRunActive) return;
+    const key = `${initialCwd}\0${contextSessionId}`;
+    let cancelled = false;
+    BrowserRuntime.runPromiseExit(loadSessionContextSummary(initialCwd, contextSessionId)).then((exit) => {
+      if (!cancelled && exit._tag === 'Success') setContextWindow({ key, value: exit.value.contextWindow });
+    });
+    return () => { cancelled = true; };
+  }, [initialCwd, contextSessionId, contextRunActive]);
+  // Never show another session's window while the new one loads.
+  const currentContextWindow = contextWindow && contextWindow.key === `${initialCwd}\0${contextSessionId}` ? contextWindow.value : null;
+
   // Merge token usage: stream takes priority, fallback to history
   const tokenUsage = streamTokenUsage || historyTokenUsage;
   const liveOutputTokens = isLoading ? streamLiveOutputTokens : liveRunning ? viewerLiveOutputTokens : null;
@@ -1009,7 +1032,13 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
         )}
 
         {/* Token Usage Display */}
-        {tokenUsage && <TokenUsageBar tokenUsage={tokenUsage} rateLimitInfo={rateLimitInfo} />}
+        {tokenUsage && <TokenUsageBar tokenUsage={tokenUsage} rateLimitInfo={rateLimitInfo} onOpenContext={openContextInspector} contextWindow={currentContextWindow} />}
+        <ContextInspectorModal
+          isOpen={contextInspectorOpen}
+          onClose={closeContextInspector}
+          cwd={initialCwd}
+          sessionId={sessionId || loadedSessionId}
+        />
 
         {/* Decision mode (docs/DECISION_MODE.md §4.1): changes since the last accepted
             review + the way into the review. Renders nothing while the mode is off. */}

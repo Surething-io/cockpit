@@ -1602,6 +1602,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                         onSelect={(node) => node.file && gitStatus.handleStatusFileSelect(node.file as GitFileStatus, 'staged')}
                         onToggle={gitStatus.handleStagedToggle}
                         cwd={cwd}
+                        showChanges
                         showChangeClass
                         hideIndicatorsOnHover
                         emptyMessage={t('fileBrowser.noStagedFiles')}
@@ -1675,6 +1676,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                         onSelect={(node) => node.file && gitStatus.handleStatusFileSelect(node.file as GitFileStatus, 'unstaged')}
                         onToggle={gitStatus.handleUnstagedToggle}
                         cwd={cwd}
+                        showChanges
                         showChangeClass
                         hideIndicatorsOnHover
                         emptyMessage={t('fileBrowser.noUnstagedChanges')}

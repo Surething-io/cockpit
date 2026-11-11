@@ -32,24 +32,17 @@
  */
 import { execFile } from "child_process"
 import { readFile, stat } from "fs/promises"
-import path from "path"
 import { Effect } from "effect"
 import { handler, ok } from "@cockpit/effect-runtime/server"
 import { AppError, ValidationError } from "@cockpit/effect-core"
 import { isImagePath } from "@cockpit/feature-explorer/server/files/shared"
+import { countNewFileLines, resolveInRepo } from "@cockpit/feature-explorer/server/effect/untrackedLines"
 
 /** Which end of this branch forms the "after" side of the diff. */
 export type BranchDiffMode = "head" | "worktree"
 
 /** sha / branch / tag / `main~3` / `@{u}` — no shell metacharacters. */
 const REV_PATTERN = /^[0-9A-Za-z._/^~@{}-]+$/
-
-/** Untracked files above this size are listed with no line count rather than read. */
-const MAX_UNTRACKED_READ = 2 * 1024 * 1024
-
-/** Past this many untracked files, stop counting lines (a stray build dir that
- *  nobody gitignored should not cost hundreds of file reads per refresh). */
-const MAX_UNTRACKED_COUNTED = 500
 
 function unquotePath(p: string): string {
   if (p.startsWith('"') && p.endsWith('"')) return p.slice(1, -1)
@@ -133,40 +126,6 @@ const resolveRepoRoot = (cwd: string): Effect.Effect<string> =>
     Effect.orElseSucceed(() => cwd)
   )
 
-/** Working-tree absolute path, refusing anything that escapes the repo root. */
-const resolveInRepo = (root: string, file: string): string | null => {
-  const abs = path.resolve(root, file)
-  const base = path.resolve(root)
-  if (abs !== base && !abs.startsWith(base + path.sep)) return null
-  return abs
-}
-
-/**
- * Line count git would report as additions for a brand-new file: the number of
- * lines in it, or 0 when the file is binary (git prints "-" for those).
- * Computed here rather than via `git diff --no-index /dev/null <file>`, which
- * would mean one subprocess per untracked file and exits non-zero by design.
- */
-const countNewFileLines = (abs: string): Effect.Effect<number> =>
-  Effect.promise(async () => {
-    try {
-      const st = await stat(abs)
-      if (!st.isFile() || st.size === 0 || st.size > MAX_UNTRACKED_READ) return 0
-      const buf = await readFile(abs)
-      if (buf.includes(0)) return 0 // binary
-      let lines = 0
-      let i = buf.indexOf(10)
-      while (i !== -1) {
-        lines++
-        i = buf.indexOf(10, i + 1)
-      }
-      if (buf[buf.length - 1] !== 10) lines++
-      return lines
-    } catch {
-      return 0
-    }
-  })
-
 /** Untracked, non-ignored files as `added` entries. `git diff` never lists these. */
 const getUntrackedFiles = (
   cwd: string,
@@ -187,12 +146,10 @@ const getUntrackedFiles = (
       .map((l) => unquotePath(l.slice(3).trim()))
       .filter(Boolean)
 
-    const countable = paths.length <= MAX_UNTRACKED_COUNTED
-
     return yield* Effect.all(
       paths.map((p) =>
         Effect.gen(function* () {
-          const abs = countable ? resolveInRepo(repoRoot, p) : null
+          const abs = resolveInRepo(repoRoot, p)
           const additions = abs ? yield* countNewFileLines(abs) : 0
           return {
             path: p,

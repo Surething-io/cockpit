@@ -10,6 +10,7 @@ import { execFile } from "child_process"
 import { promisify } from "util"
 import { Context, Effect, Layer } from "effect"
 import { AppError, ValidationError } from "@cockpit/effect-core"
+import { countNewFileLines, resolveInRepo } from "./untrackedLines"
 
 const execFileAsync = promisify(execFile)
 
@@ -107,7 +108,6 @@ function parseNumstat(
     const parts = line.split("\t")
     if (parts.length < 3) continue
     const [addRaw, delRaw, ...rest] = parts
-    if (addRaw === "-" || delRaw === "-") continue
     let path = rest.join("\t")
     if (path.startsWith('"') && path.endsWith('"')) {
       path = path.slice(1, -1)
@@ -118,7 +118,12 @@ function parseNumstat(
         /\/+/g,
         "/"
       )
+    } else if (path.includes(" => ")) {
+      // Rename with no shared prefix/suffix: "old/path => new/path".
+      path = path.slice(path.lastIndexOf(" => ") + 4)
     }
+    // Binary files report "-" / "-"; keep them as 0/0 so the row still
+    // carries a stat instead of silently showing nothing.
     map.set(path, {
       additions: Number.parseInt(addRaw, 10) || 0,
       deletions: Number.parseInt(delRaw, 10) || 0,
@@ -228,6 +233,31 @@ export const GitServiceLive = Layer.succeed(
             file.additions = stat.additions
             file.deletions = stat.deletions
           }
+        }
+
+        // 4. Untracked files never appear in `git diff --numstat`; count their
+        //    lines so they show "+N -0" like every other row. Porcelain paths
+        //    are repo-root relative, so resolve against the toplevel, not cwd.
+        const untracked = unstaged.filter((f) => f.status === "untracked")
+        if (untracked.length > 0) {
+          const root = yield* runGit(["rev-parse", "--show-toplevel"], cwd).pipe(
+            Effect.map((s) => s.trim() || cwd),
+            Effect.orElseSucceed(() => cwd)
+          )
+          yield* Effect.forEach(
+            untracked,
+            (file) => {
+              const abs = resolveInRepo(root, file.path)
+              if (!abs) return Effect.void
+              return countNewFileLines(abs).pipe(
+                Effect.map((lines) => {
+                  file.additions = lines
+                  file.deletions = 0
+                })
+              )
+            },
+            { concurrency: 8, discard: true }
+          ).pipe(Effect.withSpan("git.untrackedLines"))
         }
 
         yield* Effect.logDebug("git.status done").pipe(

@@ -330,25 +330,17 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
 
       {expanded && (
         <div className="border-t border-line-1">
+          {/* Only the output is shown inline; the full input stays one click
+              away via the header's "Input" link. While the call is still
+              running there is no result yet, so the input fills the slot
+              instead of leaving the expanded body empty. */}
           <div className="px-3 py-2">
-            <div className="mb-1">
-              <span className="text-xs text-muted-foreground">{t('toolCall.inputParams')}:</span>
-            </div>
-            <pre className="text-xs bg-accent p-2 rounded overflow-x-auto max-h-24 overflow-y-auto text-foreground">
-              {JSON.stringify(toolCall.input, null, 2)}
+            <pre className="text-xs bg-accent p-2 rounded overflow-x-auto max-h-60 overflow-y-auto text-foreground">
+              {toolCall.result
+                ? (typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2))
+                : JSON.stringify(toolCall.input, null, 2)}
             </pre>
           </div>
-
-          {toolCall.result && (
-            <div className="px-3 py-2 border-t border-line-1">
-              <div className="mb-1">
-                <span className="text-xs text-muted-foreground">{t('toolCall.resultLabel')}:</span>
-              </div>
-              <pre className="text-xs bg-accent p-2 rounded overflow-x-auto max-h-24 overflow-y-auto text-foreground">
-                {typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2)}
-              </pre>
-            </div>
-          )}
 
           {/* Skill body loaded by this call — folded here instead of shown as a user bubble */}
           {toolCall.skillContent && (

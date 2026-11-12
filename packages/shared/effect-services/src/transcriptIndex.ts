@@ -51,6 +51,23 @@ export interface TranscriptCorpusLine {
   readonly text: string
 }
 
+/**
+ * A GitHub pull request this session opened: the URL a `gh pr create` call
+ * printed, paired with the call that ran it. PR links that merely appear in the
+ * conversation are not recorded — only what the session itself created.
+ */
+export interface TranscriptPullRequest {
+  /** Canonical `https://github.com/<owner>/<repo>/pull/<n>`. */
+  readonly url: string
+  /** `<owner>/<repo>`. */
+  readonly repo: string
+  readonly number: number
+  /** The `--title` the command passed, when it could be read off the command line. */
+  readonly title?: string
+  /** ISO timestamp of the line that carried the result, when the format records one. */
+  readonly createdAt?: string
+}
+
 /** Per-file usage aggregates; merged across files by the stats view. Plain JSON. */
 export interface TranscriptStats {
   messages: number
@@ -78,6 +95,8 @@ export interface TranscriptSnapshot {
   readonly userTurns: ReadonlyArray<TranscriptUserTurn>
   /** Prompts and replies in order — what the search corpus is rendered from. */
   readonly corpus: ReadonlyArray<TranscriptCorpusLine>
+  /** Pull requests opened by this session, oldest first, one per URL. */
+  readonly pullRequests: ReadonlyArray<TranscriptPullRequest>
   readonly stats: TranscriptStats
 }
 

@@ -50,6 +50,7 @@ import {
   type TranscriptIndexCounters,
   type TranscriptSnapshot,
   type TranscriptCorpusLine,
+  type TranscriptPullRequest,
   type TranscriptStats,
   type TranscriptUserTurn,
 } from "@cockpit/effect-services"
@@ -57,6 +58,7 @@ import { extractCodexUserContent } from "../server/api/session/codexTools"
 import { getOwn, setOwn } from "../server/transcriptViews"
 import { codexPromptText, projectCodexUserMessage } from "../shared/codexPrompt"
 import { injectionKind, queuedPromptAsUserEntry } from "../shared/transcriptTurns"
+import { findPullRequestUrl, isPullRequestCreateCommand, pullRequestTitleOf } from "../shared/pullRequests"
 import { writeAtomically } from "@cockpit/effect-runtime/server/fs"
 
 // ─────────────────────────────────────────────────────────
@@ -64,7 +66,7 @@ import { writeAtomically } from "@cockpit/effect-runtime/server/fs"
 // ─────────────────────────────────────────────────────────
 
 /** Bump when the folded shape or a fold rule changes: every shard rebuilds once. */
-export const TRANSCRIPT_INDEX_VERSION = 11
+export const TRANSCRIPT_INDEX_VERSION = 12
 const READ_CONCURRENCY = 4
 const ANCHOR_BYTES = 64
 const CHUNK_BYTES = 1024 * 1024
@@ -90,6 +92,13 @@ interface Entry {
   cwd: string | null
   userTurns: TranscriptUserTurn[]
   corpus: TranscriptCorpusLine[]
+  pullRequests: TranscriptPullRequest[]
+  /**
+   * claude: `gh pr create` tool calls still waiting for their tool_result, by
+   * tool_use id. Call and result sit on different lines, possibly on different
+   * sides of an incremental read, so the pairing has to be folded state.
+   */
+  pendingPrCreates: Record<string, { title?: string }>
   stats: TranscriptStats
   /** Lines no decoder accepted (malformed or of no interest to any view). */
   skippedLines: number
@@ -107,7 +116,7 @@ export const emptyStats = (): TranscriptStats => ({
 })
 
 /** Fold target for one file: everything but the file identity fields. */
-export type FoldState = Pick<Entry, "aiTitle" | "summary" | "cwd" | "userTurns" | "corpus" | "stats">
+export type FoldState = Pick<Entry, "aiTitle" | "summary" | "cwd" | "userTurns" | "corpus" | "pullRequests" | "pendingPrCreates" | "stats">
 
 export const emptyFoldState = (): FoldState => ({
   aiTitle: "",
@@ -115,6 +124,8 @@ export const emptyFoldState = (): FoldState => ({
   cwd: null,
   userTurns: [],
   corpus: [],
+  pullRequests: [],
+  pendingPrCreates: {},
   stats: emptyStats(),
 })
 
@@ -136,6 +147,8 @@ const cloneEntry = (e: Entry): Entry => ({
   ...e,
   userTurns: [...e.userTurns],
   corpus: [...e.corpus],
+  pullRequests: [...e.pullRequests],
+  pendingPrCreates: { ...e.pendingPrCreates },
   stats: structuredClone(e.stats),
 })
 
@@ -149,6 +162,7 @@ const toSnapshot = (e: Entry): TranscriptSnapshot => ({
   cwd: e.cwd,
   userTurns: e.userTurns,
   corpus: e.corpus,
+  pullRequests: e.pullRequests,
   stats: e.stats,
 })
 
@@ -190,6 +204,12 @@ export interface TranscriptRecord {
   }
   /** Searchable text this line contributes (user prompt or assistant reply). */
   readonly corpusText?: string
+  /** claude: `gh pr create` tool calls this assistant line issued. */
+  readonly prCreateCalls?: ReadonlyArray<{ readonly id: string; readonly title?: string }>
+  /** claude: tool results this user line carries, as plain text, by tool_use id. */
+  readonly toolResults?: ReadonlyArray<{ readonly id: string; readonly text: string }>
+  /** codex: a finished `gh pr create` command with its output (one line holds both). */
+  readonly prCreateResult?: { readonly output: string; readonly title?: string; readonly timestamp?: string }
 }
 
 /** Claude-format decoder (claude CLI + the built-in engine stores). */
@@ -243,6 +263,21 @@ export const decodeClaudeLine = (line: string): TranscriptRecord | null => {
   }
 
   const corpusText = userTurn && !userTurn.isMeta ? userTurn.blocks.join("\n") : assistantText
+  let prCreateCalls: Array<{ id: string; title?: string }> | undefined
+  let toolResults: Array<{ id: string; text: string }> | undefined
+  for (const b of blocks) {
+    if (type === "assistant" && b.type === "tool_use") {
+      const id = str(b.id)
+      const command = isRecord(b.input) ? str(b.input.command) : undefined
+      if (id && command && isPullRequestCreateCommand(command)) (prCreateCalls ??= []).push({ id, title: pullRequestTitleOf(command) })
+    } else if (type === "user" && b.type === "tool_result") {
+      const id = str(b.tool_use_id)
+      const text = typeof b.content === "string"
+        ? b.content
+        : Array.isArray(b.content) ? b.content.filter(isRecord).map((c) => str(c.text) ?? "").join("\n") : ""
+      if (id && text) (toolResults ??= []).push({ id, text })
+    }
+  }
   return {
     type,
     sessionId: str(d.sessionId) || undefined,
@@ -253,6 +288,8 @@ export const decodeClaudeLine = (line: string): TranscriptRecord | null => {
     userTurn,
     assistant,
     corpusText: corpusText.trim() ? corpusText : undefined,
+    prCreateCalls,
+    toolResults,
   }
 }
 
@@ -267,6 +304,14 @@ export const decodeCodexLine = (line: string): TranscriptRecord | null => {
   if (d.type === "event_msg" && payload.type === "task_complete") {
     const message = isRecord(payload.error) ? str(payload.error.message) : undefined
     return message ? { type: "assistant", corpusText: `⚠️ ${message}` } : null
+  }
+  // A finished shell command carries its command line and output together.
+  if (d.type === "event_msg" && payload.type === "item_completed" && isRecord(payload.item) && payload.item.type === "CommandExecution") {
+    const item = payload.item
+    const command = Array.isArray(item.command) ? item.command.filter((c): c is string => typeof c === "string").join(" ") : str(item.command) ?? ""
+    const output = str(item.aggregated_output) ?? ""
+    if (!isPullRequestCreateCommand(command) || !output) return null
+    return { type: "tool", prCreateResult: { output, title: pullRequestTitleOf(command), timestamp: str(d.timestamp) || undefined } }
   }
   if (d.type !== "response_item") return null
   if (payload.type !== "message" || !Array.isArray(payload.content)) return null
@@ -385,6 +430,21 @@ export const applyRecord = (state: FoldState, format: TranscriptFormat, r: Trans
   }
   if (r.userTurn) state.userTurns.push(r.userTurn)
   if (r.corpusText) state.corpus.push({ role: r.type === "assistant" ? "assistant" : "user", text: r.corpusText })
+  for (const call of r.prCreateCalls ?? []) setOwn(state.pendingPrCreates, call.id, call.title ? { title: call.title } : {})
+  for (const result of r.toolResults ?? []) {
+    const call = getOwn(state.pendingPrCreates, result.id)
+    if (!call) continue
+    delete state.pendingPrCreates[result.id]
+    addPullRequest(state, result.text, call.title, r.timestamp)
+  }
+  if (r.prCreateResult) addPullRequest(state, r.prCreateResult.output, r.prCreateResult.title, r.prCreateResult.timestamp)
+}
+
+/** Record the PR a create command printed; the first sighting of a URL wins. */
+const addPullRequest = (state: FoldState, output: string, title: string | undefined, createdAt: string | undefined): void => {
+  const ref = findPullRequestUrl(output)
+  if (!ref || state.pullRequests.some((pr) => pr.url === ref.url)) return
+  state.pullRequests.push({ ...ref, ...(title ? { title } : {}), ...(createdAt ? { createdAt } : {}) })
 }
 
 const DECODERS: Record<TranscriptFormat, (line: string) => TranscriptRecord | null> = {
@@ -544,6 +604,7 @@ const entryBytes = (e: Entry): number => {
     for (const text of turn.blocks) bytes += 16 + 2 * text.length
   }
   for (const line of e.corpus) bytes += 64 + 2 * line.text.length
+  for (const pr of e.pullRequests) bytes += 128 + 2 * (pr.url.length + (pr.title?.length ?? 0))
   entrySizes.set(e, bytes)
   return bytes
 }

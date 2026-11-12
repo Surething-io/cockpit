@@ -44,6 +44,21 @@ export interface SessionListItem extends Partial<SessionTitleInfo> {
   bot?: string
 }
 
+/**
+ * A pull request a session opened (`gh pr create`), as the transcript index
+ * extracted it. Mirrors effect-services' TranscriptPullRequest, restated here so
+ * the client zone does not import a server-side service package.
+ */
+export interface SessionPullRequest {
+  url: string
+  /** `<owner>/<repo>`. */
+  repo: string
+  number: number
+  title?: string
+  /** ISO timestamp of the creating command's result, when the format records one. */
+  createdAt?: string
+}
+
 /** A session as persisted in `state.json` (the cross-project recent list). */
 export interface GlobalSessionRecord extends Partial<SessionTitleInfo> {
   cwd: string
@@ -73,4 +88,6 @@ export interface GlobalSessionInfo extends GlobalSessionRecord {
   lastMessages?: string[]
   /** Only the search-panel GET populates this; the WS snapshot leaves it empty. */
   searchText?: string
+  /** PRs this session opened, oldest first. Only the search-panel GET populates it. */
+  pullRequests?: SessionPullRequest[]
 }

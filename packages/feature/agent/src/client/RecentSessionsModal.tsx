@@ -12,6 +12,7 @@ import { SessionNumberBadge, badgeStatus } from './SessionNumberBadge';
 import { SessionTranscriptPreview } from './SessionTranscriptPreview';
 import { sortSessionsForDisplay } from './sessionOrder';
 import { formatRelativeTime, statusLabelOf, groupByProject, ProjectGroupHeader } from './SessionRowParts';
+import { RecentPullRequestsPane } from './RecentPullRequestsPane';
 
 const keyOf = (cwd: string, sessionId: string) => `${cwd}\n${sessionId}`;
 
@@ -53,6 +54,11 @@ interface RecentSessionsModalProps {
  * path writes status=normal). The board auto-selects its first row, which is
  * usually the unread one — reading on select would clear it unseen.
  *
+ * Two tabs over that one list: "sessions" (below) and "PR"
+ * (RecentPullRequestsPane — the PRs those same sessions opened). The PR tab
+ * mounts on demand and keeps no state across switches beyond what the board
+ * already fetched; `pullRequests` rides on the same /api/global-state read.
+ *
  * Uses a full-viewport `fixed inset-0` overlay so it escapes the three-panel
  * SwipeableViewContainer boundaries (see CLAUDE.md UI layout notes).
  */
@@ -66,6 +72,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
   const searchInputRef = useRef<HTMLInputElement>(null);
   // Which session the right-hand transcript follows, keyed `${cwd}\n${sessionId}`.
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [tab, setTab] = useState<'sessions' | 'pullRequests'>('sessions');
 
   const loadSessions = useCallback(async () => {
     setIsLoading(true);
@@ -89,6 +96,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
       }, 100);
     } else {
       setSelectedKey(null);
+      setTab('sessions');
     }
   }, [isOpen, loadSessions]);
 
@@ -110,7 +118,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
       const l = live.get(keyOf(s.cwd, s.sessionId));
       if (!l) return s;
       live.delete(keyOf(s.cwd, s.sessionId));
-      return { ...s, ...l, searchText: l.searchText ?? s.searchText };
+      return { ...s, ...l, searchText: l.searchText ?? s.searchText, pullRequests: l.pullRequests ?? s.pullRequests };
     });
     return sortSessionsForDisplay([...merged, ...live.values()]);
   }, [fetched, liveSessions]);
@@ -145,10 +153,10 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
   // Auto-select the first row in board order, so opening shows a transcript
   // without a click. Only fills a hole; never steals a selection the user made.
   useEffect(() => {
-    if (!isOpen || selected) return;
+    if (!isOpen || tab !== 'sessions' || selected) return;
     const first = filteredSessions[0];
     setSelectedKey(first ? keyOf(first.cwd, first.sessionId) : null);
-  }, [isOpen, selected, filteredSessions]);
+  }, [isOpen, tab, selected, filteredSessions]);
 
   // The switch path marks the session read (iframe SWITCH_SESSION handler
   // writes state.json status=normal).
@@ -157,7 +165,11 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
     onClose();
   }, [onSwitchProject, onClose]);
 
-  const titleOf = (session: RecentSessionInfo) => effectiveTitle(titleOverrides, session.cwd, session.sessionId, session.title || session.sessionId, session.titleRevision);
+  // Stable per override set: the PR pane memoises its rows on it.
+  const titleOf = useCallback(
+    (session: RecentSessionInfo) => effectiveTitle(titleOverrides, session.cwd, session.sessionId, session.title || session.sessionId, session.titleRevision),
+    [titleOverrides],
+  );
 
   const renderCard = (session: RecentSessionInfo) => {
     const key = keyOf(session.cwd, session.sessionId);
@@ -245,6 +257,21 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex items-center gap-3 min-w-0">
             <h2 className="text-sm font-medium text-foreground">{t('sessions.recentSessions')}</h2>
+            <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-muted" role="tablist">
+              {(['sessions', 'pullRequests'] as const).map((id) => (
+                <button
+                  key={id}
+                  role="tab"
+                  aria-selected={tab === id}
+                  onClick={() => setTab(id)}
+                  className={`px-2.5 py-0.5 text-xs rounded transition-colors ${
+                    tab === id ? 'bg-card text-foreground shadow-lv1' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {t(id === 'sessions' ? 'sessions.sessionsTab' : 'sessions.pullRequestsTab')}
+                </button>
+              ))}
+            </div>
             {runningCount > 0 && (
               <span className="text-xs text-orange-11">{t('sessions.runningCount', { count: runningCount })}</span>
             )}
@@ -264,6 +291,16 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
 
         {/* Content — search + grouped list on the left, transcript on the right */}
         <div className="flex-1 flex min-h-0">
+          {tab === 'pullRequests' ? (
+            <RecentPullRequestsPane
+              sessions={sessions}
+              isLoading={isLoading}
+              error={error}
+              sessionNumbers={sessionNumbers}
+              titleOf={titleOf}
+              onOpenSession={openSession}
+            />
+          ) : (<>
           <div className="w-full md:w-[360px] min-h-0 flex-shrink-0 md:border-r border-border flex flex-col">
             {/* Own bottom padding + divider: the list scrolls below this line,
                 so its sticky group label never butts up against the input or
@@ -322,6 +359,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
               </div>
             )}
           </div>
+          </>)}
         </div>
       </div>
     </div>

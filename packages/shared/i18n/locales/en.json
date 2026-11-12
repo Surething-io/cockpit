@@ -281,7 +281,21 @@
     "noSessionsYet": "No sessions yet",
     "projectList": "Project List",
     "openFolder": "Open Folder",
-    "loadingHistory": "Loading history..."
+    "loadingHistory": "Loading history...",
+    "sessionsTab": "Sessions",
+    "pullRequestsTab": "PRs",
+    "searchPullRequests": "Search number / URL / title",
+    "allRepos": "All repos",
+    "allEngines": "All engines",
+    "noPullRequests": "No recent session has opened a PR yet",
+    "noPullRequestsHint": "PRs appear here once a session runs gh pr create",
+    "noMatchingPullRequests": "No matching PRs",
+    "selectPullRequestHint": "Select a PR on the left to view its session",
+    "pullRequestSessions": "{{count}} sessions",
+    "openPullRequest": "Open PR",
+    "copyResumeCommand": "Copy resume",
+    "resumeCommandCopied": "Copied: {{command}}",
+    "copyFailed": "Copy failed"
   },
   "scheduledTasks": {
     "title": "Scheduled Tasks",

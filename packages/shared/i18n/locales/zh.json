@@ -281,7 +281,21 @@
     "noSessionsYet": "暂无会话",
     "projectList": "项目列表",
     "openFolder": "打开文件夹",
-    "loadingHistory": "加载历史消息..."
+    "loadingHistory": "加载历史消息...",
+    "sessionsTab": "会话",
+    "pullRequestsTab": "PR",
+    "searchPullRequests": "搜索 编号 / 链接 / 标题",
+    "allRepos": "全部仓库",
+    "allEngines": "全部引擎",
+    "noPullRequests": "最近会话里还没有开过 PR",
+    "noPullRequestsHint": "会话里运行 gh pr create 后，会自动出现在这里",
+    "noMatchingPullRequests": "未找到匹配的 PR",
+    "selectPullRequestHint": "选择左侧 PR，查看它的会话",
+    "pullRequestSessions": "共 {{count}} 个会话",
+    "openPullRequest": "打开 PR",
+    "copyResumeCommand": "复制 resume",
+    "resumeCommandCopied": "已复制：{{command}}",
+    "copyFailed": "复制失败"
   },
   "scheduledTasks": {
     "title": "定时任务",

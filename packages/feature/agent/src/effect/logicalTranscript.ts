@@ -10,7 +10,7 @@ import { transcriptSnapshot } from './transcriptIndexLive';
 import { transcriptGeneration } from '../server/transcriptRevision';
 import { identifyTranscriptFile as identify, sameTranscriptFile as same, withTranscriptLayout, type FileIdentity } from './transcriptPresence';
 
-export type LogicalTranscriptProjection = Pick<TranscriptSnapshot, 'format' | 'engine' | 'aiTitle' | 'summary' | 'cwd' | 'userTurns' | 'corpus'>;
+export type LogicalTranscriptProjection = Pick<TranscriptSnapshot, 'format' | 'engine' | 'aiTitle' | 'summary' | 'cwd' | 'userTurns' | 'corpus' | 'pullRequests'>;
 /** No file bytes are read until the caller requests a projection or parser source. */
 export interface LogicalTranscriptReader {
   readonly fingerprint: string;
@@ -78,6 +78,9 @@ export const readLogicalTranscript = <A, E, R>(
         cwd: history?.cwd ?? current?.cwd ?? null,
         userTurns: [...(history?.userTurns ?? []), ...(current?.userTurns ?? [])],
         corpus: [...(history?.corpus ?? []), ...(current?.corpus ?? [])],
+        // A PR printed in both halves of a spliced session is still one PR.
+        pullRequests: [...(history?.pullRequests ?? []), ...(current?.pullRequests ?? [])]
+          .filter((pr, i, all) => all.findIndex((other) => other.url === pr.url) === i),
       } satisfies LogicalTranscriptProjection;
     });
     const source = before.history && stash ? Effect.tryPromise({

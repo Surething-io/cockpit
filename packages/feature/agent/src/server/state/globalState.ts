@@ -13,7 +13,7 @@ import {
   normalizeCodexSessionId,
 } from '@cockpit/shared-utils';
 import { detectBotName } from '../../shared/botSession';
-import type { GlobalSessionInfo, GlobalSessionRecord, SessionStatus } from '../../shared/sessionDto';
+import type { GlobalSessionInfo, GlobalSessionRecord, SessionPullRequest, SessionStatus } from '../../shared/sessionDto';
 
 import { existsSync } from 'fs';
 import { basename } from 'path';
@@ -280,6 +280,8 @@ export interface SessionPreview extends SessionTitleInfo {
    * search-panel GET); the WS snapshot leaves it empty to skip the join cost.
    */
   searchText: string;
+  /** PRs the session opened (`gh pr create`), from the same transcript read. */
+  pullRequests: SessionPullRequest[];
 }
 
 /** Session content: native title + summary line + filtered user messages. */
@@ -287,6 +289,7 @@ interface SessionContent {
   summary: string;
   messages: string[];
   defaultTitle: string;
+  pullRequests: SessionPullRequest[];
 }
 
 /**
@@ -296,8 +299,8 @@ interface SessionContent {
  */
 async function getSessionContent(cwd: string, sessionId: string, cache: TranscriptCachePolicy): Promise<SessionContent> {
   const snap = await sessionSnapshot(cwd, sessionId, cache);
-  if (!snap) return { defaultTitle: UNTITLED_SESSION, summary: '', messages: [] };
-  return { summary: snap.summary, messages: previewMessages(snap), defaultTitle: defaultSessionTitle(snap) };
+  if (!snap) return { defaultTitle: UNTITLED_SESSION, summary: '', messages: [], pullRequests: [] };
+  return { summary: snap.summary, messages: previewMessages(snap), defaultTitle: defaultSessionTitle(snap), pullRequests: snap.pullRequests.map((pr) => ({ ...pr })) };
 }
 
 /**
@@ -311,7 +314,7 @@ export async function getSessionPreview(
   sessionId: string,
   opts?: { includeSearchText?: boolean; titleData?: TitleFile }
 ): Promise<SessionPreview> {
-  const { summary, messages, defaultTitle } = await getSessionContent(cwd, sessionId, opts?.includeSearchText ? 'scan' : 'retain');
+  const { summary, messages, defaultTitle, pullRequests } = await getSessionContent(cwd, sessionId, opts?.includeSearchText ? 'scan' : 'retain');
   const store = await resolveSessionPath(cwd, sessionId);
   const titleInfo = opts?.titleData
     ? titleFromProject(opts.titleData, sessionId, defaultTitle, titleStore(store?.engine ?? 'claude'), cwd)
@@ -327,7 +330,7 @@ export async function getSessionPreview(
   // searchText, so skip the multi-MB join+toLowerCase there.
   const searchText = opts?.includeSearchText ? [summary, ...messages].join('\n').toLowerCase() : '';
   if (messages.length <= SUMMARY_THRESHOLD) {
-    return { ...titleInfo, title, bot, lastUserMessage, firstMessages: messages.map((m) => truncate(m)!), lastMessages: [], searchText };
+    return { ...titleInfo, title, bot, lastUserMessage, firstMessages: messages.map((m) => truncate(m)!), lastMessages: [], searchText, pullRequests };
   }
   return {
     ...titleInfo,
@@ -337,6 +340,7 @@ export async function getSessionPreview(
     firstMessages: messages.slice(0, SUMMARY_HEAD).map((m) => truncate(m)!),
     lastMessages: messages.slice(-SUMMARY_TAIL).map((m) => truncate(m)!),
     searchText,
+    pullRequests,
   };
 }
 

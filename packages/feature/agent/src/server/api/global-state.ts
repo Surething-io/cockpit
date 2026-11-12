@@ -70,6 +70,8 @@ export const GET = handler((req) =>
               // summary + every user message (preview.searchText). Display fields
               // above stay truncated; matching reads this instead.
               searchText: `${session.cwd}\n${preview.searchText}`,
+              // Backs the board's PR tab. The WS snapshot does not carry it.
+              pullRequests: preview.pullRequests,
             }
           })
         )

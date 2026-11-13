@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Portal } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
@@ -13,6 +13,7 @@ import { rehypeSourceLines } from '@cockpit/shared-ui';
 import { toast } from '@cockpit/shared-ui';
 import { resolveBashCwd } from '@cockpit/shared-utils';
 import { useJsonSearch, JsonSearchBar } from '@cockpit/shared-ui';
+import { ResizableSidebar } from '@cockpit/shared-ui';
 import { FileImagePreview } from './index';
 import {
   isValidJson,
@@ -154,10 +155,12 @@ interface PreviewModalProps {
    * scrolling on its own. The view-mode switch applies to the input.
    */
   result?: string;
+  /** Left column next to the content (e.g. a list of sibling tool calls). */
+  sidebar?: ReactNode;
   onClose: () => void;
 }
 
-export function PreviewModal({ title, content, toolName, result, onClose }: PreviewModalProps) {
+export function PreviewModal({ title, content, toolName, result, sidebar, onClose }: PreviewModalProps) {
   const { t } = useTranslation();
   const isJson = isValidJson(content);
   const editInput = isEditInput(content);
@@ -173,6 +176,15 @@ export function PreviewModal({ title, content, toolName, result, onClose }: Prev
   };
 
   const [viewMode, setViewMode] = useState<ViewMode>(getDefaultMode());
+  // A host can swap what is previewed without remounting (the sidebar picks
+  // another tool call): re-derive the default view for the new content,
+  // using React's adjust-state-during-render pattern.
+  const contentKey = `${toolName ?? ''}\0${content}`;
+  const [shownKey, setShownKey] = useState(contentKey);
+  if (shownKey !== contentKey) {
+    setShownKey(contentKey);
+    setViewMode(getDefaultMode());
+  }
   const previewPreRef = useRef<HTMLPreElement>(null);
   const jsonSearch = useJsonSearch(previewPreRef);
 
@@ -336,34 +348,42 @@ export function PreviewModal({ title, content, toolName, result, onClose }: Prev
             </button>
           </div>
         </div>
-        {/* Content */}
-        {formattedResult === null ? (
-          <div className="flex-1 overflow-auto p-4">
-            {renderContent()}
-          </div>
-        ) : (
-          // Input and result each scroll on their own rather than forming one
-          // long page.
-          <div className="flex-1 min-h-0 flex flex-col">
-            {/* Diff / file views need a bounded box to fill; plain text input
-                (e.g. a Bash command) shrinks to its content, capped so the
-                result always keeps most of the room. */}
-            <div className={`min-h-0 flex flex-col ${viewMode === 'diff-unified' || viewMode === 'diff-split' || viewMode === 'file' ? 'flex-1' : 'flex-shrink-0 max-h-[40%]'}`}>
-              <div className="px-4 pt-3 pb-1 text-xs text-muted-foreground">{t('toolCall.input')}</div>
-              <div className="flex-1 min-h-0 overflow-auto px-4 pb-3">
+        <div className="flex-1 min-h-0 flex">
+          {sidebar && (
+            // Drag the divider to widen the list by up to 50% of its width.
+            <ResizableSidebar>{sidebar}</ResizableSidebar>
+          )}
+          <div className="flex-1 min-w-0 flex flex-col">
+            {/* Content */}
+            {formattedResult === null ? (
+              <div className="flex-1 min-h-0 overflow-auto p-4">
                 {renderContent()}
               </div>
-            </div>
-            <div className="flex-1 min-h-0 flex flex-col border-t border-border">
-              <div className="px-4 pt-3 pb-1 text-xs text-muted-foreground">{t('toolCall.result')}</div>
-              <div className="flex-1 min-h-0 overflow-auto px-4 pb-3">
-                <pre className="text-foreground whitespace-pre-wrap break-words" style={{ fontSize: '0.8125rem' }}>
-                  {formattedResult}
-                </pre>
+            ) : (
+              // Input and result each scroll on their own rather than forming one
+              // long page.
+              <div className="flex-1 min-h-0 flex flex-col">
+                {/* Diff / file views need a bounded box to fill; plain text input
+                    (e.g. a Bash command) shrinks to its content, capped so the
+                    result always keeps most of the room. */}
+                <div className={`min-h-0 flex flex-col ${viewMode === 'diff-unified' || viewMode === 'diff-split' || viewMode === 'file' ? 'flex-1' : 'flex-shrink-0 max-h-[40%]'}`}>
+                  <div className="px-4 pt-3 pb-1 text-xs text-muted-foreground">{t('toolCall.input')}</div>
+                  <div className="flex-1 min-h-0 overflow-auto px-4 pb-3">
+                    {renderContent()}
+                  </div>
+                </div>
+                <div className="flex-1 min-h-0 flex flex-col border-t border-border">
+                  <div className="px-4 pt-3 pb-1 text-xs text-muted-foreground">{t('toolCall.result')}</div>
+                  <div className="flex-1 min-h-0 overflow-auto px-4 pb-3">
+                    <pre className="text-foreground whitespace-pre-wrap break-words" style={{ fontSize: '0.8125rem' }}>
+                      {formattedResult}
+                    </pre>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

@@ -62,6 +62,150 @@ function isPatchChange(value: unknown): value is { path?: unknown; kind?: unknow
   return typeof value === 'object' && value !== null;
 }
 
+// Path relative to cwd, or the last two segments when it lies outside.
+function shortenPath(fullPath: string, cwd?: string): string {
+  const relativePath = cwd ? relativeToRoot(cwd, fullPath) : null;
+  if (relativePath) return relativePath;
+  const parts = fullPath.split('/');
+  if (parts.length > 2) {
+    return '.../' + parts.slice(-2).join('/');
+  }
+  return fullPath;
+}
+
+/**
+ * Icon + one-line label for a tool call, shared by the row header and the
+ * details modal's sidebar. `displayInfo` is the raw key info (full path,
+ * command, description…); `displayPath` is what is shown.
+ */
+function describeToolCall(toolCall: ToolCallInfo, cwd?: string) {
+  const { name, input } = toolCall;
+  const isAgentTool = name === 'Agent' || name === 'Task';
+  const isWorkflow = name === 'Workflow';
+  const isSkill = name === 'Skill';
+
+  const getDisplayInfo = (): string | null => {
+    if (name === 'Bash' && input.command && typeof input.command === 'string') {
+      return input.command;
+    }
+    if (name === 'ApplyPatch' && Array.isArray(input.changes)) {
+      const changes = input.changes.filter(isPatchChange).flatMap((change) => {
+        const path = typeof change.path === 'string' ? change.path : '';
+        if (!path) return [];
+        const kind = typeof change.kind === 'string' && change.kind ? change.kind : 'update';
+        return `${kind} ${shortenPath(path, cwd)}`;
+      });
+      if (changes.length > 0) return changes.join(' · ');
+    }
+    if (isAgentTool && input.description && typeof input.description === 'string') {
+      return input.description;
+    }
+    if (isWorkflow) {
+      const wfName = typeof input.name === 'string' ? input.name : '';
+      const detail =
+        typeof input.args === 'string'
+          ? input.args
+          : typeof input.resumeFromRunId === 'string'
+            ? input.resumeFromRunId
+            : '';
+      const label = [wfName, detail].filter(Boolean).join(' · ');
+      if (label) return label;
+    }
+    if (isSkill && typeof input.skill === 'string') {
+      const detail = typeof input.args === 'string' ? input.args : '';
+      return [input.skill, detail].filter(Boolean).join(' · ');
+    }
+    if (name === 'Glob' && input.pattern && typeof input.pattern === 'string') {
+      return input.pattern;
+    }
+    if (name === 'Grep' && input.pattern && typeof input.pattern === 'string') {
+      return input.pattern;
+    }
+    if (name === 'ToolSearch' && input.query && typeof input.query === 'string') {
+      return input.query;
+    }
+    if (name === 'TaskCreate' && input.subject && typeof input.subject === 'string') {
+      return input.subject;
+    }
+    if (input.file_path && typeof input.file_path === 'string') {
+      return input.file_path;
+    }
+    if (input.path && typeof input.path === 'string') {
+      return input.path;
+    }
+    return null;
+  };
+
+  const displayInfo = getDisplayInfo();
+  const skipRelativePath = name === 'Glob' || name === 'Grep' || name === 'Bash' || name === 'ApplyPatch' || isAgentTool || isWorkflow || isSkill;
+  const displayPath = displayInfo ? (skipRelativePath ? displayInfo : shortenPath(displayInfo, cwd)) : null;
+  return { icon: TOOL_ICONS[name] || '🔧', displayInfo, displayPath };
+}
+
+// ============================================
+// ToolCallDetailsModal - details of one call, with its siblings in a sidebar
+// ============================================
+
+interface ToolCallDetailsModalProps {
+  calls: ToolCallInfo[];
+  initialIndex: number;
+  cwd?: string;
+  onClose: () => void;
+}
+
+function ToolCallDetailsModal({ calls, initialIndex, cwd, onClose }: ToolCallDetailsModalProps) {
+  const [selected, setSelected] = useState(initialIndex);
+  // Calls only ever get appended while the modal is open, but clamp anyway.
+  const call = calls[Math.min(selected, calls.length - 1)];
+  if (!call) return null;
+  const { displayPath } = describeToolCall(call, cwd);
+
+  const sidebar = calls.length > 1 ? (
+    <ul className="py-1">
+      {calls.map((c, i) => {
+        const d = describeToolCall(c, cwd);
+        const active = c === call;
+        return (
+          <li key={`${c.id}-${i}`}>
+            <button
+              onClick={() => setSelected(i)}
+              className={`w-full px-3 py-1.5 flex items-center gap-2 text-left transition-colors ${
+                active ? 'bg-accent' : 'hover:bg-hover'
+              }`}
+              title={d.displayInfo ?? c.name}
+            >
+              <span className="text-sm flex-shrink-0">{d.icon}</span>
+              <span className={`text-sm text-foreground flex-shrink-0 ${active ? 'font-medium' : ''}`}>
+                {c.name}
+              </span>
+              {d.displayPath && (
+                <span className="text-xs text-muted-foreground truncate min-w-0 flex-1">{d.displayPath}</span>
+              )}
+              {c.isLoading && (
+                <span className="ml-auto inline-block w-3 h-3 border-2 border-brand border-t-transparent rounded-full animate-spin flex-shrink-0" />
+              )}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  ) : undefined;
+
+  return (
+    <PreviewModal
+      title={`${call.name}${displayPath ? ` ${displayPath}` : ''}`}
+      content={JSON.stringify(call.input, null, 2)}
+      // Omitted while running, so the input gets the whole content area.
+      result={!call.isLoading && call.result
+        ? (typeof call.result === 'string' ? call.result : JSON.stringify(call.result, null, 2))
+        : undefined}
+      toolName={call.name}
+      sidebar={sidebar}
+      onClose={onClose}
+    />
+  );
+}
+
 // ============================================
 // ToolCallModal - tool call display component
 // ============================================
@@ -78,9 +222,15 @@ interface ToolCallProps {
    * overlays (see MessageBubble's `disableOverlays`).
    */
   disableOverlays?: boolean;
+  /**
+   * The tool call group this row belongs to (must be referentially stable),
+   * listed in the details modal's sidebar; `index` is this row's position.
+   */
+  siblings?: ToolCallInfo[];
+  index?: number;
 }
 
-export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = false }: ToolCallProps) {
+export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = false, siblings, index = 0 }: ToolCallProps) {
   const { t } = useTranslation();
   const rowToken = useId();
   const expanded = useSyncExternalStore(
@@ -92,7 +242,6 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
   const [showSubagent, setShowSubagent] = useState(false);
   const [showWorkflow, setShowWorkflow] = useState(false);
 
-  const toolIcon = TOOL_ICONS[toolCall.name] || '🔧';
   const isAgentTool = toolCall.name === 'Agent' || toolCall.name === 'Task';
   const isSubagentCall = (isAgentTool || toolCall.name === 'subagent') && !!cwd && !!sessionId;
   const isWorkflow = toolCall.name === 'Workflow';
@@ -144,74 +293,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
   // not a path — skip relative-path conversion and the copy-path icon for these.
   const hideCopyIcon = toolCall.name === 'ApplyPatch' || isAgentTool || isWorkflow || isSkill;
 
-  // Extract file path or key info from input
-  const getDisplayInfo = () => {
-    const input = toolCall.input;
-    if (toolCall.name === 'Bash' && input.command && typeof input.command === 'string') {
-      return input.command;
-    }
-    if (toolCall.name === 'ApplyPatch' && Array.isArray(input.changes)) {
-      const changes = input.changes.filter(isPatchChange).flatMap((change) => {
-        const path = typeof change.path === 'string' ? change.path : '';
-        if (!path) return [];
-        const kind = typeof change.kind === 'string' && change.kind ? change.kind : 'update';
-        return `${kind} ${getRelativePath(path)}`;
-      });
-      if (changes.length > 0) return changes.join(' · ');
-    }
-    if (isAgentTool && input.description && typeof input.description === 'string') {
-      return input.description;
-    }
-    if (isWorkflow) {
-      const name = typeof input.name === 'string' ? input.name : '';
-      const detail =
-        typeof input.args === 'string'
-          ? input.args
-          : typeof input.resumeFromRunId === 'string'
-            ? input.resumeFromRunId
-            : '';
-      const label = [name, detail].filter(Boolean).join(' · ');
-      if (label) return label;
-    }
-    if (isSkill && typeof input.skill === 'string') {
-      const detail = typeof input.args === 'string' ? input.args : '';
-      return [input.skill, detail].filter(Boolean).join(' · ');
-    }
-    if (toolCall.name === 'Glob' && input.pattern && typeof input.pattern === 'string') {
-      return input.pattern;
-    }
-    if (toolCall.name === 'Grep' && input.pattern && typeof input.pattern === 'string') {
-      return input.pattern;
-    }
-    if (toolCall.name === 'ToolSearch' && input.query && typeof input.query === 'string') {
-      return input.query;
-    }
-    if (toolCall.name === 'TaskCreate' && input.subject && typeof input.subject === 'string') {
-      return input.subject;
-    }
-    if (input.file_path && typeof input.file_path === 'string') {
-      return input.file_path;
-    }
-    if (input.path && typeof input.path === 'string') {
-      return input.path;
-    }
-    return null;
-  };
-
-  // Get path relative to cwd
-  const getRelativePath = (fullPath: string) => {
-    const relativePath = cwd ? relativeToRoot(cwd, fullPath) : null;
-    if (relativePath) return relativePath;
-    const parts = fullPath.split('/');
-    if (parts.length > 2) {
-      return '.../' + parts.slice(-2).join('/');
-    }
-    return fullPath;
-  };
-
-  const displayInfo = getDisplayInfo();
-  const skipRelativePath = toolCall.name === 'Glob' || toolCall.name === 'Grep' || toolCall.name === 'Bash' || toolCall.name === 'ApplyPatch' || isAgentTool || isWorkflow || isSkill;
-  const displayPath = displayInfo ? (skipRelativePath ? displayInfo : getRelativePath(displayInfo)) : null;
+  const { icon: toolIcon, displayInfo, displayPath } = describeToolCall(toolCall, cwd);
 
   const closeDetails = useCallback(() => setShowDetails(false), []);
   const openDetails = () => setShowDetails(true);
@@ -359,14 +441,10 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
 
       {/* Preview modal */}
       {showDetails && (
-        <PreviewModal
-          title={`${toolCall.name}${displayPath ? ` ${displayPath}` : ''}`}
-          content={JSON.stringify(toolCall.input, null, 2)}
-          // Omitted while running, so the input gets the whole modal.
-          result={!toolCall.isLoading && toolCall.result
-            ? (typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2))
-            : undefined}
-          toolName={toolCall.name}
+        <ToolCallDetailsModal
+          calls={siblings && siblings[index] === toolCall ? siblings : [toolCall]}
+          initialIndex={siblings && siblings[index] === toolCall ? index : 0}
+          cwd={cwd}
           onClose={closeDetails}
         />
       )}

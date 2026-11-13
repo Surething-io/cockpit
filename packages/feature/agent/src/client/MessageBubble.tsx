@@ -1281,7 +1281,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                     // also doubled up with a my-1 on each row.
                     <div className="border-t border-line-1">
                       {displayToolCalls.map((toolCall, index) => (
-                        <ToolCallModal key={`${toolCall.id}-${index}`} toolCall={toolCall} cwd={cwd} sessionId={sessionId} disableOverlays={disableOverlays} />
+                        <ToolCallModal key={`${toolCall.id}-${index}`} toolCall={toolCall} cwd={cwd} sessionId={sessionId} disableOverlays={disableOverlays} siblings={displayToolCalls} index={index} />
                       ))}
                     </div>
                   )}
@@ -1289,7 +1289,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
               ) : (
                 // Normal mode: show all tool calls directly
                 displayToolCalls.map((toolCall, index) => (
-                  <ToolCallModal key={`${toolCall.id}-${index}`} toolCall={toolCall} cwd={cwd} sessionId={sessionId} disableOverlays={disableOverlays} />
+                  <ToolCallModal key={`${toolCall.id}-${index}`} toolCall={toolCall} cwd={cwd} sessionId={sessionId} disableOverlays={disableOverlays} siblings={displayToolCalls} index={index} />
                 ))
               )}
             </div>

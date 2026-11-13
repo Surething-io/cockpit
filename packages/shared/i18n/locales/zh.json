@@ -1119,6 +1119,8 @@
     "resultTitle": "查看结果",
     "input": "输入",
     "result": "结果",
+    "details": "详细",
+    "detailsTitle": "查看输入与结果",
     "foldedLines": "... ({{count}} 行)"
   },
   "fileEditor": {

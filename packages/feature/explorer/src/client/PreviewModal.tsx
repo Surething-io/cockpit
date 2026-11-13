@@ -148,10 +148,16 @@ interface PreviewModalProps {
   title: string;
   content: string;
   toolName?: string;
+  /**
+   * Tool-call result. When given, `content` is treated as the call's input
+   * and the two are stacked (input on top, result below), each half
+   * scrolling on its own. The view-mode switch applies to the input.
+   */
+  result?: string;
   onClose: () => void;
 }
 
-export function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) {
+export function PreviewModal({ title, content, toolName, result, onClose }: PreviewModalProps) {
   const { t } = useTranslation();
   const isJson = isValidJson(content);
   const editInput = isEditInput(content);
@@ -220,6 +226,11 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
     );
   };
 
+  const formattedResult = useMemo(
+    () => (result === undefined ? null : isValidJson(result) ? formatAsJson(result) : result),
+    [result],
+  );
+
   const modalWidth = viewMode === 'diff-split' ? 'max-w-[90%]' : 'max-w-[90%]';
 
   const modalContent = (
@@ -232,9 +243,9 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-medium text-foreground">{title}</h3>
+        <div className="flex items-center justify-between gap-4 px-4 py-3 border-b border-border">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <h3 className="text-sm font-medium text-foreground truncate" title={title}>{title}</h3>
             {filePath && (
               <button
                 onClick={() => {
@@ -250,7 +261,7 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
               </button>
             )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-shrink-0 whitespace-nowrap">
             {/* View mode toggle */}
             {isJson && (
               <div className="flex items-center gap-1 bg-accent rounded p-0.5">
@@ -326,9 +337,33 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
           </div>
         </div>
         {/* Content */}
-        <div className="flex-1 overflow-auto p-4">
-          {renderContent()}
-        </div>
+        {formattedResult === null ? (
+          <div className="flex-1 overflow-auto p-4">
+            {renderContent()}
+          </div>
+        ) : (
+          // Input and result each scroll on their own rather than forming one
+          // long page.
+          <div className="flex-1 min-h-0 flex flex-col">
+            {/* Diff / file views need a bounded box to fill; plain text input
+                (e.g. a Bash command) shrinks to its content, capped so the
+                result always keeps most of the room. */}
+            <div className={`min-h-0 flex flex-col ${viewMode === 'diff-unified' || viewMode === 'diff-split' || viewMode === 'file' ? 'flex-1' : 'flex-shrink-0 max-h-[40%]'}`}>
+              <div className="px-4 pt-3 pb-1 text-xs text-muted-foreground">{t('toolCall.input')}</div>
+              <div className="flex-1 min-h-0 overflow-auto px-4 pb-3">
+                {renderContent()}
+              </div>
+            </div>
+            <div className="flex-1 min-h-0 flex flex-col border-t border-border">
+              <div className="px-4 pt-3 pb-1 text-xs text-muted-foreground">{t('toolCall.result')}</div>
+              <div className="flex-1 min-h-0 overflow-auto px-4 pb-3">
+                <pre className="text-foreground whitespace-pre-wrap break-words" style={{ fontSize: '0.8125rem' }}>
+                  {formattedResult}
+                </pre>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

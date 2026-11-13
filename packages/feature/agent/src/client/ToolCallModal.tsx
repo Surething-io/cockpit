@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback, useId, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@cockpit/shared-ui';
 import { SubagentTranscriptModal } from './SubagentTranscriptModal';
@@ -20,6 +20,21 @@ import { relativeToRoot } from '@cockpit/shared-utils/pathWithin';
 // ============================================
 // Tool icon mapping
 // ============================================
+
+// Accordion: at most one tool call row is expanded app-wide. Each mounted row
+// owns a useId() token (tool call ids can repeat within a list), and reads
+// only `expandedRow === token`, so a toggle re-renders just the two rows that
+// flip instead of every row in every mounted chat.
+let expandedRow: string | null = null;
+const expandListeners = new Set<() => void>();
+function subscribeExpanded(listener: () => void) {
+  expandListeners.add(listener);
+  return () => { expandListeners.delete(listener); };
+}
+function toggleExpanded(token: string) {
+  expandedRow = expandedRow === token ? null : token;
+  expandListeners.forEach((l) => l());
+}
 
 const TOOL_ICONS: Record<string, string> = {
   Read: '📄',
@@ -67,8 +82,13 @@ interface ToolCallProps {
 
 export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = false }: ToolCallProps) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
-  const [previewContent, setPreviewContent] = useState<{ title: string; content: string; toolName: string } | null>(null);
+  const rowToken = useId();
+  const expanded = useSyncExternalStore(
+    subscribeExpanded,
+    () => expandedRow === rowToken,
+    () => false,
+  );
+  const [showDetails, setShowDetails] = useState(false);
   const [showSubagent, setShowSubagent] = useState(false);
   const [showWorkflow, setShowWorkflow] = useState(false);
 
@@ -193,17 +213,8 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
   const skipRelativePath = toolCall.name === 'Glob' || toolCall.name === 'Grep' || toolCall.name === 'Bash' || toolCall.name === 'ApplyPatch' || isAgentTool || isWorkflow || isSkill;
   const displayPath = displayInfo ? (skipRelativePath ? displayInfo : getRelativePath(displayInfo)) : null;
 
-  const openPreview = (type: 'input' | 'result') => {
-    const suffix = type === 'input' ? t('toolCall.inputParams') : t('toolCall.resultLabel');
-    const content = type === 'input'
-      ? JSON.stringify(toolCall.input, null, 2)
-      : (typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2));
-    setPreviewContent({
-      title: `${toolCall.name}${displayPath ? ` ${displayPath}` : ''} - ${suffix}`,
-      content,
-      toolName: toolCall.name,
-    });
-  };
+  const closeDetails = useCallback(() => setShowDetails(false), []);
+  const openDetails = () => setShowDetails(true);
 
   return (
     // A list item, not a card: no fill, no rounding, and a hairline instead of
@@ -214,7 +225,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
     // below keeps hover:bg-hover.
     <div className="border-b border-line-1 last:border-b-0">
       <button
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => toggleExpanded(rowToken)}
         className="w-full px-3 py-1.5 flex items-center gap-2 text-left hover:bg-hover transition-colors"
       >
         <span className="text-sm">{toolIcon}</span>
@@ -288,34 +299,22 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
           {taskProgress && (
             <span className="text-xs text-muted-foreground truncate max-w-[16rem]">{taskProgress}</span>
           )}
-          {/* Input is offered while the call is still running: a tool call only
+          {/* One "Details" entry opens a modal with input and result stacked.
+              It is offered while the call is still running: a tool call only
               appears once its assistant block has fully arrived, so `input` is
-              already complete here (the expanded body below shows it too). Only
-              the result has to wait for the call to finish. */}
+              already complete; the result half only appears once it lands. */}
           {expanded && !disableOverlays && (
             <>
               <span
                 role="button"
                 tabIndex={0}
-                onClick={(e) => { e.stopPropagation(); openPreview('input'); }}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openPreview('input'); } }}
+                onClick={(e) => { e.stopPropagation(); openDetails(); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openDetails(); } }}
                 className="text-xs text-brand hover:text-teal-10 cursor-pointer"
-                title={t('toolCall.inputParamsTitle')}
+                title={t('toolCall.detailsTitle')}
               >
-                {t('toolCall.input')}
+                {t('toolCall.details')}
               </span>
-              {!toolCall.isLoading && toolCall.result && (
-                <span
-                  role="button"
-                  tabIndex={0}
-                  onClick={(e) => { e.stopPropagation(); openPreview('result'); }}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openPreview('result'); } }}
-                  className="text-xs text-brand hover:text-teal-10 cursor-pointer"
-                  title={t('toolCall.resultTitle')}
-                >
-                  {t('toolCall.result')}
-                </span>
-              )}
             </>
           )}
           {busy ? (
@@ -331,7 +330,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
       {expanded && (
         <div className="border-t border-line-1">
           {/* Only the output is shown inline; the full input stays one click
-              away via the header's "Input" link. While the call is still
+              away via the header's "Details" link. While the call is still
               running there is no result yet, so the input fills the slot
               instead of leaving the expanded body empty. */}
           <div className="px-3 py-2">
@@ -359,12 +358,16 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
       )}
 
       {/* Preview modal */}
-      {previewContent && (
+      {showDetails && (
         <PreviewModal
-          title={previewContent.title}
-          content={previewContent.content}
-          toolName={previewContent.toolName}
-          onClose={() => setPreviewContent(null)}
+          title={`${toolCall.name}${displayPath ? ` ${displayPath}` : ''}`}
+          content={JSON.stringify(toolCall.input, null, 2)}
+          // Omitted while running, so the input gets the whole modal.
+          result={!toolCall.isLoading && toolCall.result
+            ? (typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2))
+            : undefined}
+          toolName={toolCall.name}
+          onClose={closeDetails}
         />
       )}
 

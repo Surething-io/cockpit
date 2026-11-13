@@ -1122,6 +1122,8 @@
     "resultTitle": "View result",
     "input": "Input",
     "result": "Result",
+    "details": "Details",
+    "detailsTitle": "View input and result",
     "foldedLines": "... ({{count}} lines)"
   },
   "fileEditor": {

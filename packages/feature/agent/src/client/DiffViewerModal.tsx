@@ -745,8 +745,11 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
                       <span className="text-xs text-foreground-subtle">{formatCallTime(call.timestamp)}</span>
                     )}
                   </div>
-                  <div className="text-sm text-foreground whitespace-pre-wrap break-words mt-0.5" data-tooltip={callSubject(call)}>
-                    {callSubjectPreview(call, 320, 10)}
+                  {/* Capped at three RENDERED lines: a logical-line limit alone
+                      lets one long wrapping command (a heredoc script) still
+                      fill half the column. The full command is on hover. */}
+                  <div className="text-sm text-foreground whitespace-pre-wrap break-words mt-0.5 line-clamp-3" data-tooltip={callSubject(call)}>
+                    {callSubjectPreview(call, 320, 3)}
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
                     <span>{t('commitDetail.nChanges', { count: call.files.length })}</span>
@@ -811,20 +814,23 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
                     </>
                   ) : displayCall ? (
                     <>
-                      <span className="flex items-center gap-1 text-foreground">
+                      <span className="flex items-center gap-1 text-foreground flex-shrink-0 whitespace-nowrap">
                         <Wrench className="w-3.5 h-3.5" />
                         {displayCall.toolName}
                       </span>
                       {displayCall.shortHash && (
-                        <span className="font-mono text-brand">{displayCall.shortHash}</span>
+                        <span className="font-mono text-brand flex-shrink-0">{displayCall.shortHash}</span>
                       )}
                       {displayCall.timestamp !== undefined && (
-                        <span>{formatCallTime(displayCall.timestamp)}</span>
+                        <span className="flex-shrink-0 whitespace-nowrap">{formatCallTime(displayCall.timestamp)}</span>
                       )}
-                      {/* Description (commit subject). Keep a generous preview in
-                          place; the complete command remains available on hover. */}
-                      <span className="flex-1 min-w-0 whitespace-pre-wrap break-words" data-tooltip={callSubject(displayCall)}>
-                        {callSubjectPreview(displayCall, 640, 6)}
+                      {/* Description (commit subject). One truncated line: a
+                          multi-line preview here gets squeezed into a narrow
+                          column next to the toggles when the modal is narrow.
+                          The left timeline shows the multi-line preview, and
+                          the complete command remains available on hover. */}
+                      <span className="flex-1 min-w-0 truncate" data-tooltip={callSubject(displayCall)}>
+                        {callSubjectPreview(displayCall, 640, 6).replace(/\s*\n\s*/g, ' ')}
                       </span>
                       {displayCall.truncated && (
                         <span className="text-amber-11">{t('diffViewer.truncated')}</span>
@@ -839,7 +845,7 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
                       )}
                     </>
                   ) : null}
-                  <div className="ml-auto flex items-center gap-2">
+                  <div className="ml-auto flex items-center gap-2 flex-shrink-0">
                     {/* Both toggles are text-diff only — an image side-by-side
                         has no density and no unified form (same as the
                         commit-detail / branch-compare panes). */}

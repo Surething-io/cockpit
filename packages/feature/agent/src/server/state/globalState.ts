@@ -387,7 +387,8 @@ export async function attachEngines<T extends { cwd: string; sessionId: string }
 }
 
 /**
- * Build the recent-sessions snapshot (top `limit`, previews attached) — the
+ * Build the recent-sessions snapshot (top `limit` plus every running/unread
+ * session, previews attached) — the
  * exact shape the /ws/global-state channel pushes. Shared by:
  *   - the WS handler (src/lib/effect/globalStateHandler.ts), and
  *   - the /m server page, which SSRs the list so first paint doesn't wait for
@@ -399,7 +400,15 @@ export async function getGlobalSessionsSnapshot(limit = 20): Promise<GlobalSessi
   normalizeStatuses(state.sessions);
 
   state.sessions.sort((a, b) => b.lastActive - a.lastActive);
-  const recent = state.sessions.slice(0, limit);
+  // `lastActive` is stamped when a run starts and again when it ends, never in
+  // between. A long run is therefore pushed out of the top `limit` by every other
+  // session touched meanwhile, and every status indicator fed by this snapshot
+  // (project sidebar dots/badges, recent lists) would lose it until the run ends
+  // and re-stamps it. Running and unread sessions are what those indicators
+  // exist for, so they ride along past the cut.
+  const recent = state.sessions.filter(
+    (s, index) => index < limit || s.status === 'loading' || s.status === 'unread',
+  );
 
   const titleFiles = new Map(await Promise.all([...new Set(recent.map((s) => encodePath(s.cwd)))].map(async (encoded) =>
     [encoded, await Effect.runPromise(readProjectTitles(encoded))] as const,

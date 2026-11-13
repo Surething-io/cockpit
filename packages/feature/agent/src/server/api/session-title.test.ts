@@ -142,6 +142,29 @@ describe('session title API and projections', () => {
       activeSessions.delete(sessionId);
     }
   });
+  it('keeps a long-running session in the snapshot after newer sessions push it past the limit', async () => {
+    const runningId = 'long-running-session';
+    await recent.updateGlobalState(root, runningId, 'loading', 'Long task', 'Started long ago');
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 1_000 });
+    try {
+      await recent.updateGlobalState(root, identity().sessionId, 'normal');
+    } finally {
+      vi.useRealTimers();
+    }
+    activeSessions.add(runningId);
+    try {
+      const snapshot = await recent.getGlobalSessionsSnapshot(1);
+      expect(snapshot.map((s) => s.sessionId)).toEqual([identity().sessionId, runningId]);
+      expect(snapshot[1]).toMatchObject({ status: 'loading' });
+    } finally {
+      activeSessions.delete(runningId);
+    }
+    // Once the run is gone the stored 'loading' reads as 'unread', which still rides along.
+    const afterRun = await recent.getGlobalSessionsSnapshot(1);
+    expect(afterRun.find((s) => s.sessionId === runningId)).toMatchObject({ status: 'unread' });
+    await recent.updateGlobalSessionStatus(root, runningId, 'normal');
+    expect((await recent.getGlobalSessionsSnapshot(1)).map((s) => s.sessionId)).toEqual([identity().sessionId]);
+  });
   it('isolates a failed running transcript and preserves custom titles and healthy rows', async () => {
     const { SessionManager } = await import('@earendil-works/pi-coding-agent');
     const { getPiSessionsDir } = await import('@cockpit/shared-utils');

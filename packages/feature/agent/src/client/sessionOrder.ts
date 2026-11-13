@@ -8,9 +8,9 @@
  * first — done-but-unread, then running, then everything else — and keep
  * newest-first inside each group.
  *
- * This is presentation only. It reorders what was received; it cannot surface a
- * running session that fell outside the server's top-20 slice. In practice a
- * running session has a fresh `lastActive` and is inside it.
+ * This is presentation only. It reorders what was received; the server already
+ * appends running/unread sessions that fall outside its top-20 slice (a long run
+ * keeps its start-time `lastActive`, so it can drop out while still running).
  *
  * Kept dependency-free (no React, no sibling imports) so /m can use it without
  * pulling the desktop row components into the mobile bundle.

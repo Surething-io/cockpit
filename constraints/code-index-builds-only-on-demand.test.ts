@@ -1,10 +1,9 @@
 /**
  * Constraint: CodeIndexBuildsOnlyOnDemand (memory, L1 static).
  *
- * A whole-project Code Map index (plus its analytics) costs ~1.3 GB on a large
- * repo. Only code that answers an explicit code-graph question may build one:
+ * Only code that answers an explicit code-graph question may build a whole-project index:
  * the /api/projectGraph/* routes (Code Map UI, the /cg skill, `cockpit
- * codegraph`). Everything else — the block view, end-of-turn review, anything
+ * codegraph`). Everything else — symbol previews, end-of-turn review, anything
  * that runs merely because a project is open — must use `peekCodeIndex` and
  * degrade when there is no index.
  *
@@ -12,8 +11,8 @@
  * mounted project after a server restart and held 7.3 GB live on a production
  * heap, with ~3 s full-GC pauses that stalled every request.
  *
- * Exception: file-functions may rebuild on an explicit `refresh=1` (the user
- * clicked rebuild), written as `ensureCodeIndex(cwd, { forceRefresh: true })`.
+ * Exception: file-functions may query relations on `relations=1` for supported
+ * source files, or rebuild on explicit `refresh=1`. Symbol-only previews stay local.
  */
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join, relative } from 'path';
@@ -42,7 +41,14 @@ describe('CodeIndexBuildsOnlyOnDemand', () => {
         const rel = relative(ROOT, abs).split('\\').join('/');
         if (rel === CODE_INDEX) continue;
         // Comment lines mention these names in prose; only code counts.
-        const calls = readFileSync(abs, 'utf8')
+        let source = readFileSync(abs, 'utf8');
+        if (rel === FILE_FUNCTIONS) {
+          expect(source).toMatch(/const\s+includeRelations\s*=\s*sp\.get\(["']relations["']\)\s*===\s*["']1["']/);
+          // Remove only the explicitly gated project query. Any other build
+          // in this route must still be reported by the scan below.
+          source = source.replace(/if\s*\(includeRelations\s*&&\s*isIndexSource\(normalizedPath\)\)\s*\{\s*await\s+getCodeIndex\(cwd,\s*\{\s*forceRefresh\s*\}\)\s*\}/g, '');
+        }
+        const calls = source
           .split('\n')
           .filter((line) => !/^\s*(\*|\/\/|\/\*)/.test(line))
           .filter((line) => /\b(?:ensureCodeIndex|getCodeIndex)\(/.test(line));

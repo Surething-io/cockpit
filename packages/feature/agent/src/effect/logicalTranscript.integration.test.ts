@@ -67,17 +67,22 @@ const searchRun = <A, E>(f: (s: import('@cockpit/effect-services').SessionSearch
   Effect.runPromise(Effect.flatMap(services.SessionSearchService, f).pipe(Effect.provide(searchLive.SessionSearchServiceLive)));
 
 describe('logical session end-to-end', () => {
-  it('reads initial titles in one batch, reads metadata once, and isolates a failed transcript', async () => {
+  it('refreshes batch titles, preserves saved revisions, and reads cached metadata once', async () => {
     const project = join(root, 'batch-title-project');
     mkdirSync(project, { recursive: true });
     const ids = ['batch-title-a', 'batch-title-b', 'batch-title-bad'];
     const files = ids.map((id) => paths.getClaudeSessionPath(project, id));
     mkdirSync(dirname(files[0]), { recursive: true });
     for (const [i, file] of files.entries()) writeFileSync(file, line({ type: 'user', cwd: project, sessionId: ids[i], message: { role: 'user', content: `Native title ${i}` } }));
-    await titles.POST(request({ cwd: project, sessionId: ids[0], customTitle: 'Custom batch title' }));
+    const renamed = await titles.POST(request({ cwd: project, sessionId: ids[0], customTitle: 'Custom batch title' }));
+    expect(renamed.status).toBe(200);
+    const saved = await renamed.json();
+    expect(saved.titleRevision).toBeGreaterThan(0);
     let metadataReads = 0;
+    let transcriptOpens = 0;
     hooks.fault = (op, file) => {
       if (op === 'readFile' && file.endsWith('session-titles.json')) metadataReads++;
+      if (op === 'open' && files.includes(file)) transcriptOpens++;
       if (op === 'open' && file === files[2]) throw Object.assign(new Error('Cannot read fixture'), { code: 'EIO' });
     };
     try {
@@ -85,8 +90,15 @@ describe('logical session end-to-end', () => {
       expect(response.status).toBe(200);
       const body = await response.json();
       expect(body.titles.map((info: { title: string }) => info.title)).toEqual(['Custom batch title', 'Native title 1']);
-      expect(body.titles[0]).toMatchObject({ defaultTitle: 'Native title 0', customTitle: 'Custom batch title', titleRevision: 1 });
+      expect(body.titles[0]).toMatchObject({ defaultTitle: 'Native title 0', customTitle: 'Custom batch title', titleRevision: saved.titleRevision });
+      expect(transcriptOpens).toBeGreaterThan(0);
+      metadataReads = 0;
+      transcriptOpens = 0;
+      const cached = await titles.POST(request({ cwd: project, sessionIds: [...ids, ids[0], 'missing-batch-title'], cachedOnly: true }));
+      expect(cached.status).toBe(200);
+      expect((await cached.json()).titles).toEqual(body.titles);
       expect(metadataReads).toBe(1);
+      expect(transcriptOpens).toBe(0);
     } finally { hooks.fault = undefined; }
     expect((await titles.POST(request({ cwd: project, sessionIds: ids, customTitle: 'Invalid batch edit' }))).status).toBe(400);
     expect((await titles.POST(request({ cwd: project, sessionId: ids[0] }))).status).toBe(200);

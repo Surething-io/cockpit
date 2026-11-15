@@ -22,6 +22,8 @@ let dl: LiveMod;
 let hub: HubMod;
 let services: Services;
 let encodePath: (cwd: string) => string;
+let sdk: typeof import('@earendil-works/pi-coding-agent');
+let getPiSessionsDir: typeof import('@cockpit/shared-utils').getPiSessionsDir;
 
 const projectDir = path.join(root, 'project');
 const line = (o: unknown) => JSON.stringify(o) + '\n';
@@ -43,8 +45,11 @@ beforeAll(async () => {
   services = await import('@cockpit/effect-services');
   hub = await import('../server/sessionRunHub');
   dl = await import('./delegationLive');
+  // SDK cold loading belongs to setup, outside the status test's operation timeout.
+  sdk = await import('@earendil-works/pi-coding-agent');
+  ({ getPiSessionsDir } = await import('@cockpit/shared-utils'));
   fs.mkdirSync(projectDir, { recursive: true });
-});
+}, 30_000);
 
 afterAll(() => {
   fs.rmSync(root, { recursive: true, force: true });
@@ -253,9 +258,7 @@ describe('DelegationService.status', () => {
   const asstLine = (stop: string, blocks: unknown[]) => ({ type: 'assistant', uuid: `a-${Math.random()}`, timestamp: '2026-09-01T00:00:03Z', message: { role: 'assistant', stop_reason: stop, content: blocks } });
 
   it('retains unresolved Pi input status across unrelated later successes', async () => {
-    const { SessionManager } = await import('@earendil-works/pi-coding-agent');
-    const { getPiSessionsDir } = await import('@cockpit/shared-utils');
-    const source = SessionManager.create(projectDir, getPiSessionsDir(projectDir));
+    const source = sdk.SessionManager.create(projectDir, getPiSessionsDir(projectDir));
     source.appendModelChange('ollama', 'test-model');
     source.appendMessage({ role: 'user', content: 'first task', timestamp: Date.now() });
     const success = {

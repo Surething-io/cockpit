@@ -1,3 +1,5 @@
+import { indexResponse } from "./indexResponse"
+import { indexQueryError } from "@cockpit/feature-explorer/server/codeMap/projectGraph/indexFiles"
 /**
  * /api/projectGraph/impact — Transitive caller closure (impact radius).
  *
@@ -16,8 +18,8 @@ import {
   impactFromIndex,
 } from "@cockpit/feature-explorer/server/codeMap/projectGraph/codeIndex"
 import { validateCwd } from "@cockpit/feature-explorer/server/files/shared"
-import { handler, ok } from "@cockpit/effect-runtime/server"
-import { AppError, ValidationError } from "@cockpit/effect-core"
+import { handler } from "@cockpit/effect-runtime/server"
+import { ValidationError } from "@cockpit/effect-core"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -49,11 +51,11 @@ export const GET = handler((req) =>
     const result = yield* Effect.tryPromise({
       try: async () => {
         const index = await getCodeIndex(cwd)
-        return impactFromIndex(index, qname, depth, filePath)
+        return indexResponse(index, impactFromIndex(index, qname, depth, filePath))
       },
       catch: (cause) =>
-        new AppError({ message: "Impact lookup failed", cause }),
+        indexQueryError(cause, "Impact lookup failed"),
     })
-    return ok(result)
+    return result
   })
 )

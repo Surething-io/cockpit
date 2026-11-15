@@ -21,7 +21,8 @@
 import type { Node } from 'web-tree-sitter';
 
 export interface ImportBinding {
-  /** Module specifier — e.g. `react`, `@/lib/foo`, `./bar`. */
+  /** Module specifier — e.g. `react`, `@/lib/foo`, `./bar`.
+   * Empty for an explicit export of a binding in the current module. */
   specifier: string;
   /** Name as exported from the module: `useState`, the symbol name from
    *  named imports, `default` for default imports, `*` for namespace. */
@@ -29,7 +30,7 @@ export interface ImportBinding {
   /** Local alias used inside this file. Defaults to `importedName`
    *  unless `import { foo as bar }`. */
   localName: string;
-  /** When true, this binding ALSO forwards the name to consumers of
+  /** When true, this binding publishes the name to consumers of
    *  THIS file (i.e. `export { foo } from '...'` in JS/TS, `pub use
    *  foo::Bar;` in Rust). The resolver follows the chain when looking
    *  up `foo` against this file: a local symbol takes precedence,
@@ -37,6 +38,9 @@ export interface ImportBinding {
    *  b.isReexport)` and recurse to its `specifier`. Default `false`
    *  for plain `import { foo } from '...'` — those are local-scope
    *  only and never visible to upstream consumers.
+   *
+   *  JS/TS also uses this for explicit local exports (specifier='') and
+   *  wildcard forwarding (localName=importedName='*').
    *
    *  Languages without a reexport concept (Python / Go) always emit
    *  `false` (or omit). Folding reexports into the binding shape is
@@ -83,11 +87,9 @@ export interface RawCall {
 //   `export { foo as bar } from '<spec>'`     → localName='bar', importedName='foo', isReexport=true
 //   `export { default as foo } from '<spec>'` → localName='foo', importedName='default', isReexport=true
 //
-// NOT covered (yet):
-//   - `export * from '<spec>'`     — needs transitive name expansion;
-//                                    deferred (rarer than named re-exports).
-//   - `export { foo }` (no `from`) — re-publishes a LOCAL symbol, already
-//                                    discoverable via flatSymbols.
+//   `export * from '<spec>'`                 → localName='*', importedName='*'
+//   `export { foo }` / `export function foo` → specifier='', localName='foo'
+// Wildcard names are resolved on demand; no expanded export table is retained.
 
 /**
  * Walk the tree and collect every `call_expression`. For each, record
@@ -419,30 +421,22 @@ function extractPythonFromBindings(n: Node, out: ImportBinding[]): void {
 }
 
 /**
- * Walk a JS/TS tree and collect every `export { ... } from '<spec>'`
- * named re-export. Each `export_specifier` becomes a single `Reexport`
- * row; the resolver in `codeIndex` builds a per-file lookup from these.
- *
- * Local re-exports without a `from` (`export { foo }`) are skipped —
- * they only re-publish symbols that already exist in this file's
- * `flatSymbols`, so the resolver finds them through the regular path.
- *
- * `export * from '<spec>'` is also skipped here. Wildcard re-export
- * is rarer in practice and would require transitive name expansion
- * (resolve the source's exports first, then re-publish them all)
- * which is more invasive. Adding it is a follow-up if real codebases
- * need it.
+ * Collect explicit local exports and forwarding bindings. Recording public
+ * names prevents wildcard traversal from exposing private top-level helpers.
+ * The same rows retain aliases, explicit overrides and wildcard sources.
  */
 export function extractReexports(root: Node): ImportBinding[] {
   const out: ImportBinding[] = [];
   for (let i = 0; i < root.namedChildCount; i++) {
     const n = root.namedChild(i);
     if (!n || n.type !== 'export_statement') continue;
+    if (n.children.some(c => c.type === 'type')) continue;
     const src = n.childForFieldName('source');
-    if (!src) continue; // local re-export, skipped (see docstring)
-    const specifier = stripQuotes(src.text);
+    const specifier = src ? stripQuotes(src.text) : '';
+    const add = (localName: string, importedName = localName) => {
+      out.push({ localName, importedName, specifier, isReexport: true });
+    };
     // Find the `export_clause` child holding the named specifiers.
-    // `export * from 'spec'` doesn't have one — we silently skip it.
     let clause: Node | null = null;
     for (let j = 0; j < n.namedChildCount; j++) {
       const c = n.namedChild(j);
@@ -451,10 +445,33 @@ export function extractReexports(root: Node): ImportBinding[] {
         break;
       }
     }
-    if (!clause) continue;
+    if (!clause) {
+      const namespace = n.namedChildren.find(c => c.type === 'namespace_export');
+      if (namespace) {
+        const name = namespace.namedChild(0);
+        if (name) add(name.text, '*');
+      } else if (src && n.children.some(c => c.type === '*')) {
+        add('*');
+      } else {
+        const declaration = n.childForFieldName('declaration');
+        if (declaration?.type === 'interface_declaration' || declaration?.type === 'type_alias_declaration') continue;
+        const isDefault = n.children.some(c => c.type === 'default');
+        if (declaration?.type === 'lexical_declaration' || declaration?.type === 'variable_declaration') {
+          for (const declarator of declaration.namedChildren) {
+            const name = declarator.childForFieldName('name');
+            if (name?.type === 'identifier') add(name.text);
+          }
+        } else {
+          const name = declaration?.childForFieldName('name') ?? n.childForFieldName('value');
+          if (name?.type === 'identifier' || name?.type === 'type_identifier') add(isDefault ? 'default' : name.text, name.text);
+        }
+      }
+      continue;
+    }
     for (let k = 0; k < clause.namedChildCount; k++) {
       const spec = clause.namedChild(k);
       if (!spec || spec.type !== 'export_specifier') continue;
+      if (spec.children.some(c => c.type === 'type')) continue;
       const nameNode = spec.childForFieldName('name');
       const aliasNode = spec.childForFieldName('alias');
       if (!nameNode) continue;
@@ -465,12 +482,7 @@ export function extractReexports(root: Node): ImportBinding[] {
       // consumers of THIS file (was `exportedName` in the legacy
       // Reexport type); `importedName` is the name in the source
       // file (was `originalName`).
-      out.push({
-        localName: exportedName,
-        specifier,
-        importedName: originalName,
-        isReexport: true,
-      });
+      add(exportedName, originalName);
     }
   }
   return out;

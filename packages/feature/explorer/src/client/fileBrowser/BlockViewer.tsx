@@ -1252,24 +1252,15 @@ export function BlockViewer({
     onFocalChange?.(focalFile);
   }, [focalFile, onFocalChange]);
 
-  const { state: fnsState, refresh } = useFileFunctions(cwd, focalFile);
+  const { state: fnsState, refresh, reload } = useFileFunctions(cwd, focalFile, true);
   // The map is a cross-file view: a file-local answer (index still building)
   // would render a canvas with no caller / callee pins and then re-layout.
   // Keep the build progress up until the full projection lands.
   const state =
     fnsState.state === 'ready' && fnsState.data.crossFilePending ? LOADING_STATE : fnsState;
 
-  // Source text for the focal file — needed so each block can slice
-  // and highlight its own lines. One fetch per focal-file change.
-  // We also keep `mtimeMs` from the response so the freshness-check
-  // effect below can cross-check it against the indexed projection's
-  // mtime: `/api/files/text` always reads fresh from disk, while
-  // `/api/projectGraph/file-functions` is backed by an in-memory
-  // index that's only refreshed by `refreshFocalFile` per request
-  // OR by the manual "Rebuild project graph" button. When the two
-  // disagree (file was edited on disk but our cached projection is
-  // older), we trigger a refresh so the chip layout matches the
-  // text we're slicing it from.
+  // Source and focal projection are separate reads. Their metadata lets us
+  // refetch just the focal projection when an edit lands between those reads.
   const [fileSource, setFileSource] = useState<{
     content: string;
     mtimeMs: number;
@@ -1307,22 +1298,7 @@ export function BlockViewer({
     [fileSource],
   );
 
-  // Freshness cross-check. When fileSource arrives with an mtime
-  // newer than `state.data.mtimeMs`, the projection was built from
-  // a stale snapshot — call `refresh()` to invalidate the client
-  // cache and refetch (which will trigger the server-side
-  // `refreshFocalFile` for free, since it stats on every request).
-  //
-  // Why not server-only: the client `ffCache` (in `useFileBlocks`)
-  // is keyed by `(cwd, file)` only. A second visit to the same
-  // focal hits cache → returns the OLD entry without ever calling
-  // the server. The cross-check forces a refetch when we have
-  // evidence the cache is stale. Common case (same mtime) is
-  // free: the comparison is one number.
-  //
-  // Skips: synthetic responses (markdown / unsupported / not-found
-  // fallback) where `mtimeMs` may be 0; we just don't cross-check
-  // (those paths don't have a re-parse story anyway).
+  // A focal refresh must not turn an ordinary edit into a full project rebuild.
   const refreshedForMtime = useRef<number | null>(null);
   useEffect(() => {
     if (!fileSource) return;
@@ -1337,8 +1313,8 @@ export function BlockViewer({
     // the escape hatch.
     if (refreshedForMtime.current === fileSource.mtimeMs) return;
     refreshedForMtime.current = fileSource.mtimeMs;
-    refresh();
-  }, [fileSource, state, refresh]);
+    reload();
+  }, [fileSource, state, reload]);
 
   // History FIFO of visited functions. Populated ONLY by pin
   // navigation (and the user re-clicking entries in the history
@@ -2332,6 +2308,11 @@ export function BlockViewer({
         ref={setReviewAnchor}
         className="@container flex-1 relative min-h-0 flex"
       >
+        {(data.crossFileStale || data.indexUpdateError) && (
+          <div className="absolute top-0 right-0 z-10 px-2 py-1 text-xs bg-background text-muted-foreground border border-border rounded">
+            {data.indexUpdateError ?? t('blockViewer.relationsStale', 'Project relations need a refresh')}
+          </div>
+        )}
         {/* Left rail — one tab bar over two panels, only one visible at a
             time. The inactive panel is HIDDEN, not unmounted, so a long
             file's TOC keeps its scroll position across switches (same

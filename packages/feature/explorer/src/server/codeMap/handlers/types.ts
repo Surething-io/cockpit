@@ -129,6 +129,13 @@ export type CallResolution =
 // LanguageHandler — the contract
 // ============================================================================
 
+/** Immutable file contents captured by the current project scan. */
+export interface ProjectContextFiles {
+  paths: readonly string[];
+  /** Rejects when the path was not captured, matching filesystem reads. */
+  readFile: (relativePath: string) => Promise<string>;
+}
+
 export interface LanguageHandler {
   /** The tree-sitter grammar this handler covers. ONE handler instance
    *  may register itself under multiple grammar ids (TS / TSX / JS all
@@ -202,6 +209,7 @@ export interface LanguageHandler {
   buildProjectContext(
     cwd: string,
     fileSet: ReadonlySet<string>,
+    files?: ProjectContextFiles,
   ): Promise<ProjectContext> | ProjectContext;
 
   // --------------------------------------------------------------------

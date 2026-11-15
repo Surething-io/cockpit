@@ -5,11 +5,12 @@ description: "Trace code and assess change impact via the pre-built symbol, call
 
 Enter project graph exploration mode (CodeGraph).
 
-CodeGraph = pre-built symbol + call-graph index + git co-edit view. Six endpoints, each answers one class of question:
+CodeGraph = pre-built symbol + call-graph index + git co-edit view. Nine endpoints, each answers one class of question:
 
 | Question | Endpoint |
 |---|---|
 | Where is X defined / which files share the name? | search?q=X |
+| Export every function/method, optionally within a directory? | symbols?path=src&excludeTests=true |
 | Who calls X? | callers?qname=X |
 | What does X call? | callees?qname=X |
 | Changing X affects which symbols? | impact?qname=X&depth=2 |
@@ -18,17 +19,41 @@ CodeGraph = pre-built symbol + call-graph index + git co-edit view. Six endpoint
 
 All responses are coordinates / file paths — never source bodies. (One exception: `search&includeLiterals=true` echoes each matched literal's own text in `value`.) More precise than grep's textual match, cheaper in tokens than Reading whole files.
 
-## The 6 graph endpoints ({{BASE_URL}})
+## The 7 graph endpoints ({{BASE_URL}})
 
 ```bash
 # search: find symbols by name → hits carry the same node shape as every other
 #   endpoint, so a hit's startLine/endLine feed Read directly.
 # q is normalized for naming style: user_profile / userProfile / user-profile / USER_PROFILE are equivalent
+# limit defaults to 50 per category and is capped at 500; use symbols for a full export.
+# All eligible candidates are scanned. Ranking: raw exact name > normalized exact
+# > normalized prefix > normalized substring; ties use path, qualifiedName, then line.
+# path limits the directory (including descendants); excludeTests=true filters every category.
+# Tests are included by default. Small limits still find exact definitions after many fuzzy matches.
 # Pass includeLiterals=true to also search identifier-shaped string literals (tool names, event names,
 # config keys, route paths — the "looks like a name but isn't an identifier" strings). The response
 # then carries an extra literals[] array with value / filePath / line / enclosingSymbol per hit.
 curl -fsS "{{BASE_URL}}/api/projectGraph/search?cwd=$PWD&q=<NAME>"
 curl -fsS "{{BASE_URL}}/api/projectGraph/search?cwd=$PWD&q=<NAME>&includeLiterals=true"
+curl -fsSG "{{BASE_URL}}/api/projectGraph/search" --data-urlencode "cwd=$PWD" \
+  --data-urlencode 'q=<NAME>' --data-urlencode 'path=apps/api/src/features' \
+  --data-urlencode 'excludeTests=true' --data-urlencode 'limit=5'
+
+# Full export: defaults to function + method, including indexed nested symbols.
+# path is a project-relative directory including descendants. Omit it for the whole project.
+# kind accepts a comma-separated list or all (real symbols only).
+# includeSynthetic=true also includes unknown UI blocks (__imports__, __code_*).
+# Repeat exclude for POSIX globs rooted at cwd. Quote globs; dot paths require explicit dots.
+# Start broad exploration with a summary; no result-count cap or export cache.
+curl -fsSG "{{BASE_URL}}/api/projectGraph/symbols" --data-urlencode "cwd=$PWD" \
+  --data-urlencode 'path=packages/feature' --data-urlencode 'excludeTests=true' \
+  --data-urlencode 'kind=all' --data-urlencode 'format=summary'
+
+# Save full exports to disk, then print only a bounded selection of candidates.
+curl -fsSG "{{BASE_URL}}/api/projectGraph/symbols" --data-urlencode "cwd=$PWD" \
+  --data-urlencode 'path=src' --data-urlencode 'excludeTests=true' \
+  --data-urlencode 'exclude=**/generated/**' --data-urlencode 'exclude=**/*.spec.ts' \
+  -o /tmp/cg-symbols.json
 
 # callers / callees: 1-hop call relations
 curl -fsS "{{BASE_URL}}/api/projectGraph/callers?cwd=$PWD&qname=<QNAME>"
@@ -65,6 +90,15 @@ search    { files[], symbols[], literals?[] }      # literals only with includeL
             symbols[]  = { type:'symbol',  label, hint?, target: NODE }
             literals[] = { type:'literal', value, filePath, line, enclosingSymbol? }
             # narrow on the outer `type`
+symbols   { revision, incomplete, total, symbols[]: NODE, excludedFiles[] }
+            # excludedFiles[] = { filePath, reason:"source-too-large", sizeBytes, limitBytes }
+            # exclusions cover the entire revision, before export filters
+            # flat output; default kind=function,method; kind=all includes all real kinds
+            # unknown display blocks require includeSynthetic=true
+            # format=summary replaces symbols[] with files, byKind, byDirectory:
+            # [{path, total, files, byKind}]; groups are immediate child directories
+            # of path. Direct files use path or '.'. All export filters apply.
+            # total is the count after filters; incomplete describes source-index coverage
 file      { filePath, language, symbols[] }
             symbols[] = NODE plus { contentHash, children[] }
             # children[] is always an array, empty for leaves (never null / absent)
@@ -75,139 +109,98 @@ coedit    { target: string, totalCommits, uncommitted[],
             history[]: { filePath, cooccurrence, probability, lastCoEdit } }
             # probability = cooccurrence / totalCommits, precomputed. `cooccurrence`
             # alone is a RAW COUNT — never compare it against a ratio threshold.
-context   { results[]: NODE + { score, signals[] }, seeds[]: { node, weight, from }, degraded }
-related   { target, results[]: NODE + { score, relations[] }, coedit[], degraded, ambiguousIn? }
-risk      { target, totalImpactedNodes, highRisk[]: NODE + { depth, risk{}, tags[] },
-            suggestedTests[], coedit[], degraded, degradedReason? }   # NOTE: no ambiguousIn
+related   { target, results[]: NODE + { score, relations[] }, coedit[], degraded, degradedReason?, ambiguousIn? }
 affected  { testFiles[], byInput[]: { filePath, reachable, reachableTests[] },
             unresolved[], stats: { visited, bfsMs, truncated }, degraded }
 ```
 
-The `coedit[]` embedded in related / risk is a strict SUPERSET of a `/coedit`
-history row (same fields plus a per-row `totalCommits`) — you never need a second
-request to get recency.
+## Related code and affected tests
 
-Errors are `{ error, tag }`. Tags seen from these routes: `ValidationError` (400),
-`NotFoundError` (404), `AppError` (500 — every endpoint wraps its lookup in one, so
-an index/git failure surfaces here), `InternalError` (500, uncaught defect).
+Project graph endpoints share the base symbol/import/call index. Coedit reads Git on
+request. There is no secondary analysis cache or warm-up phase.
 
-## Silent-failure traps
+Only Git working trees (including linked worktrees) are supported. Every
+project-index query verifies Git membership and source content hashes, then
+reuses unchanged parse facts and atomically publishes consistent relations.
+Watcher events only record changes; they never trigger parsing by themselves.
+Tracked `node_modules` files are excluded too. Tests remain indexed.
+`symbols` and `search` with `excludeTests=true` filter test/spec/e2e names, test/tests/__tests__
+directories, Python test_*.py/pyi and Go *_test.go; this recognition is heuristic.
 
-- **An unknown qname returns HTTP 200, not 404.** `callers` / `callees` / `impact` /
-  `related` / `risk` answer a typo'd or non-indexed name with `target: null` (every
-  endpoint spells this slot `target`, callees included) and empty arrays — byte-identical to a real symbol that genuinely has no
-  callers. **Always check `target !== null` before concluding "nothing calls this" / "this
-  change is safe".** Same for `coedit` on an unknown path (200, empty). Only `file` 404s.
-- **A non-null `target` with `callers: []` does NOT mean "nothing calls this".**
-  `obj.method()` resolves only when the receiver's imported name directly names the
-  container — a class (`Klass.method()`), a namespace import (`import * as m`), or a
-  re-export chain. Two very common forms resolve to nothing and are dropped from the
-  graph (kept as `methodCalls`, which are visibility-only):
-    - a call on an exported singleton instance — `export const repo = new Repo()`
-      then `repo.method()`. The receiver is the INSTANCE name, so the lookup misses
-      the class's `Repo>method`. In a singleton-style codebase this hides the whole
-      repository / service layer from inbound call queries.
-    - a re-export alias (`export const estimateTokens = countTokens`) — calls are
-      attributed to neither name: the alias indexes as a `const` with 0 callers,
-      and the real function never sees them.
-  `callers` / `impact` / `risk` fail outright here; `callees` (outbound) is fine.
-  `related` only DEGRADES — it loses the `caller` relation but still returns
-  ppr-neighbor / sibling-in-community / callee neighbours (measured: 10 results for
-  a singleton method whose `callers` was 0). It stays usable for "what else should I
-  read", just not for "who calls this". **`risk` is the dangerous one** — it does not come back empty,
-  it comes back confident: `totalImpactedNodes: 0`, `highRisk: []`,
-  `suggestedTests: []`, `degraded: false`, i.e. "this change is safe and needs no
-  tests". `impact` likewise returns a plausible small `nodes` list (just the target
-  itself) with `truncated: false`. Neither carries any signal that resolution failed.
-  When the answer decides whether a change is safe, cross-check with grep, or use
-  `/affected` — its file-level import closure does not depend on call resolution.
-- **`risk` does NOT report `ambiguousIn`.** When several files define the same qname,
-  `callers` / `callees` / `impact` / `related` list the others in `ambiguousIn` — but `risk`
-  silently scores an arbitrary one of them. Before trusting a risk report on a common name
-  (`render`, `handler`, `init`), resolve the name with `search` or `related` first, then
-  pass `&filePath=<rel>`.
-- **`frequent-coedit` relations quietly vanish in a restructured repo.** `coedit`
-  history comes from `git log --follow`, so it can cite PRE-RENAME paths. `related`
-  attaches a `frequent-coedit` relation only when that path still resolves in the
-  index, so after a large move/rename the relation is silently dropped — while
-  `related.coedit[]` (the raw echo) still lists the stale path and `degraded` stays
-  `false`. Measured on two repos: every coedit partner path was stale, so no
-  `frequent-coedit` relation was reachable at all, despite co-edit strengths of
-  0.30-0.47 (well over the 0.2 emission threshold). The threshold is on
-  `probability` (= cooccurrence / totalCommits), which the API now returns directly.
-- `degraded: true` results are still usable, just lower precision — but an empty
-  `coedit` / `suggestedTests` under `coedit-unavailable` means "signal missing", not
-  "no coupling". Do not read it as evidence of safety.
+Worktrees sharing a canonical Git common directory reuse identical per-path
+parse facts and lookup maps. Relations are resolved independently, then equal
+whole-file relation bundles share read-only storage. File membership, timestamps,
+configuration, revisions and failures remain worktree-local. Published roots own
+the shared storage; eviction releases their references, and the memory budget
+counts each shared block once.
 
-## Technical contract
-
-- Endpoints return coordinates only. Fetch source with Read:
-  `Read offset=startLine limit=endLine-startLine+1` — works off any hit, `search` included.
-- qname uses `Parent>Child` form (not `.`); copy `qualifiedName` from search's response directly
-- Cross-file name collisions are listed in `ambiguousIn` — pass `&filePath=<rel>` to
-  disambiguate. Present on `callers` / `callees` / `impact` / `related` only.
-
-## The 4 advanced endpoints (smart ranking / relatedness / risk)
-
-When the six base endpoints' pure structural data isn't enough — especially when exploring code or evaluating change impact — use these to get scored, signal-annotated results.
-
-| Question | Endpoint |
-|---|---|
-| Where is the code related to this question / cursor? | context?query=&cursor= |
-| What else should I read while looking at X? | related?qname=X |
-| Changing X — which few nodes truly matter? Which tests to run? | risk?qname=X |
-| Changed these files — which tests should CI run? (conservative closure) | affected?files=… |
+Known Git operations in progress or paused on conflicts reject ordinary
+queries. Finish the operation first; an explicit UI rebuild can inspect the
+current workspace. Large changes rebuild all relations at 500 changed paths,
+or at least 20 paths representing 20% of the larger old/new source count.
+Manual force rebuild reparses all admitted sources. Symbol-only file previews
+stay local. Opening the function call graph queries the project index on demand
+and waits for its relations (`file-functions&relations=1`). Source/file caps are reported as incomplete
+coverage (`X-Code-Index-Incomplete: 1` on project queries). Sources exceeding
+2 MiB (2,097,152 actual input bytes) are excluded; exactly 2 MiB is admitted.
+The symbols response lists oversized paths, reasons and byte sizes in
+`excludedFiles`, even when outside the export directory. Responses also
+include `X-Code-Index-Revision`. Fingerprints do not make heuristic call
+resolution exact.
 
 ```bash
-# context: multi-source LEXICAL + GRAPH retrieval — NOT semantic. `query` is matched
-#   as tf-idf over identifier TOKENS, then expanded through the graph (PPR / pagerank).
-#   There is no embedding step, so a natural-language question whose words are not
-#   identifiers in this repo returns confident noise: "how do users authenticate with
-#   oauth" ranks `withFileLock` first, matching the token "with". Feed it identifier-
-#   shaped terms, and treat a top hit carrying only ppr/pagerank (no query-match) as
-#   "the query matched nothing".
-#   (query / cursor / openFiles — at least one, else 400 at-least-one-required.)
-#   Returns Top-K coordinates + signals, each carrying
-#   its own payload field: query-match{tfidf} / ppr{pprScore} / pagerank{pagerank} / open{filePath}.
-#   seeds[] shows what drove retrieval: { node, weight, from: query|cursor|open }.
-curl -fsS "{{BASE_URL}}/api/projectGraph/context?cwd=$PWD&query=<TEXT>&cursor=<FILE>::<QNAME>&topK=15"
+# Related = direct callers, callees, and frequent coedit partners.
+# include=structural skips Git; include=coedit skips direct call relations.
+curl -fsS "{{BASE_URL}}/api/projectGraph/related?cwd=$PWD&qname=<QNAME>&topK=10&include=all"
 
-# related: broader than callers/callees — includes coedit / PPR neighbours / Louvain community
-# Each result carries relations[], each with its own payload: caller|callee{callLines[]} /
-#   ppr-neighbor{pprScore} / sibling-in-community{communityId} / frequent-coedit{cooccurrence,totalCommits}
-# Cross-file name collisions are listed in ambiguousIn — pass &filePath=<rel> to disambiguate (same as callers/callees)
-curl -fsS "{{BASE_URL}}/api/projectGraph/related?cwd=$PWD&qname=<QNAME>&topK=10"
-
-# risk: risk-scored impact
-# Returns highRisk (sorted by risk.score desc) + suggestedTests
-#   risk{}   = { score, callFreq, coeditProb, hasTest, pagerank }
-#   tags[]   = high-risk | untested | frequent-coedit | core | leaf
-#   suggestedTests[] = { filePath, reason, coveredNodes[] },
-#                      reason = direct-test | coedit-history | sibling-test
-# risk.score = callFreq + coeditProb + (hasTest ? 0 : penalty) + pagerank, decayed by depth
-curl -fsS "{{BASE_URL}}/api/projectGraph/risk?cwd=$PWD&qname=<QNAME>&depth=2&topK=20"
-
-# affected: file-level reverse-import closure → test files transitively affected
-# Sister to /risk: risk is symbol-centric + precision-oriented (for analysis),
-# affected is file-centric + recall-oriented (for CI / selective-test pipelines).
-# depth is clamped to 1-20 (default 10). Inputs not in the index come back in unresolved[].
+# File-level reverse-import closure, with test-file recognition.
 curl -fsS "{{BASE_URL}}/api/projectGraph/affected?cwd=$PWD&files=<a.ts,b.ts>&depth=10"
 
-# affected via POST — for large file lists. cwd goes IN THE BODY; passing it as a
-#   query param returns 400. This is the one endpoint that does not take ?cwd=.
+# For large input lists, cwd belongs in the JSON body.
 curl -fsS -X POST "{{BASE_URL}}/api/projectGraph/affected" -H 'content-type: application/json' \
   -d '{"cwd":"'"$PWD"'","files":["a.ts","b.ts"],"depth":10}'
 
-# format=plain → newline-separated test paths for xargs pipelines; diagnostics move to
-#   headers: X-Unresolved-Count / X-Visited / X-Truncated / X-Degraded / X-Degraded-Reason
+# Plain format emits test paths; diagnostics are returned in headers.
 curl -fsS "{{BASE_URL}}/api/projectGraph/affected?cwd=$PWD&files=<a.ts>&format=plain"
 ```
 
-## Advanced endpoint contract
+`related.relations` contains `caller{callLines[]}`, `callee{callLines[]}`, or
+`frequent-coedit{cooccurrence,totalCommits}`. Scores are ranking heuristics only:
+0.4 per direct relation, plus 0.3 times the coedit probability. They are not risk
+estimates. Coedit partners use their first real symbol as a navigation anchor;
+the relation is evidence about the file, not evidence that this symbol changed.
+The raw `coedit[]` includes non-code and historical paths and adds `totalCommits`
+to each history row. Reuse it rather than calling `/coedit` again.
 
-- `score` / `risk.score` are for ranking only; absolute values have no meaning
-- `signals` / `relations` / `tags` explain WHY each result is relevant — feel free to cite them to the user
-- `degraded: true` means results are still usable but lower precision; `degradedReason` gives the cause (`analytics-warming` = backing index warming up, retry later; `analytics-over-budget` = memory is held by other projects in active use, do not poll — use the degraded result, it clears once they go idle; `analytics-skipped-oversized` = project too large, will never arrive; `coedit-unavailable` = git history signal unavailable, fall back to manually picking tests). The reason can flip between calls while the index warms.
-- **risk / related responses already include a `coedit` field** (target file's coedit history) — DO NOT issue a separate /coedit request for the same file.
-- If related returns `ambiguousIn`, the same qname exists in multiple files — retry with `&filePath=<rel>`
-- These four endpoints also return coordinates only; fetch source with Read
+## Interpretation and limits
+
+- Check `target !== null` before interpreting empty results. Unknown symbols
+  return HTTP 200 with empty relations. Use `search` to locate the definition.
+- Use `qualifiedName` verbatim (`Parent>Child`), and pass `filePath` to
+  disambiguate. On ambiguity, `callers`, `callees`, `impact`, and `related`
+  return HTTP 200 with target=null, empty relations and candidate paths in
+  `ambiguousIn`. No target is auto-selected; no relations or coedit are computed.
+  Retry with the intended filePath. The CLI exits 2 on ambiguity, including
+  --json mode, while preserving the JSON response.
+- For project/business overviews, query symbols with format=summary first,
+  then narrow path/kind. Keep full exports on disk; never print every symbol
+  into context. Read at most 30 selected coordinates per batch. Business
+  ownership still requires module documentation and source confirmation.
+- Static call resolution is incomplete. Exported singleton-instance methods,
+  aliases such as `export const alias = original`, and dynamic dispatch can
+  lack incoming edges. Empty callers or impact is not evidence of safety.
+  Cross-check source/text search; `affected` offers a broader file-import view
+  within the imports the index can resolve.
+- `related.degradedReason` is `coedit-unavailable` when Git lookup fails, or
+  `truncated` when the source index is capped. Empty successful Git history is
+  a valid result. `degraded: false` does not establish complete call resolution.
+- `affected` reports unresolved input paths and traversal truncation. Its test
+  recognition is heuristic; returned tests do not prove behavioral coverage.
+- Coedit history can contain pre-rename or non-code paths. These remain in
+  `coedit[]` even when no indexed symbol is available to navigate to them.
+- Read source using `startLine` / `endLine`; endpoints return coordinates.
+- `context` and `risk` have been removed. Use `search` + `related` to explore,
+  and `impact` / `affected` / `coedit` to inspect change evidence.
+
+Errors are `{ error, tag }`, including ValidationError (400), NotFoundError
+(404), AppError (500), and InternalError (500).

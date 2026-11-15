@@ -1,25 +1,14 @@
 /**
- * Client hook for the Code Map's chip view.
- *
- * `useFileFunctions(cwd, filePath)` fetches the focal file's projection
- * (functions + intra-file calls + cross-file callers/callees). Cached
- * per (cwd, filePath) so flipping back and forth between focal files is
- * instant after the first visit. The server keeps the project-wide
- * CodeIndex hot per cwd. For a brand-new cwd the server does NOT wait for
- * that index (a full project parse — up to tens of seconds on monorepos):
- * it answers the file-local layer flagged `crossFilePending`, and the hook
- * refetches once the build's `done` frame arrives over `/ws/watch`.
- *
- * `invalidateBlocksCache(cwd)` is called when the user hits the manual
- * refresh button — drops every focal-file projection for that cwd so
- * the next fetch goes through to a freshly-rebuilt index.
+ * Fetch current focal-file projections, coalescing only concurrent requests.
+ * Symbol previews stay local. Graph views request project relations on demand;
+ * completion reads only observe the published revision, avoiding build loops.
  */
 
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FileFunctionsResponse } from '@cockpit/feature-explorer/server/codeMap/projectGraph/types';
-// Wrap fetches in Effect while preserving the cache/inflight de-dup semantics below.
+// Effect preserves tagged failures; the map below only coalesces in-flight IO.
 import { Effect } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { AppError } from '@cockpit/effect-core';
@@ -32,19 +21,16 @@ export type FileFunctionsState =
   | { state: 'notFound' }
   | { state: 'error'; message: string };
 
-const ffCache = new Map<string, FileFunctionsResponse>();
 const ffInflight = new Map<string, Promise<FileFunctionsResponse | 'not-found'>>();
 
-const ffKey = (cwd: string, file: string) => `${cwd}::${file}`;
+const ffKey = (cwd: string, file: string, relations = false) => `${cwd}::${relations ? 'project' : 'file'}::${file}`;
 
 export function invalidateBlocksCache(cwd?: string): void {
   if (!cwd) {
-    ffCache.clear();
     ffInflight.clear();
     return;
   }
   const prefix = `${cwd}::`;
-  for (const k of ffCache.keys()) if (k.startsWith(prefix)) ffCache.delete(k);
   for (const k of ffInflight.keys()) if (k.startsWith(prefix)) ffInflight.delete(k);
 }
 
@@ -52,11 +38,10 @@ async function fetchFileFunctions(
   cwd: string,
   filePath: string,
   forceRefresh = false,
+  includeRelations = false,
 ): Promise<FileFunctionsResponse | 'not-found'> {
-  const k = ffKey(cwd, filePath);
+  const k = ffKey(cwd, filePath, includeRelations);
   if (!forceRefresh) {
-    const cached = ffCache.get(k);
-    if (cached) return cached;
     const pending = ffInflight.get(k);
     if (pending) return pending;
   } else {
@@ -70,6 +55,7 @@ async function fetchFileFunctions(
     try: async () => {
       const params = new URLSearchParams({ cwd, path: filePath });
       if (forceRefresh) params.set('refresh', '1');
+      if (includeRelations) params.set('relations', '1');
       const res = await fetch(`/api/projectGraph/file-functions?${params}`);
       if (res.status === 404) return 'not-found' as const;
       if (!res.ok) {
@@ -77,9 +63,6 @@ async function fetchFileFunctions(
         throw new Error(data.error || `HTTP ${res.status}`);
       }
       const json = (await res.json()) as FileFunctionsResponse;
-      // A partial (file-local) answer must not satisfy later lookups once
-      // the index is ready — cache only the full projection.
-      if (!json.crossFilePending) ffCache.set(k, json);
       return json;
     },
     catch: (cause) => new AppError({ message: 'fetchFileFunctions failed', cause }),
@@ -94,12 +77,12 @@ async function fetchFileFunctions(
       if (inner instanceof Error) throw inner;
       throw new Error(failure?.message ?? 'fetchFileFunctions failed');
     })
-    .finally(() => ffInflight.delete(k));
+    .finally(() => { if (ffInflight.get(k) === req) ffInflight.delete(k); });
   ffInflight.set(k, req);
   return req;
 }
 
-export function useFileFunctions(cwd: string, filePath: string | null) {
+export function useFileFunctions(cwd: string, filePath: string | null, includeRelations = false) {
   const [state, setState] = useState<FileFunctionsState>({ state: 'idle' });
   const mountedRef = useRef(true);
 
@@ -113,26 +96,28 @@ export function useFileFunctions(cwd: string, filePath: string | null) {
   // Latest requested (cwd, file). A response for anything else is stale —
   // the focal file moved on while it was in flight.
   const latestKeyRef = useRef('');
+  const latestRequestRef = useRef(0);
 
   /** `silent`: upgrade data already on screen (pending → full projection)
    *  without flashing the loading state, and keep that data if it fails. */
   const run = useCallback(
-    (cwd: string, file: string, forceRefresh: boolean, silent = false) => {
-      const k = ffKey(cwd, file);
+    (cwd: string, file: string, forceRefresh: boolean, silent = false, queryRelations = includeRelations) => {
+      const k = ffKey(cwd, file, includeRelations);
       latestKeyRef.current = k;
+      const request = ++latestRequestRef.current;
       if (!silent) setState({ state: 'loading' });
-      fetchFileFunctions(cwd, file, forceRefresh)
+      fetchFileFunctions(cwd, file, forceRefresh, queryRelations)
         .then((result) => {
-          if (!mountedRef.current || latestKeyRef.current !== k) return;
+          if (!mountedRef.current || latestKeyRef.current !== k || latestRequestRef.current !== request) return;
           if (result === 'not-found') setState({ state: 'notFound' });
           else setState({ state: 'ready', data: result });
         })
         .catch((err: Error) => {
-          if (!mountedRef.current || latestKeyRef.current !== k || silent) return;
+          if (!mountedRef.current || latestKeyRef.current !== k || latestRequestRef.current !== request || silent) return;
           setState({ state: 'error', message: err.message });
         });
     },
-    [],
+    [includeRelations],
   );
 
   useEffect(() => {
@@ -148,28 +133,35 @@ export function useFileFunctions(cwd: string, filePath: string | null) {
     run(cwd, filePath, true);
   }, [cwd, filePath, run]);
 
+  const reload = useCallback(() => {
+    if (cwd && filePath) run(cwd, filePath, false, true);
+  }, [cwd, filePath, run]);
+
   // Cross-file layer still building server-side: refetch on its `done`
   // frame (sent on failure too — the server then answers without the flag).
   const crossFilePending = state.state === 'ready' && state.data.crossFilePending === true;
+  const reloadAfterBuild = useCallback(() => {
+    // A completion frame can arrive while the previous response is in flight.
+    // Do not coalesce this read with the request that observed the old revision.
+    invalidateBlocksCache(cwd);
+    if (filePath) run(cwd, filePath, false, true, false);
+  }, [cwd, filePath, run]);
   const onWatchMessage = useCallback(
     (msg: unknown) => {
       const m = msg as { type?: string; data?: { cwd?: string; phase?: string } };
       if (m?.type !== 'graphProgress' || m.data?.cwd !== cwd || m.data.phase !== 'done') return;
-      if (filePath) run(cwd, filePath, false, true);
+      reloadAfterBuild();
     },
-    [cwd, filePath, run],
+    [cwd, reloadAfterBuild],
   );
   useWebSocket({
     url: `/ws/watch?cwd=${encodeURIComponent(cwd)}`,
     onMessage: onWatchMessage,
+    // Check after the socket is open, rather than after merely starting its
+    // handshake. This also recovers completion frames lost while disconnected.
+    onOpen: reloadAfterBuild,
     enabled: crossFilePending,
   });
-  // Subscribe, then check once: a build that finished between the response
-  // and the subscription above sends no further `done`. Must run after
-  // useWebSocket's effect, hence declared below it.
-  useEffect(() => {
-    if (crossFilePending && filePath) run(cwd, filePath, false, true);
-  }, [crossFilePending, cwd, filePath, run]);
 
-  return { state, refresh };
+  return { state, refresh, reload };
 }

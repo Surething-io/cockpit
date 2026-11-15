@@ -427,20 +427,19 @@ The Cockpit server must be running — the CLI talks to it over HTTP on the loca
 
 | Subcommand | What it does |
 |---|---|
-| `search <query>` | Find symbols by name. Returns file + qname hits. |
+| `search <query> [--limit N=50] [--path DIR] [--exclude-tests]` | Ranked name search. Per-category cap: 500. |
+| `symbols [--path DIR] [--kind KINDS] [--exclude-tests] [--exclude GLOB]` | Export all matching function/method symbols. Repeat exclusions; use `--kind all` for every kind. |
 | `callers <qname> [--file PATH]` | Direct callers of a symbol. |
 | `callees <qname> [--file PATH]` | What a symbol calls. |
-| `impact <qname> [--depth N=2]` | Transitive callers, BFS. Use `risk` for ranked output. |
+| `impact <qname> [--depth N=2]` | Transitive callers, BFS. Traversal is bounded. |
 | `file <path>` | Symbol tree (functions/classes) inside a file. |
 | `coedit <path> [--commits N=100]` | Files co-edited in git history alongside this one. |
 
-**Analytics** — blended scoring across PPR / TF-IDF / Louvain communities / co-edit:
+**Derived queries** — base-index relationships and on-demand Git history:
 
 | Subcommand | What it does |
 |---|---|
-| `context --query Q [--cursor C] [--open F1,F2,…] [--top N=15]` | Top-K semantically relevant coordinates for a free-form question. |
-| `related <qname> [--top N=10]` | Broader neighbours: callers + callees + PPR + co-edit + community. |
-| `risk <qname> [--depth N=2] [--top N=20]` | Risk-scored impact + suggested tests. |
+| `related <qname> [--top N=10]` | Direct callers + callees + frequent co-edit partners. |
 | `affected <files…\|--stdin> [--depth N=10] [--filter G] [--as-cmd RUNNER]` | Test files transitively affected. CI-friendly. |
 
 ### Common flags
@@ -450,20 +449,51 @@ The Cockpit server must be running — the CLI talks to it over HTTP on the loca
 --help, -h         # Subcommand-specific help (output format + exit codes + examples)
 ```
 
+`search` examines every eligible indexed candidate, retaining only the best 50
+per category by default (maximum 500). Ranking is exact name, normalized exact,
+normalized prefix, then normalized substring. Ties use file path, qualified name,
+and line. `--path` includes descendants; `--exclude-tests` filters files, symbols,
+and optional literals. Tests are included by default. HTTP parameters are `path`
+and `excludeTests=true`.
+
+`symbols` defaults to `function,method`; `--kind all` exports every real symbol kind. Unknown UI display blocks are excluded
+unless `--include-synthetic` is passed.
+The directory includes descendants, and exclusions can be repeated. JSON carries
+`revision`, `incomplete`, `total`, and flat `symbols[]` coordinates. There is no
+result-count cap; `incomplete` reports source-index coverage limits. Sources over
+2 MiB (2,097,152 bytes) are excluded; JSON `excludedFiles[]` reports their
+`filePath`, `reason`, `sizeBytes`, and `limitBytes` across the whole revision.
+
+`--summary` returns counts by kind and immediate child directory of `--path`,
+without symbol coordinates. It uses the same filters and counts only files with
+matching symbols. Start broad exploration with a summary; save full exports to
+disk and inspect a bounded selection. HTTP equivalents are `format=summary`
+and `includeSynthetic=true`.
+
+Ambiguous `callers`, `callees`, `impact`, and `related` requests return HTTP 200
+with `target: null`, empty relations, and candidate paths in `ambiguousIn`.
+Pass `filePath` (CLI `--file`) to select a target. The CLI exits 2 on ambiguity,
+including JSON mode, and still emits the JSON response.
+
+```bash
+cockpit codegraph symbols --path packages/feature --kind all --exclude-tests --summary
+cockpit codegraph symbols --json > symbols.json
+cockpit codegraph symbols --path src --exclude-tests --exclude '**/generated/**' --json
+```
+
 ### Output format (plain text)
 
 TAB-separated, one row per result. Pipeable into `cut`, `awk`, `fzf`, etc.
 
 ```text
 search    sym\t<file>:<line>\t<kind>\t<qname>            or  file\t<file>
+symbols   <file>:<startLine>-<endLine>\t<kind>\t<qname>
 callers   <file>:<line>\t<qname>\t[<callLines>]
 callees   <file>:<line>\t<qname>\t[<callLines>]
 impact    d=<depth>\t<file>:<line>\t<qname>
 file      <kind>\t<startLine>-<endLine>\t<qname>
 coedit    <cooccur>/<total>\t<file>                  # after a '# history' comment
-context   <score>\t<file>:<line>\t<qname>\t[<signals>]
 related   <score>\t<file>:<line>\t<qname>\t<<relations>>
-risk      <score>\td=<depth>\t<file>:<line>\t<qname>\t[<tags>]
 affected  <file>                                     # one test path per line
 ```
 
@@ -475,8 +505,7 @@ Designed so warnings don't break shell pipelines:
 
 ```text
 # ambiguousIn: <files…>     Same qname in multiple files — pass --file
-# cursor: <note>            Cursor format auto-corrected ('.' → '::', etc.)
-# degraded: <reason>        analytics-warming / coedit-unavailable / truncated
+# degraded: <reason>        coedit-unavailable / truncated
 ```
 
 ### Exit codes
@@ -507,7 +536,7 @@ cockpit codegraph related getCodeIndex --top 5
 ```
 
 ```bash
-cockpit codegraph risk searchIndex --depth 2
+cockpit codegraph impact searchIndex --depth 2
 ```
 
 ```bash

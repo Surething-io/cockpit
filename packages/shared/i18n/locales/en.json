@@ -466,6 +466,7 @@
       "clear": "Clear history"
     },
     "refresh": "Rebuild project graph",
+    "relationsStale": "Project relations need a refresh",
     "retry": "Retry"
   },
   "blockDiffViewer": {

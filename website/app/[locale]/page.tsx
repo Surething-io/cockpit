@@ -126,7 +126,7 @@ export default async function HomePage({
       'Custom skills via SKILL.md',
       'Scheduled tasks (one-time, interval, cron)',
       'Code Map — onboard new codebases by walking the call graph (TS/JS/Python/Go/Rust)',
-      'CodeGraph — a code graph for AI agents: 10 HTTP endpoints (6 base: symbol / callers / callees / impact / file / coedit + 4 analytics: context / related / risk / affected, powered by PageRank · PPR · TF-IDF · Louvain with zero training); /cg slash command primes graph-first exploration',
+      'CodeGraph — a code graph for AI agents: 9 HTTP endpoints (search / symbols / callers / callees / impact / file / coedit / related / affected), using the shared base index and on-demand Git queries; /cg slash command primes graph-first exploration',
       'Cockpit CLI: line-oriented client for the agent — codegraph / terminal / browser subcommands, each self-documenting via --help; /cc slash command teaches the agent the CLI surface',
     ],
   };

@@ -1,3 +1,5 @@
+import { indexResponse } from "./indexResponse"
+import { indexQueryError } from "@cockpit/feature-explorer/server/codeMap/projectGraph/indexFiles"
 /**
  * /api/projectGraph/callers — Who calls this symbol?
  *
@@ -10,8 +12,8 @@
  *   qname     — qualified symbol name in `Parent>Child` form (as emitted by
  *               extractSymbols and surfaced by /api/projectGraph/search)
  *   filePath  — optional, disambiguates when the same qname exists in
- *               multiple files. When absent, the response's `ambiguousIn`
- *               field lists every match.
+ *               multiple files. Ambiguous requests return a null target,
+ *               no relations, and all candidate paths in `ambiguousIn`.
  */
 import { Effect } from "effect"
 import {
@@ -19,8 +21,8 @@ import {
   getCodeIndex,
 } from "@cockpit/feature-explorer/server/codeMap/projectGraph/codeIndex"
 import { validateCwd } from "@cockpit/feature-explorer/server/files/shared"
-import { handler, ok } from "@cockpit/effect-runtime/server"
-import { AppError, ValidationError } from "@cockpit/effect-core"
+import { handler } from "@cockpit/effect-runtime/server"
+import { ValidationError } from "@cockpit/effect-core"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -48,11 +50,11 @@ export const GET = handler((req) =>
     const result = yield* Effect.tryPromise({
       try: async () => {
         const index = await getCodeIndex(cwd)
-        return callersFromIndex(index, qname, filePath)
+        return indexResponse(index, callersFromIndex(index, qname, filePath))
       },
       catch: (cause) =>
-        new AppError({ message: "Callers lookup failed", cause }),
+        indexQueryError(cause, "Callers lookup failed"),
     })
-    return ok(result)
+    return result
   })
 )

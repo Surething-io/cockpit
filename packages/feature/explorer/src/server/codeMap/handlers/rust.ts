@@ -1,3 +1,4 @@
+import type { ProjectContextFiles } from './types';
 /**
  * Rust language handler — covers `.rs` files.
  *
@@ -713,6 +714,7 @@ function findFileModDeclarations(source: string): string[] {
 async function buildModTree(
   cwd: string,
   fileSet: ReadonlySet<string>,
+  files?: ProjectContextFiles,
 ): Promise<{
   modTree: Map<string, string>;
   fileToMod: Map<string, string>;
@@ -731,7 +733,7 @@ async function buildModTree(
     // unreadable file just means we skip its sub-mods.
     let source: string;
     try {
-      source = await fs.readFile(path.join(cwd, filePath), 'utf8');
+      source = files ? await files.readFile(filePath) : await fs.readFile(path.join(cwd, filePath), 'utf8');
     } catch {
       return;
     }
@@ -863,8 +865,9 @@ export const rustHandler: LanguageHandler = {
   async buildProjectContext(
     cwd: string,
     fileSet: ReadonlySet<string>,
+    files?: ProjectContextFiles,
   ): Promise<ProjectContext> {
-    const { modTree, fileToMod } = await buildModTree(cwd, fileSet);
+    const { modTree, fileToMod } = await buildModTree(cwd, fileSet, files);
     const ctx: RustProjectContext = { cwd, modTree, fileToMod };
     return ctx;
   },

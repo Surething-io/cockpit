@@ -2,7 +2,7 @@
  * Server-only project graph builder.
  *
  * Pipeline:
- *   1. Walk the project tree → list of source files.
+ *   1. Enumerate Git working-tree paths → list of source files.
  *   2. For each file: parse with tree-sitter (per file extension), extract
  *      import specifiers from the AST.
  *   3. Resolve each specifier to a project-relative file path
@@ -16,60 +16,19 @@
  * project parses still finish in well under a second for typical projects.
  */
 
-import { exec } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { promisify } from 'node:util';
-// Imported from `registry` (not the barrel) to avoid a cycle with
-// handler modules that import from this file. The barrel — which
-// triggers handler registrations — is imported by codeIndex.ts at
-// the top of its module; by the time `getExtensionSet` here actually
-// runs, every handler has registered.
-import { getAllExtensions } from '../handlers/registry';
+import type { ProjectContextFiles } from '../handlers/types';
+import { listIndexPaths, isIndexSource, INDEX_FILE_LIMIT } from './indexFiles';
+// Candidate paths come from Git; node_modules is excluded even when tracked.
+// Supported extensions are supplied by registered language handlers.
 
-const execAsync = promisify(exec);
+function readContextFile(cwd: string, relPath: string, files?: ProjectContextFiles): Promise<string> {
+  return files ? files.readFile(relPath) : fs.readFile(path.join(cwd, relPath), 'utf8');
+}
 
-// ============================================================================
-// File listing
-//
-// Source-of-truth: the project's own `.gitignore`. We ask git for the list of
-// non-ignored files (tracked + untracked-but-not-ignored) and trust the
-// project to know what's noise — node_modules, build outputs, generated code
-// are already excluded by every reasonable repo's .gitignore.
-//
-// This is also how ripgrep, sentrux, and most real code-analysis tools work.
-// Maintaining our own SKIP_DIRS list is fragile: every project has its own
-// generated/cached directories, and we'd be playing catch-up forever.
-// ============================================================================
-
-/** Minimal skip set used ONLY when the project isn't a git repo. We can't
- *  trust `.gitignore` there, so we hardcode the universally-bad dirs. */
-const NON_GIT_FALLBACK_SKIP = new Set(['.git', 'node_modules']);
-
-/** Hard cap on files per scan. Even with .gitignore filtering, a sufficiently
- *  large monorepo can blow past sensible limits. UI surfaces a `truncated`
- *  flag so users know the graph isn't complete.
- *
- *  Single source of truth — `codeIndex.ts` imports from here so
- *  `listFilesViaGit` / `walkSource` / the post-list `slice` all use the
- *  SAME limit.
- *
- *  Raised 15000 → 100000. The old value silently truncated in a way that
- *  looked like a broken feature rather than a cap: `git ls-files` returns
- *  ALPHABETICAL order, so on a 60,598-file repo the budget was exhausted
- *  inside `P2M/` and every file under `Theorems/` — the directory the user
- *  was actually searching — was absent, with `search` simply returning zero
- *  hits.
- *
- *  Measured cost of the new ceiling on that repo (60,598 files / 809K
- *  symbols): 257s to build, 2.80 GB resident. That is a ONE-TIME
- *  foreground cost per process — `syncDirtyIndex` is incremental — but it
- *  is real, and the index has no persistence, so a restart pays it again.
- *
- *  The analytics passes are NOT bounded by this number; they have their own
- *  symbol-count ceiling (`MAX_ANALYTICS_SYMBOLS` in analytics/cache.ts).
- *  Without that second guard, raising this one OOMs an 8 GB heap. */
-export const MAX_FILES = 100000;
+/** Maximum number of source files admitted to a project index. */
+export const MAX_FILES = INDEX_FILE_LIMIT;
 
 // Tests, specs, and storybook files (`*.test.*` / `*.spec.*` /
 // `*.stories.*`) are deliberately INDEXED — calls from a test into
@@ -89,20 +48,9 @@ export const MAX_FILES = 100000;
 // the runtime registry. Recomputing per call is cheap (a handful of
 // handlers, each with a small extensions array) and it sidesteps
 // the entire HMR-invalidation question.
-function isSourceFile(name: string): boolean {
-  const lower = name.toLowerCase();
-  const dotIdx = lower.lastIndexOf('.');
-  if (dotIdx < 0) return false;
-  const ext = lower.slice(dotIdx);
-  for (const e of getAllExtensions()) {
-    if (e.toLowerCase() === ext) return true;
-  }
-  return false;
-}
-
 /**
  * List source files via `git ls-files`, respecting `.gitignore` automatically.
- * Returns null if the directory isn't a git repo (caller falls back to fs walk).
+ * Rejects non-Git projects and preserves NUL-delimited paths.
  *
  * Flags used:
  *   --cached              tracked files
@@ -110,52 +58,8 @@ function isSourceFile(name: string): boolean {
  *   --exclude-standard    apply .gitignore + .git/info/exclude + global excludes
  *   -c core.quotePath=false   pass-through non-ASCII paths instead of escaping
  */
-export async function listFilesViaGit(cwd: string): Promise<string[] | null> {
-  try {
-    await execAsync('git rev-parse --git-dir', { cwd });
-  } catch {
-    return null; // not a git repo
-  }
-  // 50MB ceiling to handle very large monorepos without truncation surprises.
-  const { stdout } = await execAsync(
-    'git -c core.quotePath=false ls-files --cached --others --exclude-standard',
-    { cwd, maxBuffer: 50 * 1024 * 1024 },
-  );
-  const out: string[] = [];
-  for (const line of stdout.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const baseName = trimmed.slice(trimmed.lastIndexOf('/') + 1);
-    if (isSourceFile(baseName)) {
-      out.push(trimmed);
-      if (out.length >= MAX_FILES) break;
-    }
-  }
-  return out;
-}
-
-/**
- * Filesystem walk fallback for non-git projects. Uses a minimal hardcoded
- * skip set since there's no `.gitignore` to consult.
- */
-export async function walkSource(dir: string, root: string, out: string[]): Promise<void> {
-  if (out.length >= MAX_FILES) return;
-  let entries;
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (out.length >= MAX_FILES) return;
-    if (NON_GIT_FALLBACK_SKIP.has(entry.name) || entry.name.startsWith('.git')) continue;
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      await walkSource(full, root, out);
-    } else if (entry.isFile() && isSourceFile(entry.name)) {
-      out.push(path.relative(root, full));
-    }
-  }
+export async function listFilesViaGit(cwd: string): Promise<string[]> {
+  return (await listIndexPaths(cwd)).filter(isIndexSource);
 }
 
 // ============================================================================
@@ -236,26 +140,14 @@ export interface Workspace {
  * that's actually for tooling parity, not the source of truth) → package.json
  * `workspaces` field (npm / yarn).
  */
-export async function loadWorkspaces(cwd: string, fileSet: Set<string>): Promise<Map<string, Workspace>> {
-  const patterns = await readWorkspacePatterns(cwd);
+export async function loadWorkspaces(cwd: string, fileSet: Set<string>, files?: ProjectContextFiles): Promise<Map<string, Workspace>> {
+  const patterns = await readWorkspacePatterns(cwd, files);
   if (patterns.length === 0) return new Map();
 
   // Find every `*/package.json` that matches a workspace pattern. We intersect
   // with git ls-files so we only consider tracked / non-ignored package.jsons,
   // which automatically skips node_modules.
-  let pkgJsonPaths: string[] = [];
-  try {
-    const { stdout } = await execAsync(
-      'git -c core.quotePath=false ls-files --cached --others --exclude-standard',
-      { cwd, maxBuffer: 50 * 1024 * 1024 },
-    );
-    pkgJsonPaths = stdout
-      .split('\n')
-      .map((p) => p.trim())
-      .filter((p) => p.endsWith('/package.json') && !p.includes('node_modules/'));
-  } catch {
-    return new Map();
-  }
+  const pkgJsonPaths = (files?.paths ?? await listIndexPaths(cwd)).filter((p) => p.endsWith('/package.json'));
 
   const matched = pkgJsonPaths.filter((p) => {
     const dir = p.slice(0, -'/package.json'.length);
@@ -266,7 +158,7 @@ export async function loadWorkspaces(cwd: string, fileSet: Set<string>): Promise
   for (const rel of matched) {
     let pkg;
     try {
-      pkg = JSON.parse(await fs.readFile(path.join(cwd, rel), 'utf8'));
+      pkg = JSON.parse(await readContextFile(cwd, rel, files));
     } catch {
       continue;
     }
@@ -278,18 +170,18 @@ export async function loadWorkspaces(cwd: string, fileSet: Set<string>): Promise
   return result;
 }
 
-async function readWorkspacePatterns(cwd: string): Promise<string[]> {
+async function readWorkspacePatterns(cwd: string, files?: ProjectContextFiles): Promise<string[]> {
   // pnpm-workspace.yaml: simple line parser. We don't pull in a YAML lib for
   // this — pnpm-workspace.yaml shape is shallow and stable enough for regex.
   try {
-    const yaml = await fs.readFile(path.join(cwd, 'pnpm-workspace.yaml'), 'utf8');
+    const yaml = await readContextFile(cwd, 'pnpm-workspace.yaml', files);
     return parsePnpmWorkspaces(yaml);
   } catch {
     // file missing — fall through
   }
   // npm / yarn: package.json `workspaces` field (string[] or {packages: string[]}).
   try {
-    const pkg = JSON.parse(await fs.readFile(path.join(cwd, 'package.json'), 'utf8'));
+    const pkg = JSON.parse(await readContextFile(cwd, 'package.json', files));
     const ws = pkg?.workspaces;
     if (Array.isArray(ws)) return ws.filter((s): s is string => typeof s === 'string');
     if (ws && Array.isArray(ws.packages)) {
@@ -452,11 +344,11 @@ export interface TsconfigScope {
  *  chunks of legitimate content. tsconfigs in practice almost never use
  *  block comments anyway. If a project does, JSON.parse will fail and we
  *  silently skip that tsconfig. */
-async function parseTsconfigAliases(filePath: string, cwd: string): Promise<Map<string, string>> {
+async function parseTsconfigAliases(filePath: string, cwd: string, files?: ProjectContextFiles): Promise<Map<string, string>> {
   const aliases = new Map<string, string>();
   let json;
   try {
-    const raw = await fs.readFile(filePath, 'utf8');
+    const raw = await readContextFile(cwd, path.relative(cwd, filePath).split(path.sep).join('/'), files);
     // Strip line-comments only. Anchor at line-start-ish positions to avoid
     // wrecking `//` that appears inside strings (rare in tsconfig but happens
     // for URLs like "//cdn.example/...").
@@ -489,35 +381,17 @@ async function parseTsconfigAliases(filePath: string, cwd: string): Promise<Map<
  * on which package the importing file lives in. A merged map would make this
  * ambiguous — only the file's scope can disambiguate.
  */
-export async function loadTsconfigs(cwd: string): Promise<TsconfigScope[]> {
+export async function loadTsconfigs(cwd: string, files?: ProjectContextFiles): Promise<TsconfigScope[]> {
   const scopes: TsconfigScope[] = [];
   // List ALL tracked + non-ignored files and JS-filter for tsconfig variants.
   // We deliberately don't use a git pathspec (`*tsconfig*.json`) because
   // pathspec only matches the literal pattern in each segment — `*tsconfig*`
   // alone doesn't recurse into subdirectories. Filtering in JS is simpler and
   // correct.
-  let tsconfigPaths: string[] = [];
-  try {
-    const { stdout } = await execAsync(
-      'git -c core.quotePath=false ls-files --cached --others --exclude-standard',
-      { cwd, maxBuffer: 50 * 1024 * 1024 },
-    );
-    tsconfigPaths = stdout
-      .split('\n')
-      .map((p) => p.trim())
-      .filter((p) => /(^|\/)tsconfig[^/]*\.json$/.test(p) && !p.includes('node_modules/'));
-  } catch {
-    // Non-git project: just check root.
-    try {
-      await fs.access(path.join(cwd, 'tsconfig.json'));
-      tsconfigPaths = ['tsconfig.json'];
-    } catch {
-      // none
-    }
-  }
+  const tsconfigPaths = (files?.paths ?? await listIndexPaths(cwd)).filter((p) => /(^|\/)tsconfig[^/]*\.json$/.test(p));
 
   for (const rel of tsconfigPaths) {
-    const aliases = await parseTsconfigAliases(path.join(cwd, rel), cwd);
+    const aliases = await parseTsconfigAliases(path.join(cwd, rel), cwd, files);
     if (aliases.size === 0) continue;
     const scope = path.dirname(rel);
     scopes.push({

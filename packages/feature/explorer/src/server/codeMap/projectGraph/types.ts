@@ -166,8 +166,8 @@ export interface FileFunctionsResponse {
    *  was computed (`fs.stat().mtimeMs`, ms since epoch). Lets the
    *  client cross-check against `/api/files/text`'s mtime — if the
    *  fileSource is newer than the data here, the client triggers a
-   *  refresh. Server itself uses this to gate per-file re-parse via
-   *  `refreshFocalFile`. May be 0 for synthetic responses (markdown
+   *  refresh. The server verifies focal content without mutating the
+   *  published index. May be 0 for synthetic responses (markdown
    *  chunked / unsupported-language fallback) where there's no
    *  IndexedFile entry to read mtime from — in those cases the
    *  client's freshness check is a no-op. */
@@ -208,6 +208,12 @@ export interface FileFunctionsResponse {
    *  running in the background; refetch after its `done` progress frame
    *  to get the full projection. */
   crossFilePending?: boolean;
+  /** Cross-file facts belong to this last published project revision. */
+  crossFileRevision?: number;
+  /** The focal file is current but project relations require a project query. */
+  crossFileStale?: boolean;
+  /** Explicit background rebuild failed; retry is a user action. */
+  indexUpdateError?: string;
 }
 
 // ============================================================================

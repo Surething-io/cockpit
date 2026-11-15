@@ -1,3 +1,5 @@
+import { indexResponse } from "./indexResponse"
+import { indexQueryError } from "@cockpit/feature-explorer/server/codeMap/projectGraph/indexFiles"
 /**
  * /api/projectGraph/file — P8+ migration
  */
@@ -5,12 +7,10 @@ import { Effect } from "effect"
 import {
   fileDetailFromIndex,
   getCodeIndex,
-  invalidateIndex,
 } from "@cockpit/feature-explorer/server/codeMap/projectGraph/codeIndex"
 import { validateCwd } from "@cockpit/feature-explorer/server/files/shared"
-import { handler, ok } from "@cockpit/effect-runtime/server"
+import { handler } from "@cockpit/effect-runtime/server"
 import {
-  AppError,
   NotFoundError,
   ValidationError,
 } from "@cockpit/effect-core"
@@ -40,22 +40,18 @@ export const GET = handler((req) =>
     const detail = yield* Effect.tryPromise({
       try: async () => {
         const index = await getCodeIndex(cwd)
-        return fileDetailFromIndex(index, filePath)
+        return { index, payload: fileDetailFromIndex(index, filePath) }
       },
       catch: (cause) => {
-        invalidateIndex(cwd)
-        return new AppError({
-          message: "Failed to load file detail",
-          cause,
-        })
+        return indexQueryError(cause, "Failed to load file detail")
       },
     })
 
-    if (!detail) {
+    if (!detail.payload) {
       return yield* Effect.fail(
         new NotFoundError({ resource: "projectGraph.file", id: filePath })
       )
     }
-    return ok(detail)
+    return indexResponse(detail.index, detail.payload)
   })
 )

@@ -24,7 +24,7 @@ Examples below use `cockpit`; only swap in `cockpit-dev` when one of the two dev
 | `browser open <url>` | Create a browser bubble (auto-registered) and print its id |
 | `browser <id> <action>` | Drive browser bubbles |
 | `terminal <id> [<action>]` | Read-only observation of a terminal ring buffer |
-| `codegraph <subcmd>` | Project code graph (search/callers/callees/impact/file/coedit/context/related/risk/affected) |
+| `codegraph <subcmd>` | Project code graph (search/symbols/callers/callees/impact/file/coedit/related/affected) |
 | `update` | Upgrade to latest npm version |
 
 ## Typical usage pattern
@@ -34,7 +34,7 @@ Terminal / browser bubbles in the UI carry a 4-char short id (e.g. `bmfb` / `mpc
 ```
 /cc cockpit terminal bmfb look at the recent error logs           ← default prod (cockpit)
 /cc cockpit browser mpcw take a screenshot of the current page    ← default prod (cockpit)
-/cc cockpit codegraph risk searchIndex assess the impact          ← default prod (cockpit)
+/cc cockpit codegraph impact searchIndex assess the impact          ← default prod (cockpit)
 /cc dev terminal aqou check the errors                            ← dev signal #2 → use cockpit-dev
 /cc cockpit-dev codegraph file packages/...                       ← dev signal #1 → use cockpit-dev
 ```

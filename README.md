@@ -112,7 +112,7 @@ An honest snapshot as of July 2026 — each tool wins somewhere. Spotted an erro
 - Git **blame**, diff view, branch switching, **worktree** management
 - **LSP integration** — go to definition, find references, hover info
 - **Code Map** — every function as a chip with caller / callee pins; click to walk the call graph. Multi-language: TS/JS, Python, Go, Rust. No LSP, no project setup, works offline.
-- **CodeGraph** — a **code graph** for the agent: same tree-sitter index exposed as 10 HTTP endpoints — 6 base (`search` / `callers` / `callees` / `impact` / `file` / `coedit`) + 4 analytics (`context` / `related` / `risk` / `affected`, powered by PageRank · PPR · TF-IDF · Louvain, zero training) — so the agent queries coordinates instead of grepping text; trigger with `/cg` from chat. Coordinates only, never source — precise, cheap, and catches the conventional coupling no regex can.
+- **CodeGraph** — nine HTTP endpoints over the shared tree-sitter index: `search`, `symbols`, `callers`, `callees`, `impact`, `file`, `coedit`, `related`, and `affected`. Export project/directory symbols with type, test-file and glob filters; explore call relationships, inspect change impact, and find co-edited files with `/cg` or `cockpit codegraph`. Returns coordinates instead of source bodies; uses the base index and on-demand Git queries, with no secondary analysis cache.
 - Fuzzy file search (Cmd+F), JSON viewer, Markdown preview
 
 ### Console — Terminal & smart Bubbles

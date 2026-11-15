@@ -32,19 +32,16 @@
  * lets every projection be a cheap lookup.
  */
 
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { getHeapStatistics } from 'node:v8';
+import { setImmediate as yieldToEventLoop } from 'node:timers/promises';
 import { Effect, Schedule } from 'effect';
+import { AppError } from '@cockpit/effect-core';
+import { scanIndexFiles, readIndexSource, readGitIndexState, requireGitProject, diffIndexFiles, INDEX_SOURCE_LIMIT_BYTES, type ExcludedIndexFile, type IndexScan, type SourceContent } from './indexFiles';
 import { getServerParser, grammarForExtension } from './serverTreeSitter';
 import { SUPPORTED_GRAMMARS } from '../languageMap';
 import {
-  listFilesViaGit,
   loadTsconfigs,
   loadWorkspaces,
-  walkSource,
   MAX_FILES,
   type TsconfigScope,
   type Workspace,
@@ -73,6 +70,9 @@ import { isFunctionLike } from '../types';
 // still uses the legacy local helpers below — moves to handlers in P1b.)
 import { getHandler, tryGetHandler } from '../handlers';
 import { dedupeQualifiedNames } from '../extractSymbols';
+import { IndexSharing, type SharedParse } from './indexSharing';
+import { isTestFile } from './testFiles';
+import { SearchTopK } from './searchRanking';
 
 // ============================================================================
 // Index types
@@ -126,12 +126,7 @@ export interface IndexedSymbol extends SymbolAddr {
 export interface IndexedFile {
   path: string;
   language: string;
-  /** `fs.stat().mtimeMs` at the moment this file was last parsed.
-   *  Read by `refreshFocalFile` to decide whether to re-parse: if the
-   *  on-disk mtime differs, the focal file's symbolsTree / flatSymbols
-   *  / intraCalls / outgoingCalls / etc. are rebuilt in place
-   *  (incomingCalls + importedBy left as the previous full-build
-   *  computed them — accepted stale, see `refreshFocalFile`). */
+  /** Display freshness metadata; content hashes determine index reuse. */
   mtime: number;
   /** Hierarchical symbol tree (functions, classes, methods …). */
   symbolsTree: ExtractedSymbol[];
@@ -210,7 +205,9 @@ export interface IndexedFile {
    *  map below because they don't introduce a local name into this
    *  file's scope. */
   bindingsByLocalName: Map<string, ImportBinding>;
-  /** local name → reexport binding (only `b.isReexport === true`).
+  /** Exported name → export binding (only `b.isReexport === true`).
+   *  Includes JS/TS local exports with an empty specifier. All wildcard
+   *  sources remain in importBindings; the '*' map entry is not exhaustive.
    *  Used by barrel-chain followers (`findExportedSymbol` /
    *  `findReceiverMethod` in the TS handler) — each chain hop tests
    *  whether THIS file forwards a name to consumers. */
@@ -222,24 +219,14 @@ export interface CodeIndex {
   files: Map<string, IndexedFile>;
   truncated: boolean;
   fileCountCap?: number;
+  excludedFiles?: ExcludedIndexFile[];
   tsconfigs: TsconfigScope[];
   workspaces: Map<string, Workspace>;
-  /** Per-grammar handler context (alias maps, workspace layout, etc.)
-   *  stashed at build time so `refreshFocalFile` can re-resolve a
-   *  single file's imports/calls without rebuilding contexts. The
-   *  handler's `buildProjectContext` is the moderately expensive part
-   *  of resolution (loads tsconfigs, workspaces, src-layout); reusing
-   *  it keeps focal refresh in the ~10-50ms range instead of the
-   *  hundreds of ms a full handler init would cost. Opaque payload —
-   *  the orchestrator doesn't peek inside. */
+  /** Contexts and file membership belong to this published revision. */
   projectContexts: Map<string, unknown>;
-  /** File set used during the LAST full build. `refreshFocalFile`
-   *  passes this through to `handler.resolveSpecifier` so import
-   *  resolution sees the same project shape the original build saw —
-   *  newly-added sibling files won't appear until a full refresh,
-   *  which is consistent with the "incomingCalls stays stale until
-   *  forceRefresh" contract documented on `refreshFocalFile`. */
   fileSet: Set<string>;
+  revision?: number;
+  update?: { mode: 'initial' | 'incremental' | 'rebuild'; changedFiles: number; parsedFiles: number };
   generatedAt: number;
   buildMs: number;
 }
@@ -248,10 +235,7 @@ export interface CodeIndex {
 // Build
 // ============================================================================
 
-// MAX_FILES lives in buildGraph.ts (single source of truth) and is
-// imported above. The hard cap there is enforced by listFilesViaGit /
-// walkSource; the slice below is a belt-and-suspenders cap for any
-// path that bypasses those.
+// File admission is bounded by scanIndexFiles before parser work starts.
 const READ_CONCURRENCY = 50;
 
 async function mapWithConcurrency<T, U>(
@@ -261,24 +245,35 @@ async function mapWithConcurrency<T, U>(
 ): Promise<U[]> {
   const results: U[] = new Array(items.length);
   let cursor = 0;
+  let failed = false;
+  let batchStarted = performance.now();
+  let yielding: Promise<void> | undefined;
   async function worker() {
-    while (cursor < items.length) {
+    while (!failed && cursor < items.length) {
+      // Cached parser promises only yield microtasks. Share a real event-loop
+      // break across workers so timers, requests and progress frames can run.
+      if (!yielding && performance.now() - batchStarted >= 8) {
+        yielding = Effect.runPromise(Effect.promise(() => yieldToEventLoop())).then(() => {
+          batchStarted = performance.now();
+          yielding = undefined;
+        });
+      }
+      if (yielding) await yielding;
+      if (failed || cursor >= items.length) break;
       const i = cursor++;
-      results[i] = await fn(items[i]);
+      results[i] = await fn(items[i]).catch((cause: unknown) => { failed = true; throw cause; });
     }
   }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  const outcomes = await Promise.allSettled(Array.from({ length: Math.min(limit, items.length) }, worker));
+  const failure = outcomes.find((result) => result.status === 'rejected');
+  if (failure?.status === 'rejected') throw failure.reason;
   return results;
 }
 
 /** Per-file parse result before any cross-file resolution. */
-interface ParsedFile {
+export interface ParsedFile {
   path: string;
   language: string;
-  /** `fs.stat().mtimeMs` captured at parse time. Stored on the
-   *  IndexedFile so `refreshFocalFile` can compare against the on-
-   *  disk mtime cheaply (one stat) before deciding to re-parse. */
-  mtime: number;
   symbolsTree: ExtractedSymbol[];
   flatSymbols: IndexedSymbol[];
   /** All file-level bindings — regular imports AND re-exports. Re-
@@ -331,7 +326,7 @@ function flattenSymbols(filePath: string, syms: ExtractedSymbol[]): IndexedSymbo
 const IDENT_STRING_RE =
   /(['"`])([A-Za-z][A-Za-z0-9_.-]{2,63})\1/g;
 
-/** Per-file cap. A 1 MB file already capped above; this guards the
+/** Per-file cap. Source input is already capped at 2 MiB; this guards the
  *  pathological case of a generated `enum` of thousands of names. */
 const MAX_LITERALS_PER_FILE = 500;
 
@@ -383,33 +378,14 @@ function extractStringLiterals(
   return out;
 }
 
-async function parseOneFile(absPath: string, relPath: string): Promise<ParsedFile | null> {
+async function parseOneFile(relPath: string, input: SourceContent): Promise<ParsedFile | null> {
   const grammar = grammarForExtension(relPath);
   if (!grammar) return null;
-  let source: string;
-  let mtime: number;
-  try {
-    // Read content + stat together — stat is cheap, and pairing them
-    // captures the mtime that corresponds to THIS read of the file
-    // (avoids a TOCTOU window where the file is rewritten between
-    // readFile and a separate stat).
-    [source, mtime] = await Promise.all([
-      fs.readFile(absPath, 'utf8'),
-      fs.stat(absPath).then((s) => s.mtimeMs),
-    ]);
-  } catch {
-    return null;
-  }
-  if (source.length > 1_000_000) return null;
+  const { source } = input;
+  if (input.sizeBytes > INDEX_SOURCE_LIMIT_BYTES) return null;
   const parser = await getServerParser(grammar);
-  let tree;
-  try {
-    tree = parser.parse(source);
-  } catch (err) {
-    console.error('[codeIndex] parse failed for', relPath, err);
-    return null;
-  }
-  if (!tree) return null;
+  const tree = parser.parse(source);
+  if (!tree) throw new AppError({ message: `Unable to parse ${relPath}` });
   try {
     // Per-language extraction goes through the handler. The handler
     // emits a single combined `bindings` array (regular imports +
@@ -429,12 +405,11 @@ async function parseOneFile(absPath: string, relPath: string): Promise<ParsedFil
     const rawCalls = handler.extractCallSites(tree.rootNode, flatSymbols);
     // Literal harvest runs on the same source we just parsed — language-
     // agnostic regex, no extra IO. Skipped on minified bundles by the
-    // 1 MB size cap above; sub-ms per typical source file.
+    // 2 MiB size cap above; sub-ms per typical source file.
     const literals = extractStringLiterals(source, flatSymbols);
     return {
       path: relPath,
       language: grammar,
-      mtime,
       symbolsTree,
       flatSymbols,
       importBindings,
@@ -467,19 +442,27 @@ function findEnclosingFlat(symbols: IndexedSymbol[], line: number): IndexedSymbo
 // single source of truth without webpack pulling this file's
 // `node:fs/promises` import into the browser bundle.
 
+interface IndexBaseline {
+  hashes: Map<string, string>;
+  configHash: string;
+  scanTruncated: boolean;
+  git: IndexScan['git'];
+  facts: Map<string, ParsedFile | null>;
+}
+const baselines = new WeakMap<CodeIndex, IndexBaseline>();
+
 export async function buildCodeIndex(cwd: string): Promise<CodeIndex> {
+  return buildIndexSnapshot(cwd, await scanIndexFiles(cwd), undefined, false);
+}
+
+async function buildIndexSnapshot(cwd: string, scan: IndexScan, previous?: CodeIndex, force = false): Promise<CodeIndex> {
   const startedAt = Date.now();
-
-  // 1. List source files (.gitignore-aware via `git ls-files`, fs walker fallback).
-  emitBuildProgress(cwd, 'listing', 0, 0, undefined, true);
-  let files: string[] | null = await listFilesViaGit(cwd);
-  if (!files) {
-    files = [];
-    await walkSource(cwd, cwd, files);
-  }
-
-  const truncated = files.length > MAX_FILES;
-  if (truncated) files = files.slice(0, MAX_FILES);
+  const prior = previous && baselines.get(previous);
+  const delta = diffIndexFiles(prior?.hashes ?? new Map(), scan.hashes);
+  const rebuild = force || delta.rebuild || prior?.configHash !== scan.configHash || prior?.git.head !== scan.git.head
+    || prior?.git.busy !== scan.git.busy || prior?.git.commonDir !== scan.git.commonDir;
+  const files = [...scan.sources.keys()].sort();
+  const truncated = scan.truncated;
   const fileSet = new Set(files);
 
   // 2. tsconfigs (per-scope alias maps) + workspace packages (for monorepos).
@@ -489,8 +472,8 @@ export async function buildCodeIndex(cwd: string): Promise<CodeIndex> {
   //    don't share the value because handler contexts are opaque to
   //    this orchestration layer.
   emitBuildProgress(cwd, 'contexts', 0, files.length, undefined, true);
-  const tsconfigs = await loadTsconfigs(cwd);
-  const workspaces = await loadWorkspaces(cwd, fileSet);
+  const tsconfigs = await loadTsconfigs(cwd, scan.contextFiles);
+  const workspaces = await loadWorkspaces(cwd, fileSet, scan.contextFiles);
 
   // 3. Build per-grammar project contexts. Each handler reads
   //    whatever filesystem state it needs (tsconfigs / workspaces /
@@ -514,24 +497,28 @@ export async function buildCodeIndex(cwd: string): Promise<CodeIndex> {
   for (const grammar of SUPPORTED_GRAMMARS) {
     const handler = tryGetHandler(grammar);
     if (!handler) continue;
-    projectContexts.set(grammar, await handler.buildProjectContext(cwd, fileSet));
+    projectContexts.set(grammar, await handler.buildProjectContext(cwd, fileSet, scan.contextFiles));
   }
 
-  // 4. Parse every file in parallel.
-  //    This phase dominates wall-clock, and it's the only one with natural
-  //    per-file granularity, so it's where the progress bar actually moves.
-  //    The counter is incremented from `READ_CONCURRENCY` interleaved
-  //    workers, but JS has no preemption inside a synchronous block, so
-  //    `++` is atomic here — no lost updates.
+  // Reuse immutable parse facts, then resolve every relation against the new file set.
   const totalToParse = files.length;
   let parsedCount = 0;
+  let reparsed = 0;
   emitBuildProgress(cwd, 'parsing', 0, totalToParse, undefined, true);
+  const facts = new Map<string, ParsedFile | null>();
+  const sharedParses = new Map<string, SharedParse>();
   const parsed = (
     await mapWithConcurrency(files, READ_CONCURRENCY, async (f) => {
-      const result = await parseOneFile(path.join(cwd, f), f);
-      parsedCount += 1;
-      // Throttled inside emitBuildProgress — calling it once per file is
-      // fine even at ~330 files/s.
+      const unchanged = !force && prior?.git.commonDir === scan.git.commonDir && prior?.hashes.get(f) === scan.hashes.get(f);
+      const reuse = unchanged && prior?.facts.has(f);
+      const grammar = grammarForExtension(f);
+      const shared = !force && !reuse && grammar
+        ? sharing.findParse(scan.git.commonDir, f, grammar, scan.hashes.get(f)!) : undefined;
+      if (shared) sharedParses.set(f, shared);
+      const result = reuse ? prior!.facts.get(f)! : shared?.facts ?? await parseOneFile(f, scan.sources.get(f)!);
+      if (!reuse && !shared) reparsed++;
+      facts.set(f, result);
+      parsedCount++;
       emitBuildProgress(cwd, 'parsing', parsedCount, totalToParse, f);
       return result;
     })
@@ -563,17 +550,19 @@ export async function buildCodeIndex(cwd: string): Promise<CodeIndex> {
     // Precomputed lookup maps — built once here so handler.resolveCall
     // and the API projections don't re-scan flatSymbols /
     // importBindings linearly per callsite. See IndexedFile jsdoc.
-    const symbolsByName = new Map<string, IndexedSymbol[]>();
-    const symbolsByQname = new Map<string, IndexedSymbol>();
-    for (const s of f.flatSymbols) {
+    const reused = (prior?.facts.get(f.path) === f ? previous?.files.get(f.path) : undefined)
+      ?? sharedParses.get(f.path)?.lookups;
+    const symbolsByName = reused?.symbolsByName ?? new Map<string, IndexedSymbol[]>();
+    const symbolsByQname = reused?.symbolsByQname ?? new Map<string, IndexedSymbol>();
+    for (const s of reused ? [] : f.flatSymbols) {
       symbolsByQname.set(s.qualifiedName, s);
       const list = symbolsByName.get(s.name);
       if (list) list.push(s);
       else symbolsByName.set(s.name, [s]);
     }
-    const bindingsByLocalName = new Map<string, ImportBinding>();
-    const reexportsByLocalName = new Map<string, ImportBinding>();
-    for (const b of f.importBindings) {
+    const bindingsByLocalName = reused?.bindingsByLocalName ?? new Map<string, ImportBinding>();
+    const reexportsByLocalName = reused?.reexportsByLocalName ?? new Map<string, ImportBinding>();
+    for (const b of reused ? [] : f.importBindings) {
       if (b.isReexport) reexportsByLocalName.set(b.localName, b);
       else bindingsByLocalName.set(b.localName, b);
     }
@@ -581,7 +570,7 @@ export async function buildCodeIndex(cwd: string): Promise<CodeIndex> {
     indexedFiles.set(f.path, {
       path: f.path,
       language: f.language,
-      mtime: f.mtime,
+      mtime: scan.sources.get(f.path)!.mtime,
       symbolsTree: f.symbolsTree,
       flatSymbols: f.flatSymbols,
       literals: f.literals,
@@ -772,23 +761,24 @@ export async function buildCodeIndex(cwd: string): Promise<CodeIndex> {
     }
   }
 
-  // Terminal frame: tells the UI to drop the progress view. The failure
-  // path is covered in `getCodeIndex` — a build that throws must not leave
-  // a progress bar frozen at 60% forever.
-  emitBuildProgress(cwd, 'done', totalToParse, totalToParse, undefined, true);
-
-  return {
-    cwd,
-    files: indexedFiles,
-    truncated,
+  const index: CodeIndex = {
+    cwd, files: indexedFiles, truncated,
     fileCountCap: truncated ? MAX_FILES : undefined,
-    tsconfigs,
-    workspaces,
-    projectContexts,
-    fileSet,
-    generatedAt: Date.now(),
-    buildMs: Date.now() - startedAt,
+    excludedFiles: files.flatMap(filePath => {
+      const source = scan.sources.get(filePath)!;
+      return source.sizeBytes > INDEX_SOURCE_LIMIT_BYTES
+        ? [{ filePath, reason: 'source-too-large' as const, sizeBytes: source.sizeBytes, limitBytes: INDEX_SOURCE_LIMIT_BYTES }]
+        : [];
+    }),
+    tsconfigs, workspaces, projectContexts, fileSet,
+    generatedAt: Date.now(), buildMs: Date.now() - startedAt,
+    revision: (previous?.revision ?? 0) + 1,
+    update: { mode: !previous ? 'initial' : rebuild ? 'rebuild' : 'incremental', changedFiles: delta.count, parsedFiles: reparsed },
   };
+  // Too-large supported sources are deliberate exclusions, never silent success.
+  index.truncated ||= parsed.length < files.length;
+  baselines.set(index, { hashes: scan.hashes, configHash: scan.configHash, scanTruncated: scan.truncated, git: scan.git, facts });
+  return index;
 }
 
 // ============================================================================
@@ -796,93 +786,31 @@ export async function buildCodeIndex(cwd: string): Promise<CodeIndex> {
 // ============================================================================
 
 const indexCache = new Map<string, CodeIndex>();
+const sharing = new IndexSharing();
 /** ms epoch of the last read of each cached index — what the idle sweep
  *  (`evictIdleCodeIndexes`) measures. Entries outlive their index harmlessly
  *  and are pruned by the sweep. */
 const indexLastUsed = new Map<string, number>();
 const inflight = new Map<string, Promise<CodeIndex>>();
 
-/** Total flattened symbols in one index. O(files) — a few ms at 60K files.
- *  Shared with the analytics size guard so both budgets speak the same unit. */
+/** Total flattened symbols in one index. Used for diagnostics and legacy estimates. */
 export function countIndexSymbols(index: CodeIndex): number {
   let n = 0;
   for (const f of index.files.values()) n += f.flatSymbols.length;
   return n;
 }
 
-/**
- * Cache budget, in symbols summed across every cached project.
- *
- * Budgeted by SIZE, not by entry count, because entry count bounds nothing
- * here: one index can be 2.63 GB on its own (measured — 60,598 files /
- * 809K symbols / 3.41 KB per symbol), so even a 3-entry cap admits 7.9 GB
- * against Node's ~4.19 GB default heap. A count-based LRU would also evict
- * ten small projects for no reason while letting two huge ones through.
- *
- * 1M symbols ≈ 3.3 GB at the measured density, leaving ~0.9 GB of the
- * default heap for everything else Cockpit does. The density figure comes
- * from one Lean repo; a TypeScript project measured ~0.8 GB for 7.7K files,
- * a different per-FILE density, which is precisely why the budget is per
- * SYMBOL rather than per file.
- *
- * This bound is best-effort: it cannot make two oversized projects coexist,
- * it only decides which one is dropped, and whether that happens as an
- * eviction or as an OOM.
- *
- * Derived from the heap the process actually got, but capped at
- * MAX_BUDGET_BYTES (~2 GB) however large that heap is. Scaling it uncapped
- * with a 16 GB heap let five large worktrees stay resident at once — 7.3 GB
- * live, ~3 s full-GC pauses that stalled every request on the server. A big
- * heap is headroom against OOM, not room to cache more. At Node's default
- * ~4.2 GB heap the cap is what applies.
- */
+/** A best-effort heap budget: unique parse/relation blocks plus per-worktree
+ * roots. Sharing must not charge the same payload once per worktree. Keep the
+ * existing 2 GiB ceiling and 1 GiB reserve for the rest of the application. */
 export function codeMapBudgetForHeap(heapLimitBytes: number): number {
-  const fromHeap = Math.floor((heapLimitBytes - HEAP_RESERVED_BYTES) / BYTES_PER_SYMBOL);
-  return Math.max(MIN_CACHED_SYMBOLS, Math.min(fromHeap, MAX_BUDGET_SYMBOLS));
+  return Math.max(MIN_BUDGET_BYTES, Math.min(heapLimitBytes - HEAP_RESERVED_BYTES, MAX_BUDGET_BYTES));
 }
-/** Measured index density; see above. */
-const BYTES_PER_SYMBOL = 3_300;
-/** Heap left to everything that is not the Code Map. */
+const BYTES_PER_SYMBOL = 4_000;
 const HEAP_RESERVED_BYTES = 1024 ** 3;
-/** Floor for tiny heaps, so the cache never degenerates to "evict everything". */
-const MIN_CACHED_SYMBOLS = 250_000;
-/** Hard ceiling on the Code Map's share of the heap, whatever the heap size. */
+const MIN_BUDGET_BYTES = 250_000 * BYTES_PER_SYMBOL;
 const MAX_BUDGET_BYTES = 2 * 1024 ** 3;
-const MAX_BUDGET_SYMBOLS = Math.floor(MAX_BUDGET_BYTES / BYTES_PER_SYMBOL);
-export const MAX_CACHED_SYMBOLS = codeMapBudgetForHeap(getHeapStatistics().heap_size_limit);
-
-/**
- * What one resident analytics node costs, in index symbols — the unit
- * MAX_CACHED_SYMBOLS is expressed in.
- *
- * Analytics turned out to be the LARGER half of a project's footprint, not
- * the smaller one: a production heap snapshot held two analytics entries of
- * ~149K nodes each at 1.27 GB and 1.25 GB (~8.4 KB per node, TF-IDF ~2/3 of
- * it), against ~3.3 KB per symbol for the index itself. 8.4 / 3.3 ≈ 2.5;
- * rounded up so the estimate errs towards evicting. Leaving it out of the
- * budget is how two such projects filled the 4 GB heap without ever reaching
- * the 1M-symbol eviction threshold.
- */
-export const ANALYTICS_SYMBOLS_PER_NODE = 3;
-
-/**
- * Resident analytics as seen from here. `analytics/cache` imports this module
- * statically, so the reverse edge cannot be a static import; it registers
- * itself on load instead. Null until analytics is first used, which is also
- * exactly when there is nothing resident to count.
- */
-export interface AnalyticsResidency {
-  /** Nodes held for `cwd`, 0 when nothing is cached. */
-  nodes(cwd: string): number;
-  /** Drop `cwd`'s analytics synchronously. */
-  drop(cwd: string): void;
-  /** ms epoch of the last read of `cwd`'s analytics, 0 when nothing is cached. */
-  lastUsedAt(cwd: string): number;
-}
-let analyticsResidency: AnalyticsResidency | null = null;
-export function registerAnalyticsResidency(residency: AnalyticsResidency | null): void {
-  analyticsResidency = residency;
-}
+export const MAX_CACHED_BYTES = codeMapBudgetForHeap(getHeapStatistics().heap_size_limit);
 
 /**
  * Recency and `keep` rules shared by `enforceCodeMapBudget` (below).
@@ -895,7 +823,7 @@ export function registerAnalyticsResidency(residency: AnalyticsResidency | null)
  * about to return, and dropping it would both waste the build and hand back
  * an index that is no longer cached (so the next call rebuilds it, forever).
  * That means the budget can legitimately be exceeded by a single oversized
- * project — see MAX_CACHED_SYMBOLS.
+ * project — the budget cannot shrink a single oversized index.
  */
 /**
  * Test-only handle on the module-private cache. NEVER call from production
@@ -906,11 +834,12 @@ export function registerAnalyticsResidency(residency: AnalyticsResidency | null)
  * `getCodeIndex` calls `buildCodeIndex` through a direct local binding, so
  * an ESM spy on the module export does not intercept it (an earlier version
  * of the eviction tests "passed" for exactly that reason — the stub never
- * ran and every assertion was vacuously true), and the budget is measured
- * in millions of symbols, far past what a real fixture repo could reach.
+ * ran and every assertion was vacuously true), and a real fixture cannot
+ * practically exhaust the process-wide heap budget.
  */
 export const __indexCacheTesting = {
   seed(cwd: string, index: CodeIndex, lastUsedAt = Date.now()): void {
+    sharing.release(cwd);
     indexCache.set(cwd, index);
     indexLastUsed.set(cwd, lastUsedAt);
   },
@@ -921,98 +850,30 @@ export const __indexCacheTesting = {
     return [...indexCache.keys()];
   },
   clear(): void {
-    indexCache.clear();
+    invalidateIndex();
     indexLastUsed.clear();
-    dirtyCwds.clear();
   },
-  evict(keep: string, reserve = 0): void {
-    enforceCodeMapBudget(keep, reserve);
+  evict(keep: string, reserveBytes = 0): void {
+    enforceCodeMapBudget(keep, reserveBytes);
   },
+  sharingStats: () => sharing.stats(),
+  estimatedBytes: () => cachedIndexBytes(),
 };
 
-/**
- * Evict least-recently-used Code Map data until indexes AND analytics fit the
- * budget, counting `reserve` symbols for something about to be built.
- *
- * Two passes, cheapest loss first: analytics rebuild from a resident index in
- * seconds, an index takes tens of seconds of parsing. So every other
- * project's analytics go before any index does. `keep` is never touched — it
- * is what the caller is building or returning.
- *
- * `reserve` exists for the analytics build itself: its peak lands before the
- * entry is cached, so evicting only afterwards is evicting too late.
- */
-/**
- * Make room for `reserve` symbol-equivalents of analytics for `cwd`, or report
- * that there is none. Unlike `enforceCodeMapBudget` this never thrashes:
- *
- *   - it only drops OTHER projects' analytics that have not been read since
- *     `hotSince` — a project being worked on keeps its analytics;
- *   - it never drops an index (tens of seconds to rebuild) to fit analytics
- *     (seconds to rebuild, and optional — routes degrade without them);
- *   - it decides before dropping anything, so a refusal costs nothing.
- *
- * Two agents alternating between two large projects therefore settle into one
- * of them having analytics and the other answering degraded, instead of each
- * request evicting the other's entry and rebuilding its own on the main thread.
- */
-export function admitAnalytics(cwd: string, reserve: number, hotSince: number): boolean {
-  const cost = (c: string) => (analyticsResidency?.nodes(c) ?? 0) * ANALYTICS_SYMBOLS_PER_NODE;
-  let total = reserve;
-  for (const [c, idx] of indexCache) total += countIndexSymbols(idx) + cost(c);
-  if (total <= MAX_CACHED_SYMBOLS) return true;
-  const cold = [...indexCache.keys()]
-    .filter((c) => c !== cwd && cost(c) > 0 && (analyticsResidency?.lastUsedAt(c) ?? 0) < hotSince)
-    .sort((a, b) => (analyticsResidency?.lastUsedAt(a) ?? 0) - (analyticsResidency?.lastUsedAt(b) ?? 0));
-  const reclaimable = cold.reduce((sum, c) => sum + cost(c), 0);
-  if (total - reclaimable > MAX_CACHED_SYMBOLS) return false;
-  for (const c of cold) {
-    if (total <= MAX_CACHED_SYMBOLS) break;
-    const n = cost(c);
-    analyticsResidency?.drop(c);
-    total -= n;
-    console.log(`[codeIndex] dropped idle analytics for ${c} (${n} symbol-equivalents) to admit ${cwd}`);
-  }
-  return true;
+function cachedIndexBytes(): number {
+  let bytes = sharing.estimatedBytes();
+  // Legacy/test indexes without a published sharing lease retain the old estimate.
+  for (const [cwd, index] of indexCache) if (!sharing.has(cwd)) bytes += countIndexSymbols(index) * BYTES_PER_SYMBOL;
+  return bytes;
 }
 
-export function enforceCodeMapBudget(keep: string, reserve = 0): void {
-  const analyticsCost = (cwd: string) =>
-    (analyticsResidency?.nodes(cwd) ?? 0) * ANALYTICS_SYMBOLS_PER_NODE;
-  const sizes = new Map<string, number>();
-  let total = reserve;
-  for (const [cwd, idx] of indexCache) {
-    const n = countIndexSymbols(idx);
-    sizes.set(cwd, n);
-    total += n + analyticsCost(cwd);
-  }
-  if (total <= MAX_CACHED_SYMBOLS) return;
-
-  const order = [...indexCache.keys()].filter((cwd) => cwd !== keep);
-  for (const cwd of order) {
-    if (total <= MAX_CACHED_SYMBOLS) return;
-    const cost = analyticsCost(cwd);
-    if (cost === 0) continue;
-    analyticsResidency?.drop(cwd);
-    total -= cost;
-    console.log(
-      `[codeIndex] dropped analytics for ${cwd} (${cost} symbol-equivalents) — ` +
-        `Code Map over MAX_CACHED_SYMBOLS=${MAX_CACHED_SYMBOLS}`,
-    );
-  }
-  for (const cwd of order) {
-    if (total <= MAX_CACHED_SYMBOLS) return;
-    const n = sizes.get(cwd) ?? 0;
-    indexCache.delete(cwd);
-    dirtyCwds.delete(cwd);
-    // Already dropped above when it held anything; this covers an analytics
-    // module that had not registered yet.
-    invalidateAnalyticsAsync(cwd);
-    total -= n;
-    console.log(
-      `[codeIndex] evicted ${cwd} (${n} symbols) — cache over ` +
-        `MAX_CACHED_SYMBOLS=${MAX_CACHED_SYMBOLS}`,
-    );
+/** Evict least-recently-used indexes; keep the index being returned. */
+export function enforceCodeMapBudget(keep: string, reserveBytes = 0): void {
+  for (const cwd of indexCache.keys()) {
+    if (cachedIndexBytes() + reserveBytes <= MAX_CACHED_BYTES) break;
+    if (cwd === keep) continue;
+    releaseIndex(cwd);
+    console.log(`[codeIndex] evicted ${cwd} — cache over estimated byte budget`);
   }
 }
 
@@ -1021,7 +882,7 @@ export function enforceCodeMapBudget(keep: string, reserve = 0): void {
 //
 // The size budget only evicts when a NEW project needs room, so indexes built
 // once and never read again stayed resident for the life of the server. An
-// index (and its analytics) unread for INDEX_IDLE_MS is dropped; the next
+// index unread for INDEX_IDLE_MS is dropped; the next
 // code-graph request rebuilds it.
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -1029,20 +890,17 @@ export function enforceCodeMapBudget(keep: string, reserve = 0): void {
 export const INDEX_IDLE_MS = 15 * 60_000;
 const IDLE_SWEEP_EVERY = '5 minutes';
 
-/** Drop every cached index — and its analytics — unread since
- *  `now - INDEX_IDLE_MS`. Analytics reads count as use. In-flight builds are
+/** Drop every cached index unread since
+ *  `now - INDEX_IDLE_MS`. In-flight builds are
  *  never touched. Returns the evicted cwds. */
 export function evictIdleCodeIndexes(now = Date.now()): string[] {
   const cutoff = now - INDEX_IDLE_MS;
   const evicted: string[] = [];
   for (const [cwd, idx] of [...indexCache]) {
     if (inflight.has(cwd)) continue;
-    const lastUsed = Math.max(indexLastUsed.get(cwd) ?? 0, analyticsResidency?.lastUsedAt(cwd) ?? 0);
+    const lastUsed = indexLastUsed.get(cwd) ?? 0;
     if (lastUsed >= cutoff) continue;
-    analyticsResidency?.drop(cwd);
-    invalidateAnalyticsAsync(cwd);
-    indexCache.delete(cwd);
-    dirtyCwds.delete(cwd);
+    releaseIndex(cwd);
     evicted.push(cwd);
     console.log(
       `[codeIndex] released idle ${cwd} (${countIndexSymbols(idx)} symbols, unread for ` +
@@ -1072,284 +930,204 @@ export function startCodeIndexIdleSweeper(): void {
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Watcher integration — lazy incremental sync on access.
-//
-// Design: the watcher pushes "this cwd has a changed file" events to us via
-// `markIndexDirty`. We DON'T re-parse eagerly — we just remember the cwd is
-// dirty, and the next `getCodeIndex` call drains the dirty flag by stat'ing
-// every indexed file and re-parsing those whose mtime moved. That's what
-// `refreshFocalFile` already does, but applied across the whole index in one
-// pass instead of one focal file at a time.
-//
-// Subscription registration is inverted-of-control because codeIndex lives in
-// @cockpit/feature-explorer (a package) and fileWatcher lives in /src/lib
-// (the app). Boot code in /src/lib/codeIndexSync.ts calls
-// `registerWatcherSubscriber` once at startup, wiring `fileWatcher.subscribe`
-// → `markIndexDirty`. If nothing registers (tests, headless tooling), we
-// silently skip subscribing and queries still work — they just won't auto-
-// refresh on disk changes.
-// ────────────────────────────────────────────────────────────────────────────
-
-/** Cwds that need a sync pass before their next `getCodeIndex` return. */
-const dirtyCwds = new Set<string>();
-/** Cwds we've already wired up a watcher subscription for, so we don't
- *  double-subscribe across many getCodeIndex calls. */
-const subscribedCwds = new Set<string>();
-
-/** Subscriber factory: given a cwd and an `onDirty` callback, install a
- *  file-change subscription. Set once at boot by `src/lib/codeIndexSync.ts`. */
-export type WatcherSubscriber = (cwd: string, onDirty: () => void) => void;
+// One owner per project serializes scans/builds and owns its subscription.
+interface ProjectUpdates {
+  version: number;
+  publishedVersion: number;
+  generation: number;
+  force: boolean;
+  retired?: boolean;
+  runningGeneration?: number;
+  unsubscribe?: () => void;
+}
+const updates = new Map<string, ProjectUpdates>();
+const buildFailures = new Map<string, unknown>();
+export type WatcherSubscriber = (cwd: string, onDirty: () => void) => (() => void);
 let watcherSubscriber: WatcherSubscriber | null = null;
 
-/** Called once at server boot from `src/lib/codeIndexSync.ts`. Subsequent
- *  calls overwrite — last registration wins. */
 export function registerWatcherSubscriber(fn: WatcherSubscriber | null): void {
   watcherSubscriber = fn;
-  // Re-subscribe any cwds we'd already subscribed to under a previous
-  // registration. Rare in practice (single boot wiring), but matters for HMR
-  // where the module reloads and the old subscription is gone.
-  if (fn) {
-    for (const cwd of subscribedCwds) {
-      fn(cwd, () => dirtyCwds.add(cwd));
-    }
+  for (const [cwd, state] of updates) {
+    state.unsubscribe?.();
+    state.unsubscribe = fn?.(cwd, () => markIndexDirty(cwd));
   }
 }
 
-/** Used by tests / boot code that wants to mark a cwd dirty by hand
- *  (e.g. on agent turn-end, post-bulk-edit). Idempotent. */
 export function markIndexDirty(cwd: string): void {
-  dirtyCwds.add(cwd);
+  const state = updates.get(cwd);
+  if (state) state.version++;
 }
 
-/** Ensure we have a watcher subscription for this cwd. No-op when no
- *  subscriber is registered (headless / test contexts). */
-function ensureSubscribed(cwd: string): void {
-  if (subscribedCwds.has(cwd)) return;
-  subscribedCwds.add(cwd);
-  if (watcherSubscriber) {
-    watcherSubscriber(cwd, () => dirtyCwds.add(cwd));
+function ownerFor(cwd: string): ProjectUpdates {
+  let state = updates.get(cwd);
+  if (!state) {
+    state = { version: 0, publishedVersion: -1, generation: 0, force: false };
+    updates.set(cwd, state);
+    state.unsubscribe = watcherSubscriber?.(cwd, () => markIndexDirty(cwd));
+  } else if (state.retired) {
+    state.retired = false;
+    state.unsubscribe = watcherSubscriber?.(cwd, () => markIndexDirty(cwd));
   }
+  return state;
 }
 
-/** Drain the dirty flag: stat every indexed file, re-parse the ones whose
- *  on-disk mtime no longer matches the cached one. Uses the existing
- *  `refreshFocalFile` for per-file work — that function already does the
- *  stat + early-return-on-match dance, so iterating it here is correct.
- *
- *  Cost: O(filesInIndex) stat calls. For a typical project (~hundreds of
- *  files), that's well under 50 ms. Re-parses are O(changed files) on top.
- *  This runs in the foreground of `getCodeIndex`, so the first query after a
- *  big edit pays the cost; subsequent queries are cache hits until the next
- *  watcher event.
- *
- *  Note on cross-file edge staleness: refreshFocalFile only updates each file's
- *  own outgoing/intra edges. Other files' `incomingCalls` that point AT
- *  refreshed files stay as the last full build computed them. This matches
- *  what cockpit's UI already accepts (see refreshFocalFile docstring) and
- *  what CodeGraph does too. Users who need 100% accuracy hit the "Rebuild
- *  project graph" button which fires `forceRefresh: true`. */
-async function syncDirtyIndex(cwd: string, index: CodeIndex): Promise<void> {
-  // Snapshot keys — refreshFocalFile mutates index.files in place, but the
-  // file set itself shouldn't change here (added/deleted files aren't picked
-  // up by this lightweight path; that needs a full rebuild).
-  const paths = Array.from(index.files.keys());
-  // Bound concurrency the same way buildCodeIndex does, so a 1000-file
-  // project doesn't burst stat-and-read calls.
-  let cursor = 0;
-  const worker = async () => {
-    while (cursor < paths.length) {
-      const i = cursor++;
-      try {
-        await refreshFocalFile(cwd, paths[i], index);
-      } catch {
-        // Ignore per-file errors; the next access will retry. Don't let a
-        // single unreadable file abort the whole sync.
-      }
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(8, paths.length) }, worker));
+function touchIndex(cwd: string, index: CodeIndex): void {
+  indexCache.delete(cwd);
+  indexCache.set(cwd, index);
+  indexLastUsed.set(cwd, Date.now());
 }
 
-export interface GetIndexOptions {
-  /** Force a fresh build, dropping any cached index for this cwd. */
-  forceRefresh?: boolean;
+function releaseIndex(cwd: string): void {
+  sharing.release(cwd);
+  indexCache.delete(cwd);
+  indexLastUsed.delete(cwd);
+  buildFailures.delete(cwd);
+  const state = updates.get(cwd);
+  if (!state) return;
+  state.generation++;
+  state.retired = true;
+  state.unsubscribe?.();
+  state.unsubscribe = undefined;
+  if (!inflight.has(cwd)) updates.delete(cwd);
 }
 
+export interface GetIndexOptions { forceRefresh?: boolean }
+
+/** Every project query verifies membership and content, even without events. */
 export async function getCodeIndex(cwd: string, opts: GetIndexOptions = {}): Promise<CodeIndex> {
-  // Register a watcher subscription on first access. Cheap (Set lookup +
-  // optional callback) once-per-cwd-for-process-lifetime.
-  ensureSubscribed(cwd);
-
+  const state = ownerFor(cwd);
   if (opts.forceRefresh) {
-    indexCache.delete(cwd);
-    dirtyCwds.delete(cwd); // forceRefresh subsumes any pending lazy sync
-    // The old graph describes the index being replaced. Holding it through the
-    // rebuild only raises the peak, and routes reading it would answer from
-    // stale structure.
-    invalidateAnalyticsAsync(cwd);
-  }
-  const cached = indexCache.get(cwd);
-  if (cached) {
-    // LRU touch: re-insert so this cwd moves to the most-recent end of the
-    // Map. `enforceCodeMapBudget` relies on Map order being recency order.
-    indexCache.delete(cwd);
-    indexCache.set(cwd, cached);
-    indexLastUsed.set(cwd, Date.now());
-    // Lazy flush: drain dirty before returning. Sync runs in the foreground so
-    // the caller sees fresh data. We delete the flag BEFORE the sync to make
-    // overlapping reads see consistent state (no thundering herd of syncs).
-    if (dirtyCwds.has(cwd)) {
-      dirtyCwds.delete(cwd);
-      try {
-        await syncDirtyIndex(cwd, cached);
-      } catch {
-        // Even if sync fails wholesale, return the cached (possibly stale)
-        // index — the next watcher event will re-mark dirty and retry.
-      }
-    }
-    return cached;
-  }
-  const pending = inflight.get(cwd);
-  if (pending) return pending;
-  const p = buildCodeIndex(cwd).then((index) => {
-    indexCache.set(cwd, index);
-    indexLastUsed.set(cwd, Date.now());
-    enforceCodeMapBudget(cwd);
-    inflight.delete(cwd);
+    state.generation++;
+    state.version++;
+    state.force = true;
     buildFailures.delete(cwd);
-    // Fresh build subsumes any dirty flag that arrived during the build.
-    dirtyCwds.delete(cwd);
-    // No analytics precompute here. Analytics (graph, pagerank, TF-IDF,
-    // communities) is the larger half of a project's footprint — ~1.25 GB on
-    // a large repo — and its passes run synchronously on the main thread.
-    // Building it for every index meant every index request paid for it,
-    // including ones that never touch context / related / risk. Those routes
-    // build it on first use via getOrTriggerAnalytics and degrade until then.
-    return index;
-  }).catch((err) => {
-    // Failure cleanup. Two things must happen that the success path does:
-    //   1. Clear the terminal progress frame, or the Code Map sits on a
-    //      frozen bar until the tab is closed.
-    //   2. Drop the rejected promise from `inflight`. Without this it stays
-    //      cached and EVERY later getCodeIndex(cwd) returns the same
-    //      rejection — the cwd is poisoned until something calls
-    //      invalidateIndex (which only two of the ten routes do).
-    emitBuildProgress(cwd, 'done', 0, 0, undefined, true);
-    inflight.delete(cwd);
-    throw err;
-  });
-  inflight.set(cwd, p);
-  return p;
+  }
+  const requiredVersion = state.version;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const running = inflight.get(cwd);
+    if (running) {
+      const generation = state.runningGeneration;
+      // A forced request may supersede a task already reading the old workspace.
+      const result = await running.then(
+        (index) => ({ index, error: undefined }),
+        (error: unknown) => ({ index: undefined, error }),
+      );
+      if (state.force || generation !== state.generation) continue;
+      if (result.error) throw result.error;
+      if (!opts.forceRefresh && result.index && baselines.get(result.index)?.git.busy) {
+        throw new AppError({ message: 'Workspace is changing: finish the Git operation or explicitly rebuild the index' });
+      }
+      if (state.publishedVersion >= requiredVersion && result.index && indexCache.get(cwd) === result.index) {
+        touchIndex(cwd, result.index);
+        return result.index;
+      }
+      continue;
+    }
+    const generation = state.generation;
+    const version = state.version;
+    const force = state.force;
+    state.force = false;
+    state.runningGeneration = generation;
+    const task = (async () => {
+      const scan = await scanIndexFiles(cwd, force);
+      const cached = indexCache.get(cwd);
+      const prior = cached && baselines.get(cached);
+      const delta = diffIndexFiles(prior?.hashes ?? new Map(), scan.hashes);
+      const unchanged = !force && cached && prior && !delta.count && prior.configHash === scan.configHash
+        && prior.git.busy === scan.git.busy && prior.git.commonDir === scan.git.commonDir && prior.scanTruncated === scan.truncated;
+      const next = unchanged ? cached : await buildIndexSnapshot(cwd, scan, cached, force);
+      const end = await readGitIndexState(cwd);
+      if (end.commonDir !== scan.git.commonDir || (!force && (end.busy || end.head !== scan.git.head))) {
+        throw new AppError({ message: 'Workspace changed during indexing; retry after the Git operation finishes' });
+      }
+      if (state.generation !== generation || updates.get(cwd) !== state) {
+        throw new AppError({ message: 'Index update was superseded; retry the query' });
+      }
+      // HEAD can advance on an ordinary commit with identical workspace content.
+      if (unchanged && prior) baselines.set(next, { ...prior, git: scan.git });
+      if (!unchanged) {
+        const baseline = baselines.get(next)!;
+        sharing.publish(next, scan.git.commonDir, baseline.hashes, baseline.facts);
+      }
+      state.publishedVersion = version;
+      touchIndex(cwd, next);
+      buildFailures.delete(cwd);
+      enforceCodeMapBudget(cwd);
+      return next;
+    })();
+    // Retain the task until completion even when invalidated: never run two builds.
+    const tracked = task.catch((error: unknown) => {
+      // Only the current build owner can publish diagnostics. A superseded
+      // task must not overwrite a rebuild's state or resurrect an evicted cwd.
+      if (updates.get(cwd) === state && state.generation === generation && !state.force) {
+        buildFailures.set(cwd, error);
+      }
+      throw error;
+    }).finally(() => {
+      if (inflight.get(cwd) === tracked) inflight.delete(cwd);
+      if (state.retired && !state.force && updates.get(cwd) === state) {
+        state.unsubscribe?.();
+        updates.delete(cwd);
+      }
+      emitBuildProgress(cwd, 'done', 0, 0, undefined, true);
+    });
+    inflight.set(cwd, tracked);
+    const result = await tracked;
+    // This caller may have started work on behalf of a queued explicit rebuild.
+    if (!opts.forceRefresh && baselines.get(result)?.git.busy) {
+      throw new AppError({ message: 'Workspace is changing: finish the Git operation or explicitly rebuild the index' });
+    }
+    return result;
+  }
+  throw new AppError({ message: 'Workspace is changing; retry the index query' });
 }
 
 export function invalidateIndex(cwd?: string): void {
-  // Drop analytics cache in lockstep so a stale graph never outlives its
-  // CodeIndex. Same lazy-require pattern to avoid the import cycle.
-  import('../analytics/cache')
-    .then((m) => m.invalidateAnalytics(cwd))
-    .catch(() => {
-      /* analytics module not loaded yet — nothing to invalidate */
-    });
-  if (!cwd) {
-    indexCache.clear();
-    inflight.clear();
-    dirtyCwds.clear();
-    buildFailures.clear();
-    localContexts.clear();
-    return;
-  }
-  indexCache.delete(cwd);
-  inflight.delete(cwd);
-  dirtyCwds.delete(cwd);
-  buildFailures.delete(cwd);
-  for (const key of localContexts.keys()) {
-    if (key.startsWith(`${cwd}\u0000`)) localContexts.delete(key);
-  }
+  const paths = cwd ? [cwd] : [...new Set([...indexCache.keys(), ...updates.keys()])];
+  for (const p of paths) releaseIndex(p);
 }
 
-// ============================================================================
-// Non-blocking access — a virtual proxy over getCodeIndex.
-//
-// A full build is O(project): ~45s for a 12.8K-file repo, all of it tree-
-// sitter parsing on the main thread. Callers that only need ONE file's data
-// must not sit behind it. `peekCodeIndex` answers "is it ready?" without
-// ever starting or awaiting work; `ensureCodeIndex` starts the build and
-// returns at once. `getCodeIndex` stays the blocking entry point for routes
-// whose answer genuinely needs the whole project.
-// ============================================================================
-
-/** Cwds whose background build (started via `ensureCodeIndex`) failed.
- *  Without this latch, a client that refetches on the build's terminal frame
- *  would restart a doomed build forever. Cleared by a forced rebuild, by any
- *  successful build, and by `invalidateIndex`. */
-const buildFailures = new Map<string, unknown>();
-
-/** The cached index for `cwd`, or null. Never builds, never awaits. A
- *  pending watcher sync runs in the background instead of in front of the
- *  caller; the caller's own focal file is refreshed by `refreshFocalFile`. */
+/** A read of the last complete revision, with no IO or implicit update. */
 export function peekCodeIndex(cwd: string): CodeIndex | null {
-  ensureSubscribed(cwd);
   const cached = indexCache.get(cwd);
-  if (!cached) return null;
-  indexCache.delete(cwd);
-  indexCache.set(cwd, cached);
-  indexLastUsed.set(cwd, Date.now());
-  if (dirtyCwds.has(cwd)) {
-    dirtyCwds.delete(cwd);
-    syncDirtyIndex(cwd, cached).catch(() => {
-      // Same policy as getCodeIndex: a failed sync leaves the stale index;
-      // the next watcher event re-marks the cwd dirty.
-    });
-  }
-  return cached;
+  if (cached) touchIndex(cwd, cached);
+  return cached ?? null;
 }
 
-/** Start building the index for `cwd` if it isn't cached or in flight, and
- *  return immediately. Progress and completion are reported through
- *  `emitBuildProgress` (the `done` frame fires on success and failure). */
+/** Only explicit rebuild UI calls this; a failure must not create a refetch loop. */
 export function ensureCodeIndex(cwd: string, opts: GetIndexOptions = {}): void {
-  if (opts.forceRefresh) buildFailures.delete(cwd);
-  else if (buildFailures.has(cwd)) return;
-  getCodeIndex(cwd, opts).catch((err) => {
-    buildFailures.set(cwd, err);
-    console.error(`[codeIndex] background build failed for ${cwd}:`, err);
-  });
+  if (!opts.forceRefresh && buildFailures.has(cwd)) return;
+  // getCodeIndex records failures before emitting completion for every caller.
+  getCodeIndex(cwd, opts).catch(() => {});
 }
 
-/** True while a project index build for `cwd` is in flight. Lets callers
- *  that must not START a build (file-functions, review) still tell the client
- *  that cross-file data is on its way when someone else started one. */
-export function codeIndexBuilding(cwd: string): boolean {
-  return inflight.has(cwd);
-}
-
-/** True when the last background build for `cwd` failed and nothing has
- *  retried it since — i.e. cross-file data will NOT arrive on its own. */
-export function codeIndexBuildFailed(cwd: string): boolean {
-  return buildFailures.has(cwd);
-}
+export function codeIndexBuilding(cwd: string): boolean { return inflight.has(cwd); }
+export function codeIndexBuildFailed(cwd: string): boolean { return buildFailures.has(cwd); }
 
 // ============================================================================
 // File-local projection — one file, no project index.
 // ============================================================================
 
-/** Handler project contexts for the file-local projection, keyed
- *  `cwd\0grammar`. Building one can cost a couple of `git ls-files` runs
- *  (the TS handler loads tsconfigs + workspaces), and a cold project tends
- *  to get many file-local requests while its build runs — so pay it once. */
-const localContexts = new Map<string, Promise<unknown>>();
-
-function localContextFor(cwd: string, grammar: string, relPath: string): Promise<unknown> {
-  const key = `${cwd}\u0000${grammar}`;
-  let ctx = localContexts.get(key);
-  if (!ctx) {
-    const handler = getHandler(grammar as Parameters<typeof getHandler>[0]);
-    ctx = Promise.resolve(handler.buildProjectContext(cwd, new Set([relPath])));
-    ctx.catch(() => localContexts.delete(key));
-    localContexts.set(key, ctx);
+/** Verify only the focal content; cross-file data remains tied to a published revision. */
+export async function fileFunctionsForBrowse(cwd: string, relPath: string): Promise<FileFunctionsResponse | null> {
+  await requireGitProject(cwd);
+  const content = await readIndexSource(cwd, relPath);
+  if (!content) return null;
+  // The project may publish while the focal read is awaiting disk IO.
+  const index = peekCodeIndex(cwd);
+  const baseline = index && baselines.get(index);
+  const state = updates.get(cwd);
+  const failure = buildFailures.get(cwd) as { message?: string; cause?: unknown } | undefined;
+  const indexUpdateError = failure?.cause instanceof Error ? failure.cause.message : failure?.message;
+  const crossFilePending = codeIndexBuilding(cwd);
+  if (index && baseline?.hashes.get(relPath) === content.hash && (!state || state.version === state.publishedVersion)) {
+    const payload = fileFunctionsFromIndex(index, relPath);
+    if (payload) return { ...payload, mtimeMs: content.mtime, crossFileRevision: index.revision,
+      crossFilePending, crossFileStale: crossFilePending || !!failure, indexUpdateError };
   }
-  return ctx;
+  const local = await fileFunctionsLocal(cwd, relPath, content);
+  return local ? { ...local, fileCount: index?.files.size ?? 0, crossFileStale: !!index,
+    crossFileRevision: index?.revision, crossFilePending: codeIndexBuilding(cwd), indexUpdateError } : null;
 }
 
 /**
@@ -1367,8 +1145,12 @@ function localContextFor(cwd: string, grammar: string, relPath: string): Promise
 export async function fileFunctionsLocal(
   cwd: string,
   relPath: string,
+  content?: SourceContent,
 ): Promise<FileFunctionsResponse | null> {
-  const parsed = await parseOneFile(path.join(cwd, relPath), relPath);
+  await requireGitProject(cwd);
+  const input = content ?? await readIndexSource(cwd, relPath);
+  if (!input) return null;
+  const parsed = await parseOneFile(relPath, input);
   if (!parsed) return null;
   const local: CodeIndex = {
     cwd,
@@ -1376,218 +1158,25 @@ export async function fileFunctionsLocal(
     truncated: false,
     tsconfigs: [],
     workspaces: new Map(),
-    projectContexts: new Map([
-      [parsed.language, await localContextFor(cwd, parsed.language, relPath)],
-    ]),
+    projectContexts: new Map([[parsed.language, parsed.language === 'go'
+      ? await getHandler('go').buildProjectContext(cwd, new Set([parsed.path])) : undefined]]),
     fileSet: new Set([parsed.path]),
     generatedAt: Date.now(),
     buildMs: 0,
   };
-  await buildIndexedFileEntry(
-    { ...parsed, importBindings: [], importSpecifiers: [] },
-    null,
-    local,
-  );
+  await buildIndexedFileEntry({ ...parsed, importBindings: [], importSpecifiers: [] }, local, input.mtime);
   return fileFunctionsFromIndex(local, parsed.path);
 }
 
-// ============================================================================
-// Single-file refresh — keeps focal projections fresh without paying the
-// 5-10 s full-rebuild cost on every save.
-// ============================================================================
-
-/**
- * Re-parse + re-resolve ONE file in place when its on-disk mtime
- * differs from what the index has cached. Mutates `index.files`
- * directly; returns `true` if a refresh actually happened.
- *
- * What gets refreshed (for the focal file ONLY):
- *   - mtime, symbolsTree, flatSymbols
- *   - importBindings, resolvedImports, importedFiles
- *   - intraCalls, outgoingCalls, externalCalls, methodCalls
- *   - symbolsByName / symbolsByQname / bindingsByLocalName /
- *     reexportsByLocalName lookup tables
- *
- * What stays as the last full build computed it (accepted stale):
- *   - This file's `incomingCalls` (= other files' outgoing edges
- *     pointing at us; refreshing them needs re-parsing every other
- *     file)
- *   - This file's `importedBy` (= reverse of other files'
- *     `importedFiles`; same constraint)
- *   - Other files' `importedBy` / `outgoingCalls` / `incomingCalls`
- *     (we don't touch other files at all)
- *
- * Practical effect: the chip canvas + TOC + intra-file pins +
- * RIGHT-side pins (callees in other files, anchored at THIS file's
- * call site lines) are all fresh. The LEFT-side pins (callers from
- * other files) may show stale qnames when the caller's code
- * changed since the last full build — fixed by clicking
- * "Rebuild project graph" in the BlockViewer header.
- *
- * Returns `false` (no-op) when:
- *   - The file isn't in the index (unsupported language, beyond
- *     file cap, deleted file). Caller falls through to whatever
- *     it was going to do (typically the synthetic fallback path
- *     in route.ts).
- *   - The on-disk mtime matches the cached one (cache is fresh).
- *   - The file's grammar isn't recognised (parseOneFile returns
- *     null).
- *
- * Returns `true` after successfully replacing the focal entry.
- */
-// ============================================================================
-// Single-file upsert helpers
-//
-// Two callers feed buildIndexedFileEntry below:
-//   - refreshFocalFile  → reparses an existing entry whose on-disk mtime
-//                         moved
-//   - addFocalFile      → adds a brand-new entry for a path that wasn't
-//                         seen at the last `buildCodeIndex`. Covers the
-//                         AI-paired workflow where new files appear after
-//                         the initial index was built (Write tool / pull /
-//                         checkout) and the lazy refresh path was
-//                         silently dropping them.
-//
-// The watcher → syncDirtyIndex path still ignores additions (it iterates
-// existing keys). That's by design — async-rebuild (separate work) covers
-// high-churn scenarios. addFocalFile covers the low-churn "user just
-// opened a brand-new file" case at query time.
-// ============================================================================
-
-const execFileAsync = promisify(execFile);
-
-
-/**
- * True when `relPath` belongs in this project's source fileset — same
- * truth source as `buildCodeIndex` uses at the initial build:
- *
- *   - Git project: `git ls-files --cached --others --exclude-standard`
- *     membership. `--error-unmatch` makes the command exit non-zero when
- *     the path isn't matched (so node_modules / dist / coverage / any
- *     .gitignored noise gets rejected).
- *   - Non-git project: mirror `walkSource`'s `NON_GIT_FALLBACK_SKIP`
- *     hardcoded list (.git, node_modules).
- *
- * The check is cheap (~10ms exec). We pay it only on cache miss inside
- * `addFocalFile` — not on the hot refresh path.
- */
-async function isPathInProjectFileset(
-  cwd: string,
-  relPath: string,
-): Promise<boolean> {
-  // Quick non-git heuristic so dev/test environments without git still work.
-  let isGit = true;
-  try {
-    await execFileAsync('git', ['rev-parse', '--git-dir'], { cwd });
-  } catch {
-    isGit = false;
-  }
-  if (!isGit) {
-    // Mirror walkSource's NON_GIT_FALLBACK_SKIP set + a defensive cwd-relative check.
-    if (relPath.startsWith('.git')) return false;
-    if (relPath.startsWith('node_modules/') || relPath.includes('/node_modules/')) return false;
-    return true;
-  }
-  try {
-    await execFileAsync(
-      'git',
-      ['-c', 'core.quotePath=false', 'ls-files', '--cached', '--others', '--exclude-standard', '--error-unmatch', '--', relPath],
-      { cwd },
-    );
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Lazy-invalidate the analytics cache for a cwd. Fire-and-forget — the
- *  dynamic import avoids the circular module dependency between
- *  `codeIndex` and `analytics/cache` (analytics imports CodeIndex types
- *  at module load time; we need the inverse direction at runtime only).
- *  Errors are swallowed: if analytics hasn't been loaded yet, there's
- *  nothing to invalidate. */
-function invalidateAnalyticsAsync(cwd: string): void {
-  import('../analytics/cache')
-    .then((m) => m.invalidateAnalytics(cwd))
-    .catch(() => {
-      /* analytics module not loaded — nothing to invalidate */
-    });
-}
-
-/**
- * Add a brand-new file to `index.files`. Called from `refreshFocalFile`
- * when the focal path isn't already in the index.
- *
- * Guards (in order, cheap-first):
- *   0. `isPathInProjectFileset` — same truth source as buildCodeIndex.
- *      Rejects gitignored noise (node_modules / dist / coverage / etc).
- *   1. `grammarForExtension` — file's extension must map to a registered
- *      tree-sitter grammar. Rejects .css / .json / .md / .yaml / etc.
- *   2. `MAX_FILES` soft cap — protects against unbounded growth in
- *      long-lived sessions.
- *   3. `parseOneFile` returning non-null — covers file-too-large /
- *      tree-sitter parse failure.
- *
- * On success:
- *   - Adds `parsed.path` to `index.fileSet` so subsequent refresh of
- *     ALREADY-INDEXED files can correctly resolve imports pointing here.
- *   - Builds and inserts the IndexedFile via the shared
- *     `buildIndexedFileEntry`.
- *   - Lazy-invalidates the analytics cache so risk / related / context
- *     don't return stale rankings that pretend this file doesn't exist.
- *
- * Trade-off (documented, accepted):
- *   - Other files' `incomingCalls` / `importedBy` still don't point at us
- *     — they were computed by the last full build, and we don't re-walk
- *     them here. Their next `refreshFocalFile` will pick us up via
- *     `index.fileSet` membership.
- *   - To force consistency now, the user clicks "Rebuild project graph".
- */
-async function addFocalFile(
-  cwd: string,
-  relPath: string,
-  index: CodeIndex,
-): Promise<boolean> {
-  if (!grammarForExtension(relPath)) return false;
-  if (index.files.size >= MAX_FILES) return false;
-  if (!(await isPathInProjectFileset(cwd, relPath))) return false;
-  const parsed = await parseOneFile(path.join(cwd, relPath), relPath);
-  if (!parsed) return false;
-  // Expose the new path to subsequent resolveSpecifier calls.
-  index.fileSet.add(parsed.path);
-  await buildIndexedFileEntry(parsed, null, index);
-  invalidateAnalyticsAsync(cwd);
-  return true;
-}
-
-/**
- * Build a fresh `IndexedFile` entry from a parsed file and (optionally) an
- * old entry. Shared between `refreshFocalFile` (oldEntry !== null) and
- * `addFocalFile` (oldEntry === null).
- *
- * Mutates `index.files` BEFORE call resolution — see the inline comment below
- * for why. Caller is responsible for `invalidateAnalyticsAsync(cwd)` after.
- *
- * Stale-tolerance contract:
- *   - `importedBy` and `incomingCalls`: when refreshing an existing entry we
- *     keep the old values (we're not re-parsing other files). On add we
- *     start empty — no other file currently knows about us, and they'll
- *     update on their next refresh. Both are made fresh by a full rebuild
- *     via `forceRefresh: true`.
- */
+/** Build one isolated file-local projection; never publishes into the shared index. */
 async function buildIndexedFileEntry(
   parsed: ParsedFile,
-  oldEntry: IndexedFile | null,
   index: CodeIndex,
+  mtime: number,
 ): Promise<IndexedFile> {
   const handler = getHandler(parsed.language as Parameters<typeof getHandler>[0]);
   const ctx = index.projectContexts.get(parsed.language);
 
-  // Re-resolve THIS file's imports against the same fileSet the
-  // last full build saw. Newly-added sibling files won't be visible
-  // until forceRefresh, matching the "incomingCalls stays stale"
-  // contract above (both depend on cross-file freshness; we choose
-  // to reset both via the same trigger).
   const resolvedImports = new Map<string, string>();
   const importedFiles = new Set<string>();
   for (const spec of parsed.importSpecifiers) {
@@ -1617,25 +1206,17 @@ async function buildIndexedFileEntry(
   const newEntry: IndexedFile = {
     path: parsed.path,
     language: parsed.language,
-    mtime: parsed.mtime,
+    mtime,
     symbolsTree: parsed.symbolsTree,
     flatSymbols: parsed.flatSymbols,
     literals: parsed.literals,
     importedFiles,
-    // Inverse of other files' `importedFiles`; we're not re-parsing
-    // other files, so the previous build's view is still our best
-    // shot. Stale tolerance documented above. On add (oldEntry===null),
-    // no other file currently points at us — start empty.
-    importedBy: oldEntry?.importedBy ?? new Set<string>(),
+    importedBy: new Set<string>(),
     importBindings: parsed.importBindings,
     resolvedImports,
     intraCalls: [],
     outgoingCalls: [],
-    // Inverse of other files' `outgoingCalls`. Same trade-off as
-    // `importedBy` — we're choosing the cheap path. The chip view
-    // surfaces this as left-column caller pins; clicking
-    // "Rebuild project graph" forces a full rebuild that fixes them.
-    incomingCalls: oldEntry?.incomingCalls ?? [],
+    incomingCalls: [],
     externalCalls: [],
     methodCalls: [],
     symbolsByName,
@@ -1644,12 +1225,6 @@ async function buildIndexedFileEntry(
     reexportsByLocalName,
   };
 
-  // Resolve THIS file's calls against the rest of the (possibly
-  // stale) index. Cross-file targets that no longer exist or were
-  // renamed will silently drop here (handler.resolveCall returns
-  // [] for unresolvable receivers); the chip view doesn't need
-  // them to render correctly because the row anchored at our line
-  // numbers is the side we own.
   const intraByKey = new Map<
     string,
     { from: string; to: string; lines: number[] }
@@ -1673,12 +1248,6 @@ async function buildIndexedFileEntry(
     }
   >();
 
-  // Mutate the index BEFORE call resolution: handler.resolveCall
-  // may walk barrel chains via `bindingsByLocalName` / `flatSymbols`
-  // on `indexedFiles.get(thisFile)`. If the lookup hits the OLD
-  // entry, resolution sees stale symbol shapes and may return
-  // garbage targets. Replacing first ensures self-references read
-  // the fresh data.
   index.files.set(parsed.path, newEntry);
 
   for (const call of parsed.rawCalls) {
@@ -1764,47 +1333,6 @@ async function buildIndexedFileEntry(
   for (const e of newEntry.methodCalls) e.lines.sort((a, b) => a - b);
 
   return newEntry;
-}
-
-export async function refreshFocalFile(
-  cwd: string,
-  relPath: string,
-  index: CodeIndex,
-): Promise<boolean> {
-  const oldEntry = index.files.get(relPath);
-  if (!oldEntry) {
-    // Upsert: the file isn't in the index yet (created after build, pulled
-    // by a checkout/merge, etc). Delegate to addFocalFile, which has its
-    // own guards (project-fileset membership, grammar, MAX_FILES).
-    return addFocalFile(cwd, relPath, index);
-  }
-
-  // Stat first — cheap (~ µs) and avoids the readFile + parse cost
-  // when the cache is already fresh. The mtime check here is the
-  // hot path; almost every chip-view request that lands here in a
-  // normal session will see a match and short-circuit.
-  let onDiskMtime: number;
-  try {
-    const st = await fs.stat(path.join(cwd, relPath));
-    onDiskMtime = st.mtimeMs;
-  } catch {
-    // File deleted / inaccessible — leave the cached entry alone;
-    // the route handler will surface the 404 itself when it tries
-    // to resolveSafePath / readFile downstream.
-    return false;
-  }
-  if (onDiskMtime === oldEntry.mtime) return false;
-
-  const parsed = await parseOneFile(path.join(cwd, relPath), relPath);
-  if (!parsed) return false;
-
-  await buildIndexedFileEntry(parsed, oldEntry, index);
-  // B.y symmetry: analytics (PageRank / PPR / Louvain) computed off the
-  // pre-refresh graph is now stale. Lazy-invalidate so the next
-  // risk / related / context query triggers a rebuild — same lifecycle
-  // we already use after `addFocalFile` and a full `buildCodeIndex`.
-  invalidateAnalyticsAsync(cwd);
-  return true;
 }
 
 // ============================================================================
@@ -2117,18 +1645,6 @@ export function fileDetailFromIndex(
   };
 }
 
-// Walk a symbol tree, calling `visit` with each node. Bail early if visit returns true.
-function walkSymbols(
-  syms: ExtractedSymbol[],
-  visit: (s: ExtractedSymbol) => boolean | void,
-): boolean {
-  for (const s of syms) {
-    if (visit(s)) return true;
-    if (walkSymbols(s.children, visit)) return true;
-  }
-  return false;
-}
-
 /**
  * Collapse case + word separators so naming-style variants of the same
  * concept all hash to one string:
@@ -2167,6 +1683,9 @@ function normalizeForSearch(s: string): string {
 
 /** Options for `searchIndex`. All optional, backward-compatible defaults. */
 export interface SearchIndexOptions {
+  /** Normalized project-relative directory, including descendants. */
+  directory?: string;
+  excludeTests?: boolean;
   /** When true, also walk `IndexedFile.literals` and surface matches in
    *  `SearchResponse.literals`. Off by default to keep responses small
    *  for the common case (Cmd+K palette, which only cares about
@@ -2175,13 +1694,33 @@ export interface SearchIndexOptions {
   includeLiterals?: boolean;
 }
 
+interface RankedSearchCandidate<T> {
+  rank: number;
+  filePath: string;
+  qname: string;
+  line: number;
+  value: T;
+}
+
+const compareSearchCandidates = (a: RankedSearchCandidate<unknown>, b: RankedSearchCandidate<unknown>) =>
+  a.rank - b.rank || a.filePath.localeCompare(b.filePath) || a.qname.localeCompare(b.qname) || a.line - b.line;
+
+/** Raw exact, normalized exact, normalized prefix, then normalized substring. */
+function searchRank(name: string, query: string, normalizedQuery: string): number {
+  if (name === query) return 0;
+  const normalized = normalizeForSearch(name);
+  if (normalized === normalizedQuery) return 1;
+  if (normalized.startsWith(normalizedQuery)) return 2;
+  return normalized.includes(normalizedQuery) ? 3 : -1;
+}
+
 /**
  * Cmd+K palette search (also the backbone of the AI-facing
  * `/api/projectGraph/search` endpoint). Substring match against a
  * separator/case-normalized form so `user_profile`, `userProfile`,
- * `user-profile` etc. all collide on the same query. Fast enough for
- * typical projects (<10k symbols) without needing a fuzzy scorer. Each
- * category capped at `limit`.
+ * `user-profile` etc. all collide on the same query. Every eligible file
+ * is examined; bounded heaps retain only the best `limit` per category.
+ * Exact matches cannot be displaced by earlier substring matches.
  *
  * When `opts.includeLiterals` is set, also matches against
  * `IndexedFile.literals` (identifier-shaped string literals harvested
@@ -2201,73 +1740,45 @@ export function searchIndex(
       : { files: [], symbols: [] };
   }
   const q = normalizeForSearch(qRaw);
+  if (!q) return opts.includeLiterals ? { files: [], symbols: [], literals: [] } : { files: [], symbols: [] };
+  const cap = Math.min(500, Math.max(0, Math.floor(limit) || 0));
+  const fileMatches = new SearchTopK<RankedSearchCandidate<IndexedFile>>(cap, compareSearchCandidates);
+  const symbolMatches = new SearchTopK<RankedSearchCandidate<IndexedSymbol>>(cap, compareSearchCandidates);
+  const literalMatches = new SearchTopK<RankedSearchCandidate<IndexedLiteral>>(cap, compareSearchCandidates);
 
-  const files: SearchHit[] = [];
   for (const f of index.files.values()) {
-    if (files.length >= limit) break;
-    if (normalizeForSearch(f.path).includes(q)) {
-      files.push({
-        type: 'file',
-        label: basename(f.path),
-        hint: f.path,
-        target: { filePath: f.path },
-      });
+    if (opts.directory && !f.path.startsWith(`${opts.directory}/`)) continue;
+    if (opts.excludeTests && isTestFile(f.path)) continue;
+    const pathRank = searchRank(f.path, qRaw, q);
+    if (pathRank >= 0) {
+      const nameRank = searchRank(basename(f.path), qRaw, q);
+      fileMatches.add({ rank: nameRank >= 0 ? Math.min(nameRank, pathRank) : pathRank,
+        filePath: f.path, qname: '', line: 0, value: f });
     }
-  }
-
-  const symbols: SearchHit[] = [];
-  outer: for (const f of index.files.values()) {
-    let bail = false;
-    walkSymbols(f.symbolsTree, (s) => {
-      if (symbols.length >= limit) {
-        bail = true;
-        return true;
-      }
-      // Skip synthetic chip-view blocks (filler `__code_x_y__` + `__imports__`).
-      // Searching for 'code' / 'imports' would otherwise return dozens of these
-      // useless hits per file — noise for both Cmd+K and AI consumers.
-      if (s.kind === 'unknown') return false;
-      if (normalizeForSearch(s.name).includes(q)) {
-        symbols.push({
-          type: 'symbol',
-          label: s.name,
-          hint: `${s.kind} · ${f.path}`,
-          target: {
-            filePath: f.path,
-            qualifiedName: s.qualifiedName,
-            name: s.name,
-            kind: s.kind,
-            startLine: s.startLine,
-            endLine: s.endLine,
-            ...(s.params ? { params: s.params } : {}),
-          },
-        });
-      }
-      return false;
-    });
-    if (bail) break outer;
-  }
-
-  if (!opts.includeLiterals) return { files, symbols };
-
-  const literals: LiteralHit[] = [];
-  litLoop: for (const f of index.files.values()) {
+    for (const s of f.flatSymbols) {
+      // Synthetic blocks exist only to cover source lines in the chip view.
+      if (s.kind === 'unknown') continue;
+      const rank = searchRank(s.name, qRaw, q);
+      if (rank >= 0) symbolMatches.add({ rank, filePath: f.path, qname: s.qualifiedName, line: s.startLine, value: s });
+    }
+    if (!opts.includeLiterals) continue;
     for (const lit of f.literals) {
-      if (literals.length >= limit) break litLoop;
-      if (normalizeForSearch(lit.value).includes(q)) {
-        literals.push({
-          type: 'literal',
-          value: lit.value,
-          filePath: f.path,
-          line: lit.line,
-          ...(lit.enclosingQname
-            ? { enclosingSymbol: lit.enclosingQname }
-            : {}),
-        });
-      }
+      const rank = searchRank(lit.value, qRaw, q);
+      if (rank >= 0) literalMatches.add({ rank, filePath: f.path, qname: lit.value, line: lit.line, value: lit });
     }
   }
-
+  const files: SearchHit[] = fileMatches.sorted().map(({ value: f }) => ({
+    type: 'file', label: basename(f.path), hint: f.path, target: { filePath: f.path },
+  }));
+  const symbols: SearchHit[] = symbolMatches.sorted().map(({ value: s }) => ({
+    type: 'symbol', label: s.name, hint: `${s.kind} · ${s.filePath}`,
+    target: toFunctionNode(s),
+  }));
+  if (!opts.includeLiterals) return { files, symbols };
+  const literals: LiteralHit[] = literalMatches.sorted().map(({ filePath, value: lit }) => ({
+    type: 'literal', value: lit.value, filePath, line: lit.line,
+    ...(lit.enclosingQname ? { enclosingSymbol: lit.enclosingQname } : {}),
+  }));
   return { files, symbols, literals };
 }
 
@@ -2300,9 +1811,7 @@ export interface CodeGraphCallee {
 
 export interface CodeGraphCallersResponse {
   qname: string;
-  /** The target symbol's coordinates. Null when qname doesn't resolve.
-   *  When qname matches multiple files, this is the first match and
-   *  `ambiguousIn` lists the rest — caller can disambiguate with `filePath`. */
+  /** Null when missing or ambiguous. Ambiguity requires an explicit filePath. */
   target: FunctionNode | null;
   callers: CodeGraphCaller[];
   /** When qname matches symbols in multiple files, all matching file paths.
@@ -2343,7 +1852,7 @@ export interface CodeGraphImpactResponse {
 
 /** Locate all symbols that match `qname`, optionally restricted to `filePath`.
  *  qname is the source-stable id from extractSymbols (`Parent>Child` shape). */
-function findTargetFiles(
+export function findTargetFiles(
   index: CodeIndex,
   qname: string,
   filePath?: string,
@@ -2367,14 +1876,15 @@ export function callersFromIndex(
   filePath?: string,
 ): CodeGraphCallersResponse {
   const targetFiles = findTargetFiles(index, qname, filePath);
+  if (targetFiles.length > 1) {
+    return { qname, target: null, callers: [], ambiguousIn: targetFiles.map(f => f.path).sort() };
+  }
   if (targetFiles.length === 0) {
     return { qname, target: null, callers: [] };
   }
 
   const callers: CodeGraphCaller[] = [];
-  // Dedup key: (callerFile, callerQname) — same caller from multiple target
-  // files (rare but possible when qname is ambiguous) collapses to one entry
-  // with merged callLines.
+  // Dedup key: (callerFile, callerQname), with merged callLines.
   const byKey = new Map<string, CodeGraphCaller>();
 
   for (const tf of targetFiles) {
@@ -2428,9 +1938,7 @@ export function callersFromIndex(
   );
 
   const target = toFunctionNode(targetFiles[0].symbolsByQname.get(qname)!);
-  const ambiguousIn =
-    targetFiles.length > 1 ? targetFiles.map((f) => f.path) : undefined;
-  return { qname, target, callers, ambiguousIn };
+  return { qname, target, callers };
 }
 
 /** What this symbol calls — both intra-file and cross-file outgoing. */
@@ -2440,6 +1948,9 @@ export function calleesFromIndex(
   filePath?: string,
 ): CodeGraphCalleesResponse {
   const sourceFiles = findTargetFiles(index, qname, filePath);
+  if (sourceFiles.length > 1) {
+    return { qname, target: null, callees: [], ambiguousIn: sourceFiles.map(f => f.path).sort() };
+  }
   if (sourceFiles.length === 0) {
     return { qname, target: null, callees: [] };
   }
@@ -2497,9 +2008,7 @@ export function calleesFromIndex(
   );
 
   const source = toFunctionNode(sourceFiles[0].symbolsByQname.get(qname)!);
-  const ambiguousIn =
-    sourceFiles.length > 1 ? sourceFiles.map((f) => f.path) : undefined;
-  return { qname, target: source, callees, ambiguousIn };
+  return { qname, target: source, callees };
 }
 
 /** Impact radius — BFS over the callers relation. Returns all symbols that
@@ -2515,19 +2024,19 @@ export function impactFromIndex(
   filePath?: string,
 ): CodeGraphImpactResponse {
   const targetFiles = findTargetFiles(index, qname, filePath);
+  if (targetFiles.length > 1) {
+    return { qname, target: null, nodes: [], truncated: false, ambiguousIn: targetFiles.map(f => f.path).sort() };
+  }
   if (targetFiles.length === 0) {
     return { qname, target: null, nodes: [], truncated: false };
   }
 
   const safeDepth = Math.min(Math.max(depth, 1), 5);
   const target = toFunctionNode(targetFiles[0].symbolsByQname.get(qname)!);
-  const ambiguousIn =
-    targetFiles.length > 1 ? targetFiles.map((f) => f.path) : undefined;
 
   // BFS frontier. Key = `${filePath}|${qname}` so same-named symbols in
-  // different files stay distinct. Depth=0 entries are the seeds (target +
-  // any ambiguous siblings) — we keep them in the result so the caller can
-  // see what was matched, but they don't count against IMPACT_NODE_CAP.
+  // different files stay distinct. The depth=0 seed identifies the target
+  // and does not count against IMPACT_NODE_CAP.
   type Seed = { filePath: string; qname: string };
   const seeds: Seed[] = targetFiles.map((f) => ({
     filePath: f.path,
@@ -2601,5 +2110,5 @@ export function impactFromIndex(
       a.symbol.qualifiedName.localeCompare(b.symbol.qualifiedName),
   );
 
-  return { qname, target, nodes, truncated, ambiguousIn };
+  return { qname, target, nodes, truncated };
 }

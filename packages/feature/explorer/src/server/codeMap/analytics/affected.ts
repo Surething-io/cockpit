@@ -28,6 +28,8 @@
  * Nx affected, and Turbo prune do, and matches CI's actual semantics.
  */
 import type { CodeIndex } from '../projectGraph/codeIndex';
+import { isTestFile } from '../projectGraph/testFiles';
+export { isTestFile };
 
 // ============================================================================
 // Public types
@@ -78,36 +80,7 @@ export interface AffectedResponse {
   degraded: boolean;
   degradedReason?:
     | 'all-unresolved'
-    | 'analytics-warming'
     | 'truncated';
-}
-
-// ============================================================================
-// Test file detection
-// ============================================================================
-
-/**
- * Patterns that mean "this is a test file". We deliberately union several
- * conventions because monorepos mix languages and styles freely.
- *
- *   - foo.test.ts / foo.spec.py    (JS/TS/Python Jest / pytest)
- *   - test_foo.py                  (pytest underscore-prefix convention)
- *   - foo_test.go                  (Go convention)
- *   - tests/foo.rs                 (Rust integration test directory)
- *   - __tests__/foo.ts             (Jest co-located tests)
- *   - foo.e2e.ts                   (Playwright / Cypress style)
- */
-const TEST_PATTERNS: RegExp[] = [
-  /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs|py|pyi)$/i,
-  /(^|\/)test_[^/]+\.py$/i,
-  /[^/]+_test\.go$/i,
-  /(^|\/)tests?\/[^/]+\.rs$/i,
-  /(^|\/)__tests__\/[^/]+\.(ts|tsx|js|jsx|mjs|cjs)$/i,
-  /\.e2e\.(ts|tsx|js|jsx)$/i,
-];
-
-export function isTestFile(filePath: string): boolean {
-  return TEST_PATTERNS.some((re) => re.test(filePath));
 }
 
 // ============================================================================

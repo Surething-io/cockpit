@@ -1,3 +1,4 @@
+import { indexQueryError, isIndexSource } from "@cockpit/feature-explorer/server/codeMap/projectGraph/indexFiles"
 /**
  * /api/projectGraph/file-functions — P8+ migration
  */
@@ -7,11 +8,9 @@ import { Effect } from "effect"
 import {
   codeIndexBuilding,
   ensureCodeIndex,
-  fileFunctionsFromIndex,
-  fileFunctionsLocal,
-  invalidateIndex,
+  getCodeIndex,
+  fileFunctionsForBrowse,
   peekCodeIndex,
-  refreshFocalFile,
 } from "@cockpit/feature-explorer/server/codeMap/projectGraph/codeIndex"
 import type { FunctionNode } from "@cockpit/feature-explorer/server/codeMap/projectGraph/types"
 import {
@@ -20,7 +19,6 @@ import {
 } from "@cockpit/feature-explorer/server/files/shared"
 import { handler } from "@cockpit/effect-runtime/server"
 import {
-  AppError,
   NotFoundError,
   ValidationError,
 } from "@cockpit/effect-core"
@@ -47,6 +45,7 @@ export const GET = handler((req) =>
     const cwdParam = sp.get("cwd")
     const filePath = sp.get("path")
     const forceRefresh = sp.get("refresh") === "1"
+    const includeRelations = sp.get("relations") === "1"
 
     const cwdCheck = yield* Effect.promise(() => validateCwd(cwdParam))
     if (!cwdCheck.ok) {
@@ -62,7 +61,7 @@ export const GET = handler((req) =>
     }
     // Normalize once at the entry — `index.files` is keyed by string and
     // would create separate entries for "foo.ts" vs "./foo.ts" otherwise.
-    // After normalization, addFocalFile / refreshFocalFile / fileFunctionsFromIndex
+    // Focal projection and shared index use the same normalized relative path.
     // / resolveSafePath all see the same canonical form (matches what
     // `git ls-files` produces in buildCodeIndex).
     const normalizedPath = path.posix.normalize(filePath).replace(/^\.\//, "")
@@ -82,36 +81,15 @@ export const GET = handler((req) =>
 
     const result = yield* Effect.tryPromise({
       try: async () => {
-        // Never wait for the project index: a cold build is O(project)
-        // (~45s at 12.8K files), and this route is asked about ONE file.
-        //
-        // Never START one either, except on an explicit rebuild. Every
-        // project stays mounted, so after a server restart each one with a
-        // file open in the block view asked this route at once, and each
-        // ask kicked off a whole-project build plus analytics — ~1.3 GB per
-        // large repo, ~7 GB across five worktrees, and multi-second GC
-        // pauses that stalled every request on the server. Cross-file data
-        // in the block view is a by-product of an index someone already
-        // wanted (Code Map, the graph routes); without one, the file-local
-        // layer is the whole answer.
-        if (forceRefresh) ensureCodeIndex(cwd, { forceRefresh: true })
+        // The graph view is an on-demand project query. Symbol-only previews
+        // and completion reads remain local and never start another build.
+        if (includeRelations && isIndexSource(normalizedPath)) {
+          await getCodeIndex(cwd, { forceRefresh })
+        } else if (forceRefresh) ensureCodeIndex(cwd, { forceRefresh: true })
         const index = peekCodeIndex(cwd)
-        // Only promise cross-file data when a build is actually running —
-        // otherwise the client would wait for a `done` frame that never comes.
-        const crossFilePending = !index && codeIndexBuilding(cwd)
-        if (index) {
-          await refreshFocalFile(cwd, normalizedPath, index)
-          const payload = fileFunctionsFromIndex(index, normalizedPath)
-          if (payload) return { kind: "indexed" as const, payload }
-        } else {
-          const local = await fileFunctionsLocal(cwd, normalizedPath)
-          if (local) {
-            return {
-              kind: "indexed" as const,
-              payload: { ...local, fileCount: 0, crossFilePending },
-            }
-          }
-        }
+        const crossFilePending = codeIndexBuilding(cwd)
+        const payload = await fileFunctionsForBrowse(cwd, normalizedPath)
+        if (payload) return { kind: "indexed" as const, payload }
         const fileCount = index?.files.size ?? 0
 
         const fullPath = resolveSafePath(cwd, normalizedPath)
@@ -165,11 +143,7 @@ export const GET = handler((req) =>
         }
       },
       catch: (cause) => {
-        invalidateIndex(cwd)
-        return new AppError({
-          message: "Failed to load file functions",
-          cause,
-        })
+        return indexQueryError(cause, "Failed to load file functions")
       },
     })
 

@@ -1,3 +1,4 @@
+import type { ProjectContextFiles } from './types';
 /**
  * TypeScript family handler — covers TS, TSX, JS, JSX, MJS, CJS.
  *
@@ -46,6 +47,7 @@ import {
   extractRawCalls,
   extractReexports,
   type RawCall,
+  type ImportBinding,
 } from '../extractCalls';
 import { extractImportsFromTree } from '../projectGraph/extractImports';
 import type { ExtractedSymbol } from '../types';
@@ -92,131 +94,88 @@ function isFunctionLikeKind(k: IndexedSymbol['kind']): boolean {
  *  generous for real codebases. */
 const REEXPORT_MAX_DEPTH = 5;
 
-/** Look up an exported name in `file` — barrel-chain aware.
- *
- *  Direct match wins: a symbol whose bare name equals `name`. Among
- *  multiple matches we pick the OUTERMOST (longest range) so chip
- *  view points at the public top-level export rather than a
- *  same-named nested helper.
- *
- *  Otherwise walk `file.importBindings` looking for re-export entries
- *  (`isReexport: true`) whose `localName` matches: hop to the
- *  binding's `specifier` via `resolvedImports`, recurse on the
- *  target file looking for `importedName`. Visited set + depth cap
- *  guard against cycles. */
+/** A wildcard conflict must propagate through outer barrels. Returning null
+ * would let a later branch incorrectly turn that conflict into one valid edge. */
+type ExportLookup = IndexedSymbol | 'ambiguous' | null;
+
+/** Resolve only public names. Explicit exports override stars, default never
+ * flows through a star, and duplicate paths to the same definition are harmless.
+ * Keep traversal state per branch so a cycle cannot hide a sibling's export. */
 function findExportedSymbol(
   file: IndexedFile,
   name: string,
   depth: number,
-  visited: Set<string>,
+  visited: ReadonlySet<string>,
   allFiles: ReadonlyMap<string, IndexedFile>,
-): IndexedSymbol | null {
-  if (depth > REEXPORT_MAX_DEPTH) return null;
-  if (visited.has(file.path)) return null;
-  visited.add(file.path);
+): ExportLookup {
+  const key = JSON.stringify([file.path, name]);
+  if (depth > REEXPORT_MAX_DEPTH || visited.has(key)) return null;
+  const branch = new Set(visited).add(key);
+  const follow = (binding: ImportBinding, importedName: string): ExportLookup => {
+    const nextPath = file.resolvedImports.get(binding.specifier);
+    const nextFile = nextPath && allFiles.get(nextPath);
+    return nextFile ? findExportedSymbol(nextFile, importedName, depth + 1, branch, allFiles) : null;
+  };
 
-  // Direct match — pick OUTERMOST among same-named symbols (chip view
-  // points at the public top-level export, not a nested helper).
-  const candidates = file.symbolsByName.get(name);
-  if (candidates) {
+  const explicit = file.reexportsByLocalName.get(name);
+  if (explicit && name !== '*') {
+    if (explicit.specifier) return follow(explicit, explicit.importedName);
+    const candidates = file.symbolsByName.get(explicit.importedName);
     let best: IndexedSymbol | null = null;
-    for (const s of candidates) {
-      if (!isFunctionLikeKind(s.kind)) continue;
-      if (
-        !best ||
-        s.endLine - s.startLine > best.endLine - best.startLine
-      ) {
-        best = s;
+    for (const symbol of candidates ?? []) {
+      if (symbol.qualifiedName.includes('>')) continue;
+      if (!best || (isFunctionLikeKind(symbol.kind) && !isFunctionLikeKind(best.kind))
+        || (symbol.kind === best.kind && symbol.endLine - symbol.startLine > best.endLine - best.startLine)) {
+        best = symbol;
       }
     }
     if (best) return best;
+    // `import { foo } from './a'; export { foo as bar }` forwards the import.
+    const imported = file.bindingsByLocalName.get(explicit.importedName);
+    return imported ? follow(imported, imported.importedName) : null;
   }
-
-  // No direct match → walk the reexport chain. reexportsByLocalName
-  // gives us the forwarding entry (if any) in O(1) per hop.
-  const reexp = file.reexportsByLocalName.get(name);
-  if (reexp) {
-    const nextPath = file.resolvedImports.get(reexp.specifier);
-    if (nextPath) {
-      const nextFile = allFiles.get(nextPath);
-      if (nextFile) {
-        const found = findExportedSymbol(
-          nextFile,
-          reexp.importedName,
-          depth + 1,
-          visited,
-          allFiles,
-        );
-        if (found) return found;
-      }
-    }
+  if (name === 'default') return null;
+  let found: IndexedSymbol | null = null;
+  for (const binding of file.importBindings) {
+    if (!binding.isReexport || binding.localName !== '*' || binding.importedName !== '*') continue;
+    const result = follow(binding, name);
+    if (result === 'ambiguous') return result;
+    if (!result) continue;
+    if (found && (found.filePath !== result.filePath || found.qualifiedName !== result.qualifiedName)) return 'ambiguous';
+    found = result;
   }
-  return null;
+  return found;
 }
 
-/** Receiver-based call resolver — handles `obj.method()` patterns
- *  where `obj` is a project import. Three strategies in order:
- *    1. `<receiverImportedName>>methodName` — nested member match
- *       (TS static class methods, Tier-2 object-literal methods).
- *    2. Top-level `methodName` — for namespace imports
- *       (`import * as ns; ns.foo()` resolves `foo` directly in source).
- *    3. Re-export chain on the receiver itself — recurse if
- *       `receiverImportedName` is forwarded from another file. */
+/** Resolve namespace members and methods on exported objects/classes through
+ * the same export lookup as bare calls, including wildcard barrel chains. */
 function findReceiverMethod(
   file: IndexedFile,
   receiverImportedName: string,
   methodName: string,
   depth: number,
-  visited: Set<string>,
+  visited: ReadonlySet<string>,
   allFiles: ReadonlyMap<string, IndexedFile>,
 ): IndexedSymbol | null {
   if (depth > REEXPORT_MAX_DEPTH) return null;
-  if (visited.has(file.path)) return null;
-  visited.add(file.path);
-
-  // Strategy 1: nested member match (`Type::method` / class static).
-  if (receiverImportedName !== '*') {
-    const nestedQname = `${receiverImportedName}>${methodName}`;
-    const nested = file.symbolsByQname.get(nestedQname);
-    if (nested && isFunctionLikeKind(nested.kind)) return nested;
-  }
-
-  // Strategy 2: namespace import — top-level by leaf name.
   if (receiverImportedName === '*') {
-    const top = file.symbolsByName.get(methodName);
-    if (top) {
-      let best: IndexedSymbol | null = null;
-      for (const s of top) {
-        if (s.qualifiedName.includes('>')) continue;
-        if (!isFunctionLikeKind(s.kind)) continue;
-        if (!best || s.endLine - s.startLine > best.endLine - best.startLine) {
-          best = s;
-        }
-      }
-      if (best) return best;
-    }
+    const symbol = findExportedSymbol(file, methodName, depth, visited, allFiles);
+    return symbol && symbol !== 'ambiguous' && isFunctionLikeKind(symbol.kind) ? symbol : null;
   }
-
-  // Strategy 3: follow the reexport chain on the receiver itself.
-  const reexp = file.reexportsByLocalName.get(receiverImportedName);
-  if (reexp) {
-    const nextPath = file.resolvedImports.get(reexp.specifier);
-    if (nextPath) {
-      const nextFile = allFiles.get(nextPath);
-      if (nextFile) {
-        const found = findReceiverMethod(
-          nextFile,
-          reexp.importedName,
-          methodName,
-          depth + 1,
-          visited,
-          allFiles,
-        );
-        if (found) return found;
-      }
-    }
+  const key = JSON.stringify([file.path, receiverImportedName, methodName]);
+  if (visited.has(key)) return null;
+  const branch = new Set(visited).add(key);
+  const reexport = file.reexportsByLocalName.get(receiverImportedName);
+  if (reexport?.specifier && reexport.importedName === '*') {
+    const nextPath = file.resolvedImports.get(reexport.specifier);
+    const nextFile = nextPath && allFiles.get(nextPath);
+    return nextFile ? findReceiverMethod(nextFile, '*', methodName, depth + 1, branch, allFiles) : null;
   }
-  return null;
+  const receiver = findExportedSymbol(file, receiverImportedName, depth, branch, allFiles);
+  if (!receiver || receiver === 'ambiguous') return null;
+  const owner = allFiles.get(receiver.filePath);
+  const member = owner?.symbolsByQname.get(`${receiver.qualifiedName}>${methodName}`);
+  return member && isFunctionLikeKind(member.kind) ? member : null;
 }
 
 /** Build a TS-family handler for one grammar id + extension set.
@@ -275,13 +234,14 @@ function makeTsFamilyHandler(
     async buildProjectContext(
       cwd: string,
       fileSet: ReadonlySet<string>,
+      files?: ProjectContextFiles,
     ): Promise<ProjectContext> {
       // loadWorkspaces wants a mutable Set; the contract gives us a
       // ReadonlySet. Copy to satisfy the type — workspaces detection
       // doesn't mutate, the type is just stricter than the impl.
       const mutableFileSet = new Set(fileSet);
-      const tsconfigs = await loadTsconfigs(cwd);
-      const workspaces = await loadWorkspaces(cwd, mutableFileSet);
+      const tsconfigs = await loadTsconfigs(cwd, files);
+      const workspaces = await loadWorkspaces(cwd, mutableFileSet, files);
       const sortedWsNames = [...workspaces.keys()].sort(
         (a, b) => b.length - a.length,
       );
@@ -479,7 +439,7 @@ function makeTsFamilyHandler(
         new Set<string>(),
         allFiles,
       );
-      if (!sym) return [];
+      if (!sym || sym === 'ambiguous' || !isFunctionLikeKind(sym.kind)) return [];
       return [
         {
           kind: 'symbol',

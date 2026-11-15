@@ -1,3 +1,4 @@
+import type { ProjectContextFiles } from './types';
 /**
  * Go language handler — covers `.go` files.
  *
@@ -517,9 +518,9 @@ interface GoProjectContext {
 /** Read the `module` line from `go.mod` if present. Cheap regex
  *  rather than parsing the full Go-mod grammar — `module <path>` is
  *  always the first/early non-comment line. */
-async function readModulePath(cwd: string): Promise<string | null> {
+async function readModulePath(cwd: string, files?: ProjectContextFiles): Promise<string | null> {
   try {
-    const text = await fs.readFile(path.join(cwd, 'go.mod'), 'utf8');
+    const text = files ? await files.readFile('go.mod') : await fs.readFile(path.join(cwd, 'go.mod'), 'utf8');
     const m = /^\s*module\s+(\S+)/m.exec(text);
     return m ? m[1].trim() : null;
   } catch {
@@ -576,8 +577,9 @@ export const goHandler: LanguageHandler = {
   async buildProjectContext(
     cwd: string,
     fileSet: ReadonlySet<string>,
+    files?: ProjectContextFiles,
   ): Promise<ProjectContext> {
-    const modulePath = await readModulePath(cwd);
+    const modulePath = await readModulePath(cwd, files);
     const dirToGoFiles = bucketGoFilesByDir(fileSet);
     const ctx: GoProjectContext = { cwd, modulePath, dirToGoFiles };
     return ctx;

@@ -1,3 +1,5 @@
+import { indexResponse, withIndexHeaders } from "./indexResponse"
+import { indexQueryError } from "@cockpit/feature-explorer/server/codeMap/projectGraph/indexFiles"
 /**
  * /api/projectGraph/affected — file-level test impact closure.
  *
@@ -25,8 +27,8 @@ import { getCodeIndex } from "@cockpit/feature-explorer/server/codeMap/projectGr
 import { findAffected } from "@cockpit/feature-explorer/server/codeMap/analytics/index"
 import type { AffectedResponse } from "@cockpit/feature-explorer/server/codeMap/analytics/index"
 import { validateCwd } from "@cockpit/feature-explorer/server/files/shared"
-import { handler, ok } from "@cockpit/effect-runtime/server"
-import { AppError, ValidationError } from "@cockpit/effect-core"
+import { handler } from "@cockpit/effect-runtime/server"
+import { ValidationError } from "@cockpit/effect-core"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -75,7 +77,7 @@ function renderPlain(result: AffectedResponse): Response {
   })
 }
 
-async function runQuery(input: ParsedInput): Promise<Response | { __json: AffectedResponse }> {
+async function runQuery(input: ParsedInput): Promise<Response> {
   const index = await getCodeIndex(input.cwd)
   const result = findAffected(index, {
     files: input.files,
@@ -83,8 +85,8 @@ async function runQuery(input: ParsedInput): Promise<Response | { __json: Affect
     filter: input.filter,
     includeAll: input.includeAll,
   })
-  if (input.format === 'plain') return renderPlain(result)
-  return { __json: result }
+  if (input.format === 'plain') return withIndexHeaders(index, renderPlain(result))
+  return indexResponse(index, result)
 }
 
 export const GET = handler((req) =>
@@ -120,10 +122,9 @@ export const GET = handler((req) =>
           format,
         }),
       catch: (cause) =>
-        new AppError({ message: "Affected lookup failed", cause }),
+        indexQueryError(cause, "Affected lookup failed"),
     })
-    if (result instanceof Response) return result
-    return ok(result.__json)
+    return result
   }),
 )
 
@@ -169,9 +170,8 @@ export const POST = handler((req) =>
           format,
         }),
       catch: (cause) =>
-        new AppError({ message: "Affected lookup failed", cause }),
+        indexQueryError(cause, "Affected lookup failed"),
     })
-    if (result instanceof Response) return result
-    return ok(result.__json)
+    return result
   }),
 )

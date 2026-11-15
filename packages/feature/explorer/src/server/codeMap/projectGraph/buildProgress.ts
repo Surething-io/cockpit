@@ -13,13 +13,10 @@
  * imports us), which is the allowed dependency direction, so unlike
  * `registerWatcherSubscriber` this needs no inversion-of-control dance.
  *
- * Why pushing progress works at all: the parse phase is `await readFile` +
- * sync parse per file, so the event loop is only ever blocked for one file at
- * a time. Measured during a live build, an unrelated request saw p50=89ms /
- * max=200ms latency and zero stalls over 500ms — roughly 7.6 round-trips per
- * second, which is more than a progress bar needs. If the build ever becomes
- * one long synchronous block, frames would bunch up and the bar would freeze;
- * that would be the signal to move parsing to a worker thread.
+ * Sources are captured before parsing. The parse workers explicitly yield to
+ * the event loop between batches; awaiting an already-cached parser alone
+ * only schedules microtasks and cannot deliver progress frames or requests.
+ * A single file's synchronous parse can still occupy the loop until it ends.
  */
 
 /** Build phases, in execution order. `parsing` is the only one with per-file

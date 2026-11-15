@@ -429,20 +429,19 @@ cockpit terminal xy789 output | tail -50
 
 | 子命令 | 作用 |
 |---|---|
-| `search <query>` | 按名字搜符号，返回 file + qname 命中。 |
+| `search <query> [--limit N=50] [--path DIR] [--exclude-tests]` | 按相关性搜索符号，每类结果上限 500。 |
+| `symbols [--path DIR] [--kind KINDS] [--exclude-tests] [--exclude GLOB]` | 全量导出函数、方法；支持目录、类型和重复排除规则。`--kind all` 导出全部类型。 |
 | `callers <qname> [--file PATH]` | 谁直接调了这个符号。 |
 | `callees <qname> [--file PATH]` | 这个符号调了什么。 |
-| `impact <qname> [--depth N=2]` | 上游传递性调用者，BFS。需要排序版本用 `risk`。 |
+| `impact <qname> [--depth N=2]` | 上游传递性调用者，BFS。遍历有数量上限。 |
 | `file <path>` | 一个文件的符号树（函数 / 类）。 |
 | `coedit <path> [--commits N=100]` | git 历史里和它一起被改的文件。 |
 
-**Analytics（融合打分）** —— PPR / TF-IDF / Louvain 社区 / co-edit 混合排序：
+**Derived queries** — base-index relationships and on-demand Git history:
 
 | 子命令 | 作用 |
 |---|---|
-| `context --query Q [--cursor C] [--open F1,F2,…] [--top N=15]` | 针对自由问句，给出 Top-K 相关坐标。 |
-| `related <qname> [--top N=10]` | 更宽的邻居：caller + callee + PPR + coedit + community。 |
-| `risk <qname> [--depth N=2] [--top N=20]` | 风险打分的 impact + 推荐测试。 |
+| `related <qname> [--top N=10]` | Direct callers + callees + frequent co-edit partners. |
 | `affected <files…\|--stdin> [--depth N=10] [--filter G] [--as-cmd RUNNER]` | 传递性受影响的测试文件，CI 友好。 |
 
 ### 通用 flag
@@ -452,20 +451,46 @@ cockpit terminal xy789 output | tail -50
 --help, -h         # 子命令级帮助（输出格式 + 退出码 + 示例）
 ```
 
+`search` 检查全部符合条件的索引候选，每类默认保留最相关的 50 条，最多 500 条。
+排序依次为名称精确匹配、归一化精确匹配、归一化前缀匹配、归一化子串匹配；
+同等级按文件路径、限定名、行号稳定排序。`--path` 包含子目录，`--exclude-tests`
+同时过滤文件、符号和可选的字符串结果；默认仍包含测试。HTTP 参数为 `path`
+和 `excludeTests=true`。
+
+`symbols` 默认导出 `function,method`，`--kind all` 导出全部真实符号类型。展示用的 `unknown` 节点默认排除，
+需要时通过 `--include-synthetic` 包含。
+目录筛选包含子目录，排除规则可重复传入。JSON 包含 `revision`、`incomplete`、
+`total` 和扁平的 `symbols[]` 坐标列表。结果不设条数上限；`incomplete` 表示
+源文件索引存在覆盖限制。单文件超过 2 MiB（2,097,152 字节）会被排除；
+JSON 的 `excludedFiles[]` 列出整个索引版本中被排除文件的路径、原因、实际大小和上限。
+
+`--summary` 按类型和所选目录的直接子目录统计，不返回符号坐标；沿用全部筛选条件，
+文件数只计算包含匹配符号的文件。项目概览先看摘要，全量导出保存到文件再筛选阅读。
+HTTP 对应参数为 `format=summary` 和 `includeSynthetic=true`。
+
+`callers`、`callees`、`impact`、`related` 遇到同名歧义时返回 HTTP 200，
+其中 `target: null`、关系为空，`ambiguousIn` 列出候选路径。使用 `filePath`
+（CLI `--file`）选择目标后重试。CLI 遇到歧义退出码为 2，JSON 模式仍输出响应。
+
+```bash
+cockpit codegraph symbols --path packages/feature --kind all --exclude-tests --summary
+cockpit codegraph symbols --json > symbols.json
+cockpit codegraph symbols --path src --exclude-tests --exclude '**/generated/**' --json
+```
+
 ### 输出格式（纯文本）
 
 TAB 分隔，每行一条，方便 `cut` / `awk` / `fzf` 接管。
 
 ```text
 search    sym\t<file>:<line>\t<kind>\t<qname>            或  file\t<file>
+symbols   <file>:<startLine>-<endLine>\t<kind>\t<qname>
 callers   <file>:<line>\t<qname>\t[<callLines>]
 callees   <file>:<line>\t<qname>\t[<callLines>]
 impact    d=<depth>\t<file>:<line>\t<qname>
 file      <kind>\t<startLine>-<endLine>\t<qname>
 coedit    <cooccur>/<total>\t<file>                  # 出现在 '# history' 注释之后
-context   <score>\t<file>:<line>\t<qname>\t[<signals>]
 related   <score>\t<file>:<line>\t<qname>\t<<relations>>
-risk      <score>\td=<depth>\t<file>:<line>\t<qname>\t[<tags>]
 affected  <file>                                     # 每行一个测试路径
 ```
 
@@ -477,8 +502,7 @@ affected  <file>                                     # 每行一个测试路径
 
 ```text
 # ambiguousIn: <files…>     同名 qname 出现在多个文件 —— 用 --file 限定
-# cursor: <note>            cursor 格式自动纠正（'.' → '::' 等）
-# degraded: <reason>        analytics-warming / coedit-unavailable / truncated
+# degraded: <reason>        coedit-unavailable / truncated
 ```
 
 ### 退出码
@@ -509,7 +533,7 @@ cockpit codegraph related getCodeIndex --top 5
 ```
 
 ```bash
-cockpit codegraph risk searchIndex --depth 2
+cockpit codegraph impact searchIndex --depth 2
 ```
 
 ```bash

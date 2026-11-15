@@ -209,9 +209,9 @@ export const messages = {
     codeGraph: {
       tag: 'Agent · /cg Mode',
       headline: 'Give the AI a query graph, not a grep',
-      desc: 'The missing layer between your AI agent and your codebase. The same tree-sitter index behind Code Map, exposed as 10 HTTP endpoints — so the agent queries coordinates instead of grepping text and reading whole files.',
+      desc: 'The missing layer between your AI agent and your codebase. The same tree-sitter index behind Code Map, exposed as 9 HTTP endpoints — so the agent queries coordinates instead of grepping text and reading whole files.',
       bullets: [
-        '10 endpoints, two tiers: 6 base shapes (where is X, who calls X, impact, co-edit…) + 4 analytics (context, related, risk, affected).',
+        '9 endpoints: definitions, full symbol export, callers, callees, impact, file symbols, co-edit, related code, and affected tests.',
         'Returns coordinates only (file / line / qname) — the agent Reads exact ranges, never whole files.',
         'Co-edit catches must-edit-together file pairs no static analysis sees — parallel registries, double-writes, sibling configs.',
         'Incrementally synced by a file watcher — no rebuild; current across mid-PR and bulk AI edits.',
@@ -245,7 +245,7 @@ export const messages = {
         {
           cmd: '/cg',
           name: 'CodeGraph',
-          desc: 'Graph-first exploration — 10 endpoints answer symbol / callers / impact / risk questions. Precise where grep is fuzzy.',
+          desc: 'Graph-first exploration — 9 endpoints answer symbol / callers / impact / related-code questions. Precise where grep is fuzzy.',
         },
         {
           cmd: '/cc',

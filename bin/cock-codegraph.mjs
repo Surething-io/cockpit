@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * cockpit codegraph — unified CLI for all 10 /api/projectGraph/* endpoints.
+ * cockpit codegraph — unified CLI for /api/projectGraph/* endpoints.
  *
  * Usage:
  *   cockpit codegraph                         List subcommands
@@ -26,14 +26,15 @@ const PORT = env.COCKPIT_PORT || env.PORT || '3457';
 const BASE = `http://localhost:${PORT}`;
 
 const SUBCMDS = [
-  'search', 'callers', 'callees', 'impact', 'file', 'coedit',
-  'context', 'related', 'risk', 'affected',
+  'search', 'symbols', 'callers', 'callees', 'impact', 'file', 'coedit',
+  'related', 'affected',
 ];
 
 const sub = argv[2];
 
 if (!sub || sub === '-h' || sub === '--help') {
   printTopHelp();
+  await writeOutput();
   exit(0);
 }
 
@@ -52,6 +53,7 @@ const wantHelp = subArgs.includes('--help') || subArgs.includes('-h');
 
 if (wantHelp) {
   printSubHelp(sub);
+  await writeOutput();
   exit(0);
 }
 
@@ -59,14 +61,13 @@ if (wantHelp) {
 try {
   switch (sub) {
     case 'search':   await cmdSearch(); break;
+    case 'symbols':  await cmdSymbols(); break;
     case 'callers':  await cmdCallers(); break;
     case 'callees':  await cmdCallees(); break;
     case 'impact':   await cmdImpact(); break;
     case 'file':     await cmdFile(); break;
     case 'coedit':   await cmdCoedit(); break;
-    case 'context':  await cmdContext(); break;
     case 'related':  await cmdRelated(); break;
-    case 'risk':     await cmdRisk(); break;
     case 'affected': await cmdAffected(); break;
   }
 } catch (err) {
@@ -83,7 +84,11 @@ async function get(path, params) {
   url.searchParams.set('cwd', cwd());
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === null || v === '') continue;
-    url.searchParams.set(k, String(v));
+    if (Array.isArray(v)) {
+      for (const item of v) url.searchParams.append(k, String(item));
+    } else {
+      url.searchParams.set(k, String(v));
+    }
   }
   let resp;
   try {
@@ -158,7 +163,7 @@ function positional(args) {
     // Skip values that follow a known flag-with-value.
     const flagsWithValue = new Set([
       '--file', '--depth', '--top', '--limit', '--commits',
-      '--query', '--cursor', '--open', '--filter', '--include',
+      '--query', '--cursor', '--open', '--filter', '--include', '--path',
     ]);
     if (prev && flagsWithValue.has(prev)) return false;
     return true;
@@ -172,8 +177,14 @@ async function readStdinLines() {
   return buf.split('\n').map((s) => s.trim()).filter(Boolean);
 }
 
-function emitJson(obj) {
-  stdout.write(JSON.stringify(obj, null, 2) + '\n');
+function writeOutput(text = '') {
+  return new Promise((resolve, reject) => {
+    stdout.write(text, error => error ? reject(error) : resolve());
+  });
+}
+
+async function emitJson(obj) {
+  await writeOutput(JSON.stringify(obj, null, 2) + '\n');
 }
 
 // ============================================================================
@@ -183,7 +194,7 @@ function emitJson(obj) {
 async function cmdSearch() {
   const pos = positional(subArgs);
   const q = pos[0];
-  const limit = getInt(subArgs, '--limit') ?? 15;
+  const limit = getInt(subArgs, '--limit') ?? 50;
   // v1.0.216+: opt-in flag to also surface identifier-shaped string literals
   // (tool names / event names / config keys / route paths) that only exist
   // in source as strings, never as identifiers.
@@ -193,22 +204,71 @@ async function cmdSearch() {
     exit(2);
   }
   const params = { q, limit };
+  const path = getFlag(subArgs, '--path');
+  if (subArgs.includes('--path') && !path) throw new Error('--path requires a value');
+  if (path) params.path = path;
+  if (subArgs.includes('--exclude-tests')) params.excludeTests = 'true';
   if (includeLiterals) params.includeLiterals = 'true';
   const resp = await get('/api/projectGraph/search', params);
   const data = await resp.json();
-  if (wantJson) { emitJson(data); exit(0); }
+  if (wantJson) { await emitJson(data); exit(0); }
 
   const files = data.files || [];
   const syms = data.symbols || [];
-  if (files.length === 0 && syms.length === 0) exit(1);
+  const literals = data.literals || [];
+  if (files.length === 0 && syms.length === 0 && literals.length === 0) exit(1);
 
   for (const f of files) {
     stdout.write(`file\t${f.target?.filePath ?? f.label}\n`);
   }
   for (const s of syms) {
     const t = s.target;
-    stdout.write(`sym \t${t.filePath}:${t.line}\t${t.symbolKind}\t${t.qualifiedName}\n`);
+    stdout.write(`sym \t${t.filePath}:${t.startLine}\t${t.kind}\t${t.qualifiedName}\n`);
   }
+  for (const hit of literals) stdout.write(`literal\t${hit.filePath}:${hit.line}\t${hit.value}\n`);
+  await writeOutput();
+  exit(0);
+}
+
+// ============================================================================
+// symbols — one request for all matching symbols in the current revision
+// ============================================================================
+
+async function cmdSymbols() {
+  const params = { kind: [], exclude: [] };
+  for (let i = 0; i < subArgs.length; i++) {
+    const flag = subArgs[i];
+    if (flag === '--json') continue;
+    if (flag === '--exclude-tests') { params.excludeTests = 'true'; continue; }
+    if (flag === '--include-synthetic') { params.includeSynthetic = 'true'; continue; }
+    if (flag === '--summary') { params.format = 'summary'; continue; }
+    if (!['--path', '--kind', '--exclude'].includes(flag)) {
+      throw new Error(`unknown symbols option "${flag}"`);
+    }
+    const value = subArgs[++i];
+    if (!value || value.startsWith('--')) throw new Error(`${flag} requires a value`);
+    if (flag === '--path') params.path = value;
+    else if (flag === '--kind') params.kind.push(value);
+    else params.exclude.push(value);
+  }
+  const resp = await get('/api/projectGraph/symbols', params);
+  const data = await resp.json();
+  if (data.incomplete) stderr.write('# incomplete: source index coverage is incomplete\n');
+  if (wantJson) { await emitJson(data); exit(0); }
+  if (params.format === 'summary') {
+    stdout.write(`total\t${data.total}\tfiles\t${data.files}\n`);
+    for (const row of data.byDirectory) {
+      const kinds = Object.entries(row.byKind).map(([kind, count]) => `${kind}=${count}`).join(',');
+      stdout.write(`${row.path}\t${row.total}\t${row.files}\t${kinds}\n`);
+    }
+    await writeOutput();
+    exit(0);
+  }
+  if (!data.symbols.length) exit(1);
+  for (const s of data.symbols) {
+    stdout.write(`${s.filePath}:${s.startLine}-${s.endLine}\t${s.kind}\t${s.qualifiedName}\n`);
+  }
+  await writeOutput();
   exit(0);
 }
 
@@ -218,6 +278,13 @@ async function cmdSearch() {
 
 async function cmdCallers() { await runCallSide('callers'); }
 async function cmdCallees() { await runCallSide('callees'); }
+
+async function requireUnambiguous(data) {
+  if (!data.ambiguousIn?.length) return;
+  stderr.write(`# ambiguousIn: ${data.ambiguousIn.join(', ')} — pass --file to disambiguate; no relations computed\n`);
+  if (wantJson) await emitJson(data);
+  exit(2);
+}
 
 async function runCallSide(kind) {
   const pos = positional(subArgs);
@@ -229,18 +296,17 @@ async function runCallSide(kind) {
   }
   const resp = await get(`/api/projectGraph/${kind}`, { qname, filePath });
   const data = await resp.json();
-  if (wantJson) { emitJson(data); exit(0); }
+  await requireUnambiguous(data);
+  if (wantJson) { await emitJson(data); exit(0); }
 
   const list = data[kind] || [];
-  if (data.ambiguousIn) {
-    stderr.write(`# ambiguousIn: ${data.ambiguousIn.join(', ')} — pass --file to disambiguate\n`);
-  }
   if (list.length === 0) exit(1);
   for (const item of list) {
     const node = item.caller || item.callee;
     const lines = (item.callLines || []).join(',');
     stdout.write(`${node.filePath}:${node.startLine}\t${node.qualifiedName}\t[${lines}]\n`);
   }
+  await writeOutput();
   exit(0);
 }
 
@@ -259,17 +325,19 @@ async function cmdImpact() {
   }
   const resp = await get('/api/projectGraph/impact', { qname, filePath, depth });
   const data = await resp.json();
-  if (wantJson) { emitJson(data); exit(0); }
+  await requireUnambiguous(data);
+  if (wantJson) { await emitJson(data); exit(0); }
 
   const nodes = data.nodes || [];
   if (data.truncated) {
-    stderr.write(`# impact truncated at server cap (500). Use 'risk' for ranked + bounded output.\n`);
+    stderr.write(`# impact truncated at server cap (500). Narrow the query or lower --depth.\n`);
   }
   if (nodes.length === 0) exit(1);
   for (const n of nodes) {
     const s = n.symbol;
     stdout.write(`d=${n.depth}\t${s.filePath}:${s.startLine}\t${s.qualifiedName}\n`);
   }
+  await writeOutput();
   exit(0);
 }
 
@@ -286,13 +354,14 @@ async function cmdFile() {
   }
   const resp = await get('/api/projectGraph/file', { path });
   const data = await resp.json();
-  if (wantJson) { emitJson(data); exit(0); }
+  if (wantJson) { await emitJson(data); exit(0); }
 
   const syms = data.symbols || [];
   if (syms.length === 0) exit(1);
   for (const s of syms) {
     stdout.write(`${s.kind}\t${s.startLine}-${s.endLine}\t${s.qualifiedName}\n`);
   }
+  await writeOutput();
   exit(0);
 }
 
@@ -310,7 +379,7 @@ async function cmdCoedit() {
   }
   const resp = await get('/api/projectGraph/coedit', { filePath, commits });
   const data = await resp.json();
-  if (wantJson) { emitJson(data); exit(0); }
+  if (wantJson) { await emitJson(data); exit(0); }
 
   const history = data.history || [];
   const uncommitted = data.uncommitted || [];
@@ -328,42 +397,7 @@ async function cmdCoedit() {
     stdout.write(`# uncommitted (working tree)\n`);
     for (const f of uncommitted) stdout.write(`-\t${f}\n`);
   }
-  exit(0);
-}
-
-// ============================================================================
-// context
-// ============================================================================
-
-async function cmdContext() {
-  const query = getFlag(subArgs, '--query');
-  const cursor = getFlag(subArgs, '--cursor');
-  const openFiles = getFlag(subArgs, '--open');
-  const top = getInt(subArgs, '--top') ?? 15;
-  if (!query && !cursor && !openFiles) {
-    stderr.write('codegraph context: need at least one of --query / --cursor / --open\n');
-    exit(2);
-  }
-  const resp = await get('/api/projectGraph/context', {
-    query, cursor, openFiles, topK: top,
-  });
-  const data = await resp.json();
-  if (wantJson) { emitJson(data); exit(0); }
-
-  if (data.cursorResolution && !data.cursorResolution.matched) {
-    stderr.write(`# cursor not matched: ${data.cursorResolution.notes || '(no note)'}\n`);
-  } else if (data.cursorResolution?.notes) {
-    stderr.write(`# cursor: ${data.cursorResolution.notes}\n`);
-  }
-  if (data.degraded) {
-    stderr.write(`# degraded: ${data.degradedReason}\n`);
-  }
-  const results = data.results || [];
-  if (results.length === 0) exit(1);
-  for (const r of results) {
-    const sigs = (r.signals || []).map((s) => s.type).join(',');
-    stdout.write(`${r.score.toFixed(2)}\t${r.filePath}:${r.startLine}\t${r.qualifiedName}\t[${sigs}]\n`);
-  }
+  await writeOutput();
   exit(0);
 }
 
@@ -385,11 +419,9 @@ async function cmdRelated() {
     qname, filePath, topK: top, include,
   });
   const data = await resp.json();
-  if (wantJson) { emitJson(data); exit(0); }
+  await requireUnambiguous(data);
+  if (wantJson) { await emitJson(data); exit(0); }
 
-  if (data.ambiguousIn) {
-    stderr.write(`# ambiguousIn: ${data.ambiguousIn.join(', ')} — pass --file to disambiguate\n`);
-  }
   if (data.degraded) stderr.write(`# degraded: ${data.degradedReason}\n`);
   const results = data.results || [];
   if (results.length === 0) exit(1);
@@ -397,46 +429,7 @@ async function cmdRelated() {
     const rels = (r.relations || []).map((x) => x.type).join(',');
     stdout.write(`${r.score.toFixed(2)}\t${r.filePath}:${r.startLine}\t${r.qualifiedName}\t<${rels}>\n`);
   }
-  exit(0);
-}
-
-// ============================================================================
-// risk
-// ============================================================================
-
-async function cmdRisk() {
-  const pos = positional(subArgs);
-  const qname = pos[0];
-  const filePath = getFlag(subArgs, '--file');
-  const depth = getInt(subArgs, '--depth') ?? 2;
-  const top = getInt(subArgs, '--top') ?? 20;
-  if (!qname) {
-    stderr.write('codegraph risk: missing <qname>\n');
-    exit(2);
-  }
-  const resp = await get('/api/projectGraph/risk', {
-    qname, filePath, depth, topK: top,
-  });
-  const data = await resp.json();
-  if (wantJson) { emitJson(data); exit(0); }
-
-  if (data.degraded) stderr.write(`# degraded: ${data.degradedReason}\n`);
-  const highRisk = data.highRisk || [];
-  if (highRisk.length === 0 && !data.target) exit(1);
-
-  stdout.write(`# total impacted: ${data.totalImpactedNodes}\n`);
-  for (const n of highRisk) {
-    const tags = (n.tags || []).join(',') || '-';
-    stdout.write(`${n.risk.score.toFixed(3)}\td=${n.depth}\t${n.filePath}:${n.startLine}\t${n.qualifiedName}\t[${tags}]\n`);
-  }
-  const tests = data.suggestedTests || [];
-  if (tests.length > 0) {
-    stdout.write(`\n# suggestedTests\n`);
-    for (const t of tests) {
-      const covered = (t.coveredNodes || []).slice(0, 3).join(', ');
-      stdout.write(`${t.reason}\t${t.filePath}\t(${covered}${t.coveredNodes?.length > 3 ? ',…' : ''})\n`);
-    }
-  }
+  await writeOutput();
   exit(0);
 }
 
@@ -504,7 +497,7 @@ async function cmdAffected() {
 
   if (wantJson) {
     const data = await resp.json();
-    stdout.write(JSON.stringify(data, null, 2) + '\n');
+    await emitJson(data);
     exit(data?.testFiles?.length > 0 ? 0 : 1);
   }
 
@@ -529,11 +522,12 @@ async function cmdAffected() {
       stderr.write('codegraph affected: no test files — nothing to run\n');
       exit(1);
     }
-    stdout.write(`${asCmd} ${paths.map((p) => JSON.stringify(p)).join(' ')}\n`);
+    await writeOutput(`${asCmd} ${paths.map((p) => JSON.stringify(p)).join(' ')}\n`);
     exit(0);
   }
   if (paths.length === 0) exit(1);
   stdout.write(paths.join('\n') + '\n');
+  await writeOutput();
   exit(0);
 }
 
@@ -546,19 +540,17 @@ function printTopHelp() {
 
 Lookups (mirror existing /api/projectGraph/* endpoints — coordinates only):
   search   <query>                       Find symbols by name (file + qname hits)
+  symbols  [--path DIR] [--kind KINDS]   Export all matching function/method symbols
+           [--exclude-tests] [--exclude GLOB] (repeatable)
   callers  <qname> [--file PATH]         Direct callers of a symbol
   callees  <qname> [--file PATH]         What a symbol calls
-  impact   <qname> [--depth N=2]         Transitive callers BFS (use 'risk' for ranked output)
+  impact   <qname> [--depth N=2]         Transitive callers BFS (bounded traversal)
   file     <path>                        Symbol tree of a file
   coedit   <path> [--commits N=100]      Files co-edited in git history
 
-Analytics (PPR / TF-IDF / Louvain / coedit blended):
-  context  --query Q [--cursor C] [--open F1,F2,...]
-           [--top N=15]                  Top-K semantically relevant coordinates
+Derived queries (base index + on-demand git):
   related  <qname> [--file PATH]
-           [--top N=10]                  Broader neighbours: caller/callee + ppr + coedit + community
-  risk     <qname> [--depth N=2] [--top N=20]
-                                         Risk-scored impact + suggestedTests
+           [--top N=10]                  Broader neighbours: caller/callee + coedit
   affected <files…|--stdin>
            [--depth N=10] [--filter G]
            [--as-cmd RUNNER]              Test files transitively affected (CI / xargs)
@@ -570,20 +562,19 @@ Common flags (all subcommands):
 
 Plain output format (TAB-separated, one row per result):
   search    sym\\t<file>:<line>\\t<kind>\\t<qname>            or  file\\t<file>
+  symbols   <file>:<startLine>-<endLine>\\t<kind>\\t<qname>
   callers   <file>:<line>\\t<qname>\\t[<callLines>]
   callees   <file>:<line>\\t<qname>\\t[<callLines>]
   impact    d=<depth>\\t<file>:<line>\\t<qname>
   file      <kind>\\t<startLine>-<endLine>\\t<qname>
   coedit    <cooccur>/<total>\\t<file>               (after '# history' comment)
-  context   <score>\\t<file>:<line>\\t<qname>\\t[<signals>]
   related   <score>\\t<file>:<line>\\t<qname>\\t<<relations>>
-  risk      <score>\\td=<depth>\\t<file>:<line>\\t<qname>\\t[<tags>]
   affected  <file>                                  (one test path per line)
 
 Diagnostics on stderr (don't break shell pipelines):
-  # ambiguousIn: <files…>     Same qname in multiple files — pass --file
-  # cursor: <note>            Cursor format auto-corrected ('.' → '::', etc.)
-  # degraded: <reason>        analytics-warming / coedit-unavailable / truncated
+  # ambiguousIn: <files…>     No relations computed; pass --file (exit 2, also with --json)
+  # degraded: <reason>        coedit-unavailable / truncated
+  # incomplete: <reason>      Full export has incomplete source-index coverage
 
 Exit codes:
   0  output produced
@@ -597,8 +588,8 @@ Prerequisites:
 
 Examples:
   cockpit codegraph search getCodeIndex
+  cockpit codegraph symbols --path src --exclude-tests --json
   cockpit codegraph related getCodeIndex --top 5
-  cockpit codegraph risk searchIndex --depth 2
   git diff --name-only | cockpit codegraph affected --stdin                       # → newline test paths
   git diff --name-only | cockpit codegraph affected --stdin --as-cmd jest         # → jest "a" "b" …
   git diff --name-only | cockpit codegraph affected --stdin --as-cmd "vitest run" # → vitest run "a" "b" …
@@ -625,43 +616,83 @@ Examples:
 // call (which runs before this declaration is reached in module order)
 // doesn't hit a const TDZ.
 function getSubHelp() { return {
-  search: `Usage: cockpit codegraph search <query> [--limit N=15] [--include-literals] [--json]
+  search: `Usage: cockpit codegraph search <query> [--limit N=50] [--path DIR]
+                              [--exclude-tests] [--include-literals] [--json]
 
-Purpose:  Find symbols (and files) matching a name fragment. Tokenised
-          match across name + qualifiedName + filePath, with case +
+Purpose:  Find symbols by name and files by path, with case +
           word-separator folding (so 'build_code_index' ↔ 'buildCodeIndex'
           ↔ 'BUILD-CODE-INDEX' all collide). Use this when you know the
           symbol's name but not its location.
 
 Flags:
-  --limit N            Max symbol hits to return (default 15)
+  --limit N            Per-category result cap (default 50, maximum 500)
   --include-literals   Also search identifier-shaped string literals
                        in source (tool names / event names / config
                        keys / route paths). Off by default to keep
                        results lean. Surfaces names that never appear
                        as identifiers, only as strings.
+  --path DIR           Project-relative directory, including descendants
+  --exclude-tests      Exclude test files from files, symbols, and literals
   --json               Emit raw JSON {files: [...], symbols: [...]}
+
+Ranking: raw exact name, normalized exact, normalized prefix, then substring.
+All eligible candidates are scanned; only the best limit per category is retained.
+Ties are stable by file path, qualified name, then line. Tests are included by default.
 
 Output (plain, TAB-separated):
   sym <TAB> <file>:<line> <TAB> <kind> <TAB> <qname>
   file <TAB> <file>
+  literal <TAB> <file>:<line> <TAB> <value>
 
-JSON keys: files[].target, symbols[].target.{filePath,line,symbolKind,qualifiedName}
+JSON keys: files[].target, symbols[].target.{filePath,startLine,endLine,kind,qualifiedName}
 
 Exit: 0=hits, 1=no hits, 2=usage, 3=server unreachable
 
 Examples:
   cockpit codegraph search getCodeIndex
   cockpit codegraph search build_code_index             # snake-case query, still finds buildCodeIndex
-  cockpit codegraph search useChatStore --limit 5
+  cockpit codegraph search useChatStore --path packages/feature --exclude-tests --limit 5
   cockpit codegraph search 'agent.fork' --include-literals    # find a name hiding in a literal
   cockpit codegraph search authenticate --json | jq '.symbols[].target'`,
 
+  symbols: `Usage: cockpit codegraph symbols [--path DIR] [--kind KINDS]
+                               [--exclude-tests] [--exclude GLOB] [--summary] [--include-synthetic] [--json]
+
+Purpose: Export every matching symbol from one verified project-index revision.
+         Defaults to functions and methods, including indexed nested symbols.
+         No result-count cap. Only indexed supported source files are included.
+
+Flags:
+  --path DIR       Project-relative directory, including descendants (default: project)
+  --kind KINDS     Comma-separated function,method,class,interface,type,enum,const,unknown;
+                   or all (real symbols). Default: function,method. Repeatable.
+  --exclude-tests  Exclude test/spec/e2e filenames, test/tests/__tests__ directories,
+                   Python test_*.py/pyi and Go *_test.go (heuristic)
+  --exclude GLOB   Project-relative POSIX glob, e.g. '**/generated/**'; repeatable.
+                   Quote patterns to prevent shell expansion. Dot paths need explicit dots.
+  --summary        Counts by kind and immediate child directory; no symbol list
+  --include-synthetic  Include unknown UI display blocks (__imports__, __code_*)
+  --json           Raw JSON; full export carries symbols[], summary carries files/byKind/byDirectory
+
+Output (plain, TAB-separated):
+  <file>:<startLine>-<endLine> <TAB> <kind> <TAB> <qualifiedName>
+
+Source limit: 2 MiB per file, measured in actual bytes. JSON excludedFiles[] lists
+              {filePath, reason: "source-too-large", sizeBytes, limitBytes} for the revision.
+Stderr: # incomplete when the source index is capped; JSON also carries incomplete.
+Exit: 0=output (including empty JSON), 1=empty plain output, 2=usage/server error, 3=unreachable
+
+Examples:
+  cockpit codegraph symbols --path packages/feature --kind all --exclude-tests --summary
+  cockpit codegraph symbols --json > symbols.json
+  cockpit codegraph symbols --path src --exclude-tests --exclude '**/generated/**' --json
+  cockpit codegraph symbols --kind all --exclude '**/*.test.{ts,tsx}'`,
+
   callers: `Usage: cockpit codegraph callers <qname> [--file PATH] [--json]
 
-Purpose:  Direct callers of <qname> (1-hop). For transitive use 'impact'
-          or 'risk'. Pass --file when the qname exists in multiple files
-          (response will warn via 'ambiguousIn').
+Purpose:  Direct callers of <qname> (1-hop). For transitive use 'impact'.
+          Pass --file when the qname exists in multiple files
+          (ambiguous queries return a null target and no relations; exit 2).
 
 Flags:
   --file PATH      Disambiguate when qname appears in multiple files
@@ -673,11 +704,11 @@ Output (plain, TAB-separated):
 Stderr:
   # ambiguousIn: <files…>   Pass --file to pick the right target
 
-Exit: 0=callers found, 1=no callers, 2=usage/qname missing, 3=server
+Exit: 0=callers found, 1=no callers, 2=usage/ambiguous target, 3=server
 
 Examples:
   cockpit codegraph callers getCodeIndex
-  cockpit codegraph callers GET --file packages/feature/explorer/src/server/api/projectGraph/risk.ts
+  cockpit codegraph callers GET --file packages/feature/explorer/src/server/api/projectGraph/related.ts
   cockpit codegraph callers searchIndex --json`,
 
   callees: `Usage: cockpit codegraph callees <qname> [--file PATH] [--json]
@@ -690,7 +721,7 @@ Flags: same as 'callers'
 Output (plain, TAB-separated):
   <file>:<startLine> <TAB> <calleeQname> <TAB> [<callLine1>,<callLine2>,...]
 
-Exit: 0=callees found, 1=none, 2=usage, 3=server
+Exit: 0=callees found, 1=none, 2=usage/ambiguous target, 3=server
 
 Examples:
   cockpit codegraph callees runDialogue
@@ -699,8 +730,8 @@ Examples:
   impact: `Usage: cockpit codegraph impact <qname> [--file PATH] [--depth N=2] [--json]
 
 Purpose:  Transitive callers via BFS, up to <depth> hops. Returns a
-          flat node list capped at 500 server-side. For ranked + bounded
-          output prefer 'risk' (which wraps this and overlays scoring).
+          flat node list capped at 500 server-side. Narrow the query or
+          lower --depth when the result is truncated.
 
 Flags:
   --file PATH      Disambiguate qname across files
@@ -711,9 +742,9 @@ Output (plain, TAB-separated):
   d=<depth> <TAB> <file>:<startLine> <TAB> <qname>
 
 Stderr:
-  # impact truncated at server cap (500). Use 'risk' for ranked + bounded output.
+  # impact truncated at server cap (500). Narrow the query or lower --depth.
 
-Exit: 0=impacted nodes, 1=target only / no impact, 2=usage, 3=server
+Exit: 0=impacted nodes, 1=target only / no impact, 2=usage/ambiguous target, 3=server
 
 Examples:
   cockpit codegraph impact getCodeIndex
@@ -723,7 +754,7 @@ Examples:
   file: `Usage: cockpit codegraph file <path> [--json]
 
 Purpose:  Symbol tree of one file. Useful for "what's in this file" or
-          for picking a qname to feed to callers/related/risk.
+          for picking a qname to feed to callers/related.
 
 Flags:
   --json           Raw JSON {filePath, language, symbols: [...]} (hierarchical)
@@ -760,104 +791,35 @@ Examples:
   cockpit codegraph coedit packages/feature/explorer/src/server/codeMap/projectGraph/codeIndex.ts
   cockpit codegraph coedit packages/feature/agent/src/server/lib/cgPrompt.ts --commits 500`,
 
-  context: `Usage: cockpit codegraph context [--query Q] [--cursor C] [--open F1,F2,...]
-                              [--top N=15] [--json]
-
-Purpose:  Semantic retrieval. Combine free-text query, a cursor anchor,
-          and currently-open files; returns Top-K relevant coordinates
-          ranked by PPR + TF-IDF + PageRank. Use when you DON'T know
-          the symbol's name, only intent.
-
-At least one of --query / --cursor / --open is required.
-
-Flags:
-  --query Q        Free-text seed (TF-IDF tokenised)
-  --cursor C       Anchor at "<file>::<qname>" OR "<file>:<line>" — accepts
-                   '.' as separator, bare qname, case-insensitive, ±5 line fuzzy
-  --open F1,F2,... Comma-separated paths of currently-open files (weak seeds)
-  --top N          Result cap (1-50, default 15)
-  --json           Raw JSON {results, seeds, cursorResolution, degraded, degradedReason?}
-
-Output (plain, TAB-separated, score descending):
-  <score> <TAB> <file>:<startLine> <TAB> <qname> <TAB> [<sig1>,<sig2>,...]
-  signals: query-match | ppr | pagerank | open
-
-Stderr:
-  # cursor: <note>           Cursor format auto-corrected
-  # cursor not matched: ...  Cursor failed; results may still come from query/open
-  # degraded: <reason>       analytics-warming = index not ready yet
-
-Exit: 0=results, 1=no results, 2=usage/no seeds, 3=server
-
-Examples:
-  cockpit codegraph context --query "spawn language server shutdown"
-  cockpit codegraph context --query "auth flow" --cursor src/auth.ts::login
-  cockpit codegraph context --cursor src/api.ts:42 --top 5`,
-
   related: `Usage: cockpit codegraph related <qname> [--file PATH] [--top N=10]
                               [--include all|structural|coedit] [--json]
 
 Purpose:  Broader 1-hop relatedness than callers/callees alone. Combines
-          direct callers + callees + PPR neighbours + Louvain community
-          siblings + frequent coedit partners into one ranked list.
+          direct callers + callees + frequent coedit partners into one
+          ranked list, using only the base index and on-demand git.
 
 Flags:
   --file PATH      Disambiguate qname across files
   --top N          Result cap (1-30, default 10)
   --include K      Limit relation kinds (default: all)
-                     structural = callers/callees + PPR + community
+                     structural = callers/callees
                      coedit     = coedit only
   --json           Raw JSON {target, results, ambiguousIn?, coedit, degraded}
 
 Output (plain, TAB-separated, score descending):
   <score> <TAB> <file>:<startLine> <TAB> <qname> <TAB> <<rel1>,<rel2>,...>
-  relations: caller | callee | ppr-neighbor | frequent-coedit | sibling-in-community
+  relations: caller | callee | frequent-coedit
 
 Stderr:
   # ambiguousIn: <files…>   Same qname in multiple files
-  # degraded: <reason>      coedit-unavailable / analytics-warming
+  # degraded: <reason>      coedit-unavailable / truncated
 
-Exit: 0=results, 1=no relatives, 2=usage, 3=server
+Exit: 0=results, 1=no relatives, 2=usage/ambiguous target, 3=server
 
 Examples:
   cockpit codegraph related getCodeIndex --top 5
   cockpit codegraph related NewRoutineModal --include structural
-  cockpit codegraph related GET --file packages/feature/explorer/src/server/api/projectGraph/risk.ts`,
-
-  risk: `Usage: cockpit codegraph risk <qname> [--file PATH] [--depth N=2]
-                           [--top N=20] [--json]
-
-Purpose:  Risk-scored impact. Wraps 'impact' BFS and overlays
-          callFreq + coeditProb + hasTest + pagerank per node. Returns
-          the top-K highest-risk nodes + suggestedTests + the target
-          file's coedit history (don't re-call /coedit on the same file).
-          Use for "I'm about to change X — what should I worry about?"
-
-Flags:
-  --file PATH      Disambiguate qname
-  --depth N        BFS depth (1-5, default 2)
-  --top N          High-risk cap (1-50, default 20)
-  --json           Raw JSON {target, totalImpactedNodes, highRisk, suggestedTests, coedit, degraded}
-
-Output (plain, TAB-separated, risk.score descending):
-  # total impacted: <N>
-  <score> <TAB> d=<depth> <TAB> <file>:<startLine> <TAB> <qname> <TAB> [<tag1>,<tag2>,...]
-  tags: high-risk | untested | frequent-coedit | core | leaf
-
-  Followed by (if non-empty):
-  # suggestedTests
-  <reason> <TAB> <testFile> <TAB> (<covered qname1>, <qname2>, ...)
-  reason: direct-test | coedit-history
-
-Stderr:
-  # degraded: <reason>      coedit-unavailable / analytics-warming
-
-Exit: 0=high-risk nodes returned, 1=qname not found, 2=usage, 3=server
-
-Examples:
-  cockpit codegraph risk searchIndex
-  cockpit codegraph risk getCodeIndex --depth 3 --top 10
-  cockpit codegraph risk validateCwd --json | jq '.suggestedTests[].filePath'`,
+  cockpit codegraph related GET --file packages/feature/explorer/src/server/api/projectGraph/related.ts`,
 
   affected: `Usage: cockpit codegraph affected <files…|--stdin>
                               [--depth N=10] [--filter GLOB]
@@ -865,8 +827,7 @@ Examples:
 
 Purpose:  Test files transitively affected by changing the input files.
           File-level reverse-import closure. Recall-oriented (catch every
-          relevant test, may over-include) where 'risk' is precision-
-          oriented (highlight a few high-impact symbols). Use this for
+          relevant test, may over-include). Use this for
           CI selective-test pipelines.
 
 Detects test files by convention: *.test.* / *.spec.* / test_*.py /

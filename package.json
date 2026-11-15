@@ -141,8 +141,6 @@
     "ai": "^6.0.154",
     "ansi_up": "^6.0.6",
     "fast-glob": "^3.3.3",
-    "graphology": "^0.26.0",
-    "graphology-communities-louvain": "^2.0.2",
     "i18next": "^25.10.9",
     "ioredis": "^5.10.0",
     "js-yaml": "^4.2.0",

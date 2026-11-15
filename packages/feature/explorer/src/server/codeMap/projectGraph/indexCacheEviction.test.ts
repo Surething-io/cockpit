@@ -21,9 +21,12 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
-  MAX_CACHED_SYMBOLS,
+  MAX_CACHED_BYTES,
+  INDEX_IDLE_MS,
+  codeMapBudgetForHeap,
+  evictIdleCodeIndexes,
   countIndexSymbols,
-  getCodeIndex,
+  peekCodeIndex,
   __indexCacheTesting as T,
 } from './codeIndex';
 import type { CodeIndex } from './codeIndex';
@@ -56,11 +59,11 @@ describe('countIndexSymbols', () => {
   });
 });
 
-describe('indexCache symbol budget', () => {
+describe('indexCache byte budget', () => {
   beforeEach(() => T.clear());
 
   it('keeps many small projects — a count-based cap would have evicted them', () => {
-    const each = Math.floor(MAX_CACHED_SYMBOLS / 100);
+    const each = Math.floor(MAX_CACHED_BYTES / 4000 / 100);
     for (let i = 0; i < 20; i++) admit(`/small${i}`, each);
     // 20 × 1% of budget = 20% of it. Nothing may be dropped.
     expect(T.keys()).toHaveLength(20);
@@ -68,15 +71,15 @@ describe('indexCache symbol budget', () => {
   });
 
   it('evicts the least-recently-used project when the budget is exceeded', () => {
-    const big = Math.floor(MAX_CACHED_SYMBOLS * 0.6);
+    const big = Math.floor(MAX_CACHED_BYTES / 4000 * 0.6);
     admit('/a', big);
     admit('/b', big); // /a + /b = 120% of budget
     expect(T.has('/b')).toBe(true);
     expect(T.has('/a')).toBe(false);
   });
 
-  it('honours recency via getCodeIndex, not insertion order', async () => {
-    const third = Math.floor(MAX_CACHED_SYMBOLS * 0.45);
+  it('honours recency via peekCodeIndex, not insertion order', async () => {
+    const third = Math.floor(MAX_CACHED_BYTES / 4000 * 0.45);
     admit('/x', third);
     admit('/y', third); // 90% — both still fit
     expect(T.keys()).toEqual(['/x', '/y']);
@@ -84,7 +87,7 @@ describe('indexCache symbol budget', () => {
     // A cache HIT must re-insert, making /x most-recent. This is the real
     // coupling: the evictor reads Map order as recency order, and it is
     // getCodeIndex that maintains it.
-    await getCodeIndex('/x');
+    peekCodeIndex('/x');
     expect(T.keys()).toEqual(['/y', '/x']);
 
     admit('/z', third); // 135% → the LRU entry (/y) goes, not /x
@@ -97,16 +100,34 @@ describe('indexCache symbol budget', () => {
     // A single oversized project cannot be made to fit. Dropping it would
     // waste the build and return an index that is no longer cached, so the
     // next call would rebuild it forever.
-    admit('/huge', MAX_CACHED_SYMBOLS * 2);
+    admit('/huge', Math.ceil(MAX_CACHED_BYTES / 4000 * 2));
     expect(T.has('/huge')).toBe(true);
   });
 
   it('drops older entries to make room for an oversized newcomer', () => {
-    admit('/old1', Math.floor(MAX_CACHED_SYMBOLS * 0.3));
-    admit('/old2', Math.floor(MAX_CACHED_SYMBOLS * 0.3));
-    admit('/huge', MAX_CACHED_SYMBOLS * 2);
+    admit('/old1', Math.floor(MAX_CACHED_BYTES / 4000 * 0.3));
+    admit('/old2', Math.floor(MAX_CACHED_BYTES / 4000 * 0.3));
+    admit('/huge', Math.ceil(MAX_CACHED_BYTES / 4000 * 2));
     // Can't get under budget, but everything evictable must still be gone —
     // otherwise the oversized project stacks on top of the old ones.
     expect(T.keys()).toEqual(['/huge']);
+  });
+});
+
+
+describe('base index lifetime and heap budget', () => {
+  beforeEach(() => T.clear());
+
+  it('releases idle projects while retaining recently used indexes', () => {
+    const now = Date.now();
+    T.seed('/idle', fakeIndex('/idle', 1), now - INDEX_IDLE_MS - 1);
+    T.seed('/active', fakeIndex('/active', 1), now);
+    expect(evictIdleCodeIndexes(now)).toEqual(['/idle']);
+    expect(T.has('/active')).toBe(true);
+  });
+
+  it('caps residency independently of a raised process heap', () => {
+    expect(codeMapBudgetForHeap(16 * 1024 ** 3)).toBe(2 * 1024 ** 3);
+    expect(codeMapBudgetForHeap(0.5 * 1024 ** 3)).toBe(250000 * 4000);
   });
 });

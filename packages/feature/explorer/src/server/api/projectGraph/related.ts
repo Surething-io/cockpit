@@ -1,7 +1,9 @@
+import { indexResponse } from "./indexResponse"
+import { indexQueryError } from "@cockpit/feature-explorer/server/codeMap/projectGraph/indexFiles"
 /**
  * /api/projectGraph/related — broader 1-hop relatedness around a symbol.
  *
- * Returns callers / callees plus PPR neighbours plus coedit partners.
+ * Returns callers / callees plus coedit partners.
  * Each result carries one or more `relations` tags explaining why it's
  * here. See relatedBuilder.ts for the algorithm.
  *
@@ -14,13 +16,10 @@
  */
 import { Effect } from "effect"
 import { getCodeIndex } from "@cockpit/feature-explorer/server/codeMap/projectGraph/codeIndex"
-import {
-  buildRelated,
-  getOrTriggerAnalytics,
-} from "@cockpit/feature-explorer/server/codeMap/analytics/index"
+import { buildRelated } from "@cockpit/feature-explorer/server/codeMap/analytics/index"
 import { validateCwd } from "@cockpit/feature-explorer/server/files/shared"
-import { handler, ok } from "@cockpit/effect-runtime/server"
-import { AppError, ValidationError } from "@cockpit/effect-core"
+import { handler } from "@cockpit/effect-runtime/server"
+import { ValidationError } from "@cockpit/effect-core"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -54,20 +53,12 @@ export const GET = handler((req) =>
     }
     const cwd = cwdCheck.abs
 
-    const result = yield* Effect.tryPromise({
-      try: async () => {
-        const index = await getCodeIndex(cwd)
-        const analytics = getOrTriggerAnalytics(cwd, index)
-        return await buildRelated(index, analytics, {
-          qname,
-          filePath,
-          topK,
-          include,
-        })
-      },
+    const index = yield* Effect.tryPromise({
+      try: () => getCodeIndex(cwd),
       catch: (cause) =>
-        new AppError({ message: "Related lookup failed", cause }),
+        indexQueryError(cause, "Related lookup failed"),
     })
-    return ok(result)
+    const result = yield* buildRelated(index, { qname, filePath, topK, include })
+    return indexResponse(index, result)
   }),
 )

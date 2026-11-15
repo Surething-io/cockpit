@@ -463,6 +463,7 @@
       "clear": "清空历史"
     },
     "refresh": "重新构建项目图",
+    "relationsStale": "项目关联关系需要刷新",
     "retry": "重试"
   },
   "blockDiffViewer": {

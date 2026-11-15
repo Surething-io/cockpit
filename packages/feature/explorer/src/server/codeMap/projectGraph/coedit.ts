@@ -33,8 +33,33 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { Effect, Either } from 'effect';
+import { AppError } from '@cockpit/effect-core';
 
 const execFileAsync = promisify(execFile);
+
+async function gitOutput(cwd: string, args: string[], maxBuffer: number, allowUnborn = false): Promise<string> {
+  const command = Effect.tryPromise({
+    try: () => execFileAsync('git', args, { cwd, maxBuffer }).then((result) => result.stdout),
+    catch: (cause) => new AppError({ message: 'Co-edit Git command failed', cause }),
+  });
+  const output = await Effect.runPromise(Effect.either(command.pipe(
+    Effect.catchAll((error) => {
+      if (!allowUnborn) return Effect.fail(error);
+      // git log fails on an unborn branch. Verify that specific state instead
+      // of treating every Git failure as legitimate empty history.
+      return Effect.tryPromise({
+        try: () => execFileAsync('git', ['rev-parse', '--verify', '--quiet', 'HEAD'], { cwd }),
+        catch: (cause) => cause,
+      }).pipe(Effect.matchEffect({
+        onSuccess: () => Effect.fail(error),
+        onFailure: (cause) => (cause as { code?: number }).code === 1 ? Effect.succeed('') : Effect.fail(error),
+      }));
+    }),
+  )));
+  if (Either.isLeft(output)) throw output.left;
+  return output.right;
+}
 
 export interface CoEditHistoryEntry {
   /** Project-relative path of the co-edited file. Named `filePath` to match
@@ -116,18 +141,9 @@ async function collectHistory(
     granularity === 'merge'
       ? ['--merges', '--first-parent', '--name-only']
       : ['--follow', '--name-only'];
-  let stdout: string;
-  try {
-    const result = await execFileAsync(
-      'git',
-      ['log', '-n', String(commits), ...baseFlags, `--pretty=format:${SEP}%H|%cI`, '--', filePath],
-      { cwd, maxBuffer: 50 * 1024 * 1024 },
-    );
-    stdout = result.stdout;
-  } catch {
-    // Not a git repo, file never tracked, or git missing → empty.
-    return { history: [], totalCommits: 0 };
-  }
+  const stdout = await gitOutput(cwd,
+    ['log', '-n', String(commits), ...baseFlags, `--pretty=format:${SEP}%H|%cI`, '--', filePath],
+    50 * 1024 * 1024, true);
 
   // Parse into commits. Each commit chunk: a separator line, then 0+ file
   // lines until the next separator (or EOF). The first chunk may have an
@@ -201,17 +217,8 @@ async function collectUncommitted(
   cwd: string,
   filePath: string,
 ): Promise<string[]> {
-  let stdout: string;
-  try {
-    const result = await execFileAsync(
-      'git',
-      ['-c', 'core.quotePath=false', 'status', '--porcelain'],
-      { cwd, maxBuffer: 10 * 1024 * 1024 },
-    );
-    stdout = result.stdout;
-  } catch {
-    return [];
-  }
+  const stdout = await gitOutput(cwd,
+    ['-c', 'core.quotePath=false', 'status', '--porcelain'], 10 * 1024 * 1024);
 
   // Each line: `XY filename` where X = index status, Y = worktree status.
   // We want anything where X or Y is non-space-non-?, i.e. tracked changes

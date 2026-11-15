@@ -15,10 +15,11 @@
  *   commits   — optional, history scan window. Default 100, max 1000.
  */
 import { Effect } from "effect"
+import { requireGitProject, indexQueryError } from "@cockpit/feature-explorer/server/codeMap/projectGraph/indexFiles"
 import { coEditFromGit } from "@cockpit/feature-explorer/server/codeMap/projectGraph/coedit"
 import { validateCwd } from "@cockpit/feature-explorer/server/files/shared"
 import { handler, ok } from "@cockpit/effect-runtime/server"
-import { AppError, ValidationError } from "@cockpit/effect-core"
+import { ValidationError } from "@cockpit/effect-core"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -47,9 +48,12 @@ export const GET = handler((req) =>
     const cwd = cwdCheck.abs
 
     const result = yield* Effect.tryPromise({
-      try: () => coEditFromGit(cwd, filePath, commits),
+      try: async () => {
+        await requireGitProject(cwd)
+        return coEditFromGit(cwd, filePath, commits)
+      },
       catch: (cause) =>
-        new AppError({ message: "Co-edit lookup failed", cause }),
+        indexQueryError(cause, "Co-edit lookup failed"),
     })
     return ok(result)
   })

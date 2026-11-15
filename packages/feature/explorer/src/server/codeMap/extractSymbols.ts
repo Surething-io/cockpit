@@ -17,6 +17,7 @@
 import type { Node } from 'web-tree-sitter';
 import type { ExtractedSymbol, SymbolKind } from './types';
 import type { GrammarId } from './languageMap';
+import { extractImportBindings } from './extractCalls';
 
 // ============================================================================
 // Hash — cyrb53, a fast non-crypto hash. Used to detect "modified" symbols by
@@ -205,6 +206,34 @@ function extractClassMembers(body: Node | null, parentQname: string): ExtractedS
   return out;
 }
 
+/** Recognize function-valued wrappers by their import binding, not just a
+ * callee's spelling. An arbitrary factory accepting a callback can return data. */
+function callableInitializer(value: Node | null, depth = 0): Node | null {
+  if (!value || depth > 8) return null;
+  if (value.type === 'arrow_function' || value.type === 'function_expression') return value;
+  if (['parenthesized_expression', 'as_expression', 'satisfies_expression', 'non_null_expression'].includes(value.type)) {
+    return callableInitializer(value.namedChild(0), depth + 1);
+  }
+  if (value.type !== 'call_expression') return null;
+  const callee = value.childForFieldName('function');
+  if (!callee) return null;
+  const receiver = callee.type === 'member_expression' ? callee.childForFieldName('object') : null;
+  const localName = receiver?.type === 'identifier' ? receiver.text : callee.type === 'identifier' ? callee.text : null;
+  if (!localName) return null;
+  let root = value;
+  while (root.parent) root = root.parent;
+  const binding = extractImportBindings(root).find(b => b.localName === localName);
+  if (!binding) return null;
+  const name = receiver ? callee.childForFieldName('property')?.text : binding.importedName;
+  const namespace = binding.importedName === '*' || binding.importedName === 'default';
+  if (receiver && !namespace) return null;
+  const supported = binding.specifier === '@cockpit/effect-runtime/server'
+    ? name === 'handler' || name === 'dynamicHandler'
+    : binding.specifier === 'react' && ['memo', 'forwardRef', 'useCallback'].includes(name ?? '');
+  if (!supported) return null;
+  return callableInitializer(value.childForFieldName('arguments')?.namedChild(0) ?? null, depth + 1);
+}
+
 /**
  * Handle `const foo = () => {}` (function-valued) and `const x = expr`
  * (any other top-level variable declaration). Every declarator yields a
@@ -235,14 +264,12 @@ function extractFromLexical(
     if (!nameNode) continue;
 
     const name = nameNode.text;
-    const isFn =
-      valueNode &&
-      (valueNode.type === 'arrow_function' || valueNode.type === 'function_expression');
+    const functionValue = callableInitializer(valueNode);
+    const isFn = functionValue !== null;
 
-    // Params come off the value node (the arrow / function-expression),
-    // never the wrapper `decl` — multiple declarators in one
-    // `const a = …, b = …` would otherwise share the first one's params.
-    const params = isFn && valueNode ? extractParams(valueNode) : undefined;
+    // Take params from the actual callback, including wrapped initializers.
+    // Each declarator has its own callback and parameter list.
+    const params = functionValue ? extractParams(functionValue) : undefined;
     out.push(
       makeSymbol(
         decl,
@@ -1043,8 +1070,7 @@ export function extractSymbolsFromTree(
  *          qualified by target type only, so both land on `Foo>fmt`
  *
  * Everything downstream keys on qualifiedName and silently collapses on a
- * duplicate: `symbolsByQname` (last wins), `analytics/graph` node ids (first
- * wins), the intra-edge dedup key, `diffBlocks`' before/after maps, and the
+ * duplicate: `symbolsByQname` (last wins), the intra-edge dedup key, `diffBlocks`' before/after maps, and the
  * chip rows' React keys. Suffixing the later occurrence cannot make any of
  * those worse than the collapse they do today.
  *

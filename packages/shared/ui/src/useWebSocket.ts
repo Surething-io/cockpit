@@ -7,6 +7,8 @@ interface UseWebSocketOptions {
   url: string;
   /** Callback for incoming business messages (excludes ping) */
   onMessage: (data: unknown) => void;
+  /** Called once the subscription can receive messages, including reconnects. */
+  onOpen?: () => void;
   /** Whether enabled, defaults to true */
   enabled?: boolean;
 }
@@ -18,6 +20,7 @@ type Listener = (data: unknown) => void;
 interface SharedConnection {
   ws: WebSocket | null;
   listeners: Set<Listener>;
+  openListeners: Set<() => void>;
   retryCount: number;
   retryTimer: ReturnType<typeof setTimeout> | null;
   connect: () => void;
@@ -55,6 +58,7 @@ function getOrCreateConnection(url: string): SharedConnection {
   const conn: SharedConnection = {
     ws: null,
     listeners: new Set(),
+    openListeners: new Set(),
     retryCount: 0,
     retryTimer: null,
 
@@ -68,6 +72,13 @@ function getOrCreateConnection(url: string): SharedConnection {
         // it is a reconnect rather than the initial connect for this URL.
         const isReconnect = conn.retryCount > 0;
         conn.retryCount = 0;
+        conn.openListeners.forEach((fn) => {
+          try {
+            fn();
+          } catch (err) {
+            console.error('[useWebSocket] open listener threw', err);
+          }
+        });
         if (isReconnect) {
           reconnectListeners.forEach((fn) => {
             try {
@@ -139,19 +150,25 @@ function getOrCreateConnection(url: string): SharedConnection {
  * WebSocket hook wrapping connection, auto-reconnect (exponential backoff), and heartbeat handling.
  * Multiple calls with the same URL share a single WebSocket connection.
  */
-export function useWebSocket({ url, onMessage, enabled = true }: UseWebSocketOptions): void {
+export function useWebSocket({ url, onMessage, onOpen, enabled = true }: UseWebSocketOptions): void {
   const onMessageRef = useRef(onMessage);
+  const onOpenRef = useRef(onOpen);
   useEffect(() => { onMessageRef.current = onMessage; });
+  useEffect(() => { onOpenRef.current = onOpen; });
 
   useEffect(() => {
     if (!enabled) return;
 
     const listener: Listener = (data) => onMessageRef.current(data);
+    const openListener = () => onOpenRef.current?.();
     const conn = getOrCreateConnection(url);
     conn.listeners.add(listener);
+    conn.openListeners.add(openListener);
+    if (conn.ws?.readyState === WebSocket.OPEN) openListener();
 
     return () => {
       conn.listeners.delete(listener);
+      conn.openListeners.delete(openListener);
       if (conn.listeners.size === 0) {
         conn.destroy();
       }

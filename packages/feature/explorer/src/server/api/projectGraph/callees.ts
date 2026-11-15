@@ -1,3 +1,5 @@
+import { indexResponse } from "./indexResponse"
+import { indexQueryError } from "@cockpit/feature-explorer/server/codeMap/projectGraph/indexFiles"
 /**
  * /api/projectGraph/callees — What does this symbol call?
  *
@@ -10,8 +12,8 @@ import {
   getCodeIndex,
 } from "@cockpit/feature-explorer/server/codeMap/projectGraph/codeIndex"
 import { validateCwd } from "@cockpit/feature-explorer/server/files/shared"
-import { handler, ok } from "@cockpit/effect-runtime/server"
-import { AppError, ValidationError } from "@cockpit/effect-core"
+import { handler } from "@cockpit/effect-runtime/server"
+import { ValidationError } from "@cockpit/effect-core"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -39,11 +41,11 @@ export const GET = handler((req) =>
     const result = yield* Effect.tryPromise({
       try: async () => {
         const index = await getCodeIndex(cwd)
-        return calleesFromIndex(index, qname, filePath)
+        return indexResponse(index, calleesFromIndex(index, qname, filePath))
       },
       catch: (cause) =>
-        new AppError({ message: "Callees lookup failed", cause }),
+        indexQueryError(cause, "Callees lookup failed"),
     })
-    return ok(result)
+    return result
   })
 )

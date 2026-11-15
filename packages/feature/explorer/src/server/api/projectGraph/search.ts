@@ -1,3 +1,5 @@
+import { indexResponse } from "./indexResponse"
+import { indexQueryError } from "@cockpit/feature-explorer/server/codeMap/projectGraph/indexFiles"
 /**
  * /api/projectGraph/search — P8+ migration
  *
@@ -7,7 +9,11 @@
  *                      matching, so `user_profile` / `userProfile` /
  *                      `user-profile` / `USER_PROFILE` all hit the
  *                      same indexed names
- *   limit            — per-category cap (1–100, default 15)
+ *   limit            — per-category cap (1–500, default 50)
+ *   path             — project-relative directory, including descendants
+ *   excludeTests     — true/1 excludes test files from every category
+ *   Ranking          — raw exact, normalized exact, prefix, then substring;
+ *                      all eligible candidates are scanned before selection
  *   includeLiterals  — when "true"/"1", also search identifier-shaped
  *                      string literals harvested from source. Surfaces
  *                      tool names / event names / config keys / route
@@ -23,7 +29,8 @@ import {
 } from "@cockpit/feature-explorer/server/codeMap/projectGraph/codeIndex"
 import { validateCwd } from "@cockpit/feature-explorer/server/files/shared"
 import { handler, ok } from "@cockpit/effect-runtime/server"
-import { AppError, ValidationError } from "@cockpit/effect-core"
+import { ValidationError } from "@cockpit/effect-core"
+import { relativeQueryPath } from "../../codeMap/projectGraph/queryFilters"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -40,10 +47,21 @@ export const GET = handler((req) =>
     const cwdParam = sp.get("cwd")
     const q = sp.get("q") ?? ""
     const limit = Math.min(
-      Math.max(parseInt(sp.get("limit") ?? "15", 10) || 15, 1),
-      100
+      Math.max(parseInt(sp.get("limit") ?? "50", 10) || 50, 1),
+      500
     )
     const includeLiterals = parseBool(sp.get("includeLiterals"))
+    const filters = yield* Effect.try({
+      try: () => {
+        const directory = relativeQueryPath(sp.get("path") ?? ".", "path")
+        const excludeTests = sp.get("excludeTests") ?? "false"
+        if (!["true", "false", "1", "0"].includes(excludeTests)) {
+          throw new ValidationError({ field: "excludeTests", reason: "Expected true, false, 1 or 0" })
+        }
+        return { directory, excludeTests: excludeTests === "true" || excludeTests === "1" }
+      },
+      catch: cause => indexQueryError(cause, "Invalid search filters"),
+    })
     const cwdCheck = yield* Effect.promise(() => validateCwd(cwdParam))
     if (!cwdCheck.ok) {
       return yield* Effect.fail(
@@ -61,11 +79,11 @@ export const GET = handler((req) =>
     const result = yield* Effect.tryPromise({
       try: async () => {
         const index = await getCodeIndex(cwd)
-        return searchIndex(index, q, limit, { includeLiterals })
+        return indexResponse(index, searchIndex(index, q, limit, { includeLiterals, ...filters }))
       },
       catch: (cause) =>
-        new AppError({ message: "Search failed", cause }),
+        indexQueryError(cause, "Search failed"),
     })
-    return ok(result)
+    return result
   })
 )

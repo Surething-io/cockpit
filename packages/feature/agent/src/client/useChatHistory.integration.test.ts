@@ -243,7 +243,11 @@ describe.skipIf(!browser)('history and live replay in a browser', () => {
     if (!output || output === 'RUNNING') throw new Error(`Browser did not finish; artifacts: ${directory}`);
     results = JSON.parse(output.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));
   }, 60_000);
-  afterAll(async () => { if (historyServer) await new Promise<void>((resolve) => historyServer.close(() => resolve())); if (directory) await rm(directory, { recursive: true, force: true }); });
+  afterAll(async () => {
+    if (historyServer) await new Promise<void>((resolve) => historyServer.close(() => resolve()));
+    // Chrome helpers can finish writing the profile after the main process exits.
+    if (directory) await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
 
   it('passes every browser scenario', () => {
     const scenarios = Object.entries(results);

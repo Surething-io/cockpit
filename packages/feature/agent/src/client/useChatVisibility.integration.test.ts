@@ -31,7 +31,10 @@ describe.skipIf(!browser)('conversation visibility in a browser', () => {
     if (!output || output === 'RUNNING') throw new Error(`Visibility scenarios did not finish: ${directory}`);
     results = JSON.parse(output.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));
   }, 60_000);
-  afterAll(async () => { if (directory) await rm(directory, { recursive: true, force: true }); });
+  afterAll(async () => {
+    // Chrome helpers can finish writing the profile after the main process exits.
+    if (directory) await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
   it('loads only visible conversations and preserves background work and confirmed snapshots', () => {
     expect(Object.keys(results).length).toBeGreaterThanOrEqual(8);
     for (const [name, result] of Object.entries(results)) expect.soft(result, name).toBe('PASS');

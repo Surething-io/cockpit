@@ -205,7 +205,8 @@ describe.skipIf(!browser)('history ownership through real HTTP and WebSocket bou
     if (sockets) { for (const client of sockets.clients) client.terminate(); await new Promise<void>((resolve) => sockets.close(() => resolve())); }
     if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
     vi.unstubAllEnvs();
-    if (directory) await rm(directory, { recursive: true, force: true });
+    // Chrome helpers can finish writing the profile after the main process exits.
+    if (directory) await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   it.each(['sender-reconnect-successor-shared', 'sender-reconnect-successor', 'sender-reconnect-successor-draining', 'sender-reconnect-successor-completed', 'sender-delayed', 'sender-clock-skew', 'sender-legacy-response', 'cold-page-first', 'cold-idle-first',

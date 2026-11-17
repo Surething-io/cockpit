@@ -740,15 +740,16 @@ async function buildModTree(
     const childMods = findFileModDeclarations(source);
     if (childMods.length === 0) return;
 
-    const dir = path.dirname(filePath);
+    // Git/index keys always use '/', even when native disk paths use '\\'.
+    const dir = path.posix.dirname(filePath);
     // For mod.rs / lib.rs / main.rs, sub-mods live alongside in the
     // same directory. For other files (`foo.rs`), sub-mods live
     // under `foo/` (Rust 2018 edition) — but we cover both layouts.
-    const baseName = path.basename(filePath, '.rs');
+    const baseName = path.posix.basename(filePath, '.rs');
     const possibleSubdirs =
       baseName === 'mod' || baseName === 'lib' || baseName === 'main'
         ? [dir]
-        : [dir, path.join(dir, baseName)];
+        : [dir, path.posix.join(dir, baseName)];
 
     for (const childMod of childMods) {
       const childModPath = `${modPath}::${childMod}`;
@@ -756,8 +757,8 @@ async function buildModTree(
       let childFile: string | null = null;
       for (const subdir of possibleSubdirs) {
         const candidates = [
-          path.join(subdir, `${childMod}.rs`),
-          path.join(subdir, childMod, 'mod.rs'),
+          path.posix.join(subdir, `${childMod}.rs`),
+          path.posix.join(subdir, childMod, 'mod.rs'),
         ];
         for (const c of candidates) {
           // Normalise leading "./" since dirname returns "." for root files.
@@ -1069,7 +1070,7 @@ export const rustHandler: LanguageHandler = {
 
   moduleForFile(filePath: string, ctx: ProjectContext): string {
     const c = ctx as RustProjectContext | undefined;
-    return c?.fileToMod.get(filePath) ?? path.dirname(filePath);
+    return c?.fileToMod.get(filePath) ?? path.posix.dirname(filePath);
   },
 };
 

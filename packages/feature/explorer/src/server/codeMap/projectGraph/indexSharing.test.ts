@@ -36,6 +36,8 @@ beforeEach(async () => {
   b = path.join(base, 'worktree');
   await fs.mkdir(a);
   git(a, 'init', '-q');
+  // Sharing requires identical bytes; checkout must not rewrite LF fixtures to CRLF.
+  git(a, 'config', 'core.autocrlf', 'false');
   await write(a, 'leaf.ts', leaf);
   await write(a, 'caller.ts', caller);
   git(a, 'add', '.');
@@ -50,6 +52,15 @@ afterEach(async () => {
 });
 
 describe('worktree index sharing', () => {
+  it('keeps different line-ending bytes in separate parse entries', async () => {
+    const first = await getCodeIndex(a);
+    await write(b, 'leaf.ts', leaf.replaceAll('\n', '\r\n'));
+    const second = await getCodeIndex(b);
+    expect(second.update?.parsedFiles).toBe(1);
+    expect(second.files.get('leaf.ts')!.flatSymbols).not.toBe(first.files.get('leaf.ts')!.flatSymbols);
+    expect(second.files.get('caller.ts')!.flatSymbols).toBe(first.files.get('caller.ts')!.flatSymbols);
+    expect(callersFromIndex(second, 'leaf', 'leaf.ts').callers).toHaveLength(1);
+  });
   it('reuses parsing, lookup maps and complete relations while keeping worktree metadata local', async () => {
     const first = await getCodeIndex(a);
     const spy = vi.spyOn(getHandler('typescript'), 'extractSymbols');

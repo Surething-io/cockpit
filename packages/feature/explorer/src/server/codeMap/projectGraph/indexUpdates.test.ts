@@ -274,11 +274,18 @@ describe('project index updates', () => {
     expect([...index.files.keys()]).toEqual(['caller.ts', 'leaf.test.ts', 'leaf.ts']);
   });
 
-  it('preserves whitespace and newline characters in Git paths', async () => {
+  it('preserves whitespace and Unicode characters in Git paths', async () => {
     await write(' spaced file.ts', leaf);
-    await write('line\nbreak.ts', leaf);
+    await write('文件.ts', leaf);
     const index = await getCodeIndex(cwd);
     expect(index.files.has(' spaced file.ts')).toBe(true);
+    expect(index.files.has('文件.ts')).toBe(true);
+  });
+
+  // Windows rejects control characters in file names before Git can list them.
+  it.skipIf(process.platform === 'win32')('preserves newlines in Git paths on supported filesystems', async () => {
+    await write('line\nbreak.ts', leaf);
+    const index = await getCodeIndex(cwd);
     expect(index.files.has('line\nbreak.ts')).toBe(true);
   });
 

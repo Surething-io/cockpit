@@ -15,6 +15,7 @@ import { useLatestVersion } from './useLatestVersion';
 import { useSelfUpdate } from './useSelfUpdate';
 import { AppWindow, MoreHorizontal } from 'lucide-react';
 import type { HtmlAppPreview } from '@cockpit/feature-explorer';
+import { handleProjectSidebarMessage } from './projectSidebarMessages';
 
 export interface ProjectInfo {
   cwd: string;
@@ -314,17 +315,7 @@ export function ProjectSidebar({
 
   const handleGlobalStateMessage = useCallback((msg: unknown) => {
     try {
-      const parsed = msg as { type: string; data?: { sessions: GlobalSession[] } };
-
-      // Scheduled task trigger notification
-      if (parsed.type === 'task-fired') {
-        reloadScheduledRef.current();
-        return;
-      }
-
-      const { data } = parsed;
-      if (!data) return;
-      setSessions(data.sessions || []);
+      handleProjectSidebarMessage(msg, setSessions, reloadScheduledRef.current);
     } catch {
       // Ignore parse errors
     }

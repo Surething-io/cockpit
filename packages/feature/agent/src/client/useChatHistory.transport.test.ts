@@ -209,11 +209,7 @@ describe.skipIf(!browser)('history ownership through real HTTP and WebSocket bou
     if (directory) await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
-  it.each(['sender-reconnect-successor-shared', 'sender-reconnect-successor', 'sender-reconnect-successor-draining', 'sender-reconnect-successor-completed', 'sender-delayed', 'sender-clock-skew', 'sender-legacy-response', 'cold-page-first', 'cold-idle-first',
-    'failure-event', 'failure-snapshot', 'failure-sender', 'failure-persisted',
-    'failure-output-sender', 'failure-output-snapshot', 'rejection-drain',
-    'reentry-failed', 'reentry-terminal', 'reentry-draining', 'reentry-running', 'reentry-pending', 'reentry-accepted',
-    'epoch-prepend', 'epoch-refresh', 'rewrite-prepend', 'rewrite-legacy'])('%s', async (scenario) => {
+  const runScenario = async (scenario: string, signal: AbortSignal): Promise<void> => {
     mode = scenario; session = scenario; path = pathFor(cwd, session);
     firstRead = false; requests = []; failures = []; admission = undefined;
     socketReady = gate(); idleSeen = gate(); written = gate(); finish = gate();
@@ -240,7 +236,7 @@ describe.skipIf(!browser)('history ownership through real HTTP and WebSocket bou
     const browserDir = join(directory, scenario); await mkdir(browserDir);
     const url = `http://127.0.0.1:${port}/?mode=${scenario}&session=${session}`;
     try {
-      const dom = await captureBrowserDom(browser!, browserDir, url);
+      const dom = await captureBrowserDom(browser!, browserDir, url, signal);
       const output = /<pre id="result">([\s\S]*?)<\/pre>/.exec(dom)![1];
       const result = JSON.parse(output.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));
       expect(result.error, JSON.stringify(result)).toBeUndefined();
@@ -307,5 +303,18 @@ describe.skipIf(!browser)('history ownership through real HTTP and WebSocket bou
       if (scenario.startsWith('sender')) expect(await hub.waitForWriter(session, 5000)).toBe(true);
       else { hub.markRunIdle(session); hub.releaseRun(session); }
     }
-  }, 15000);
+  };
+
+  // Cover the browser's 45-second budget plus process and writer teardown.
+  it.for(['sender-reconnect-successor-shared', 'sender-reconnect-successor', 'sender-reconnect-successor-draining', 'sender-reconnect-successor-completed', 'sender-delayed', 'sender-clock-skew', 'sender-legacy-response', 'cold-page-first', 'cold-idle-first',
+    'failure-event', 'failure-snapshot', 'failure-sender', 'failure-persisted',
+    'failure-output-sender', 'failure-output-snapshot', 'rejection-drain',
+    'reentry-failed', 'reentry-terminal', 'reentry-draining', 'reentry-running', 'reentry-pending', 'reentry-accepted',
+    'epoch-prepend', 'epoch-refresh', 'rewrite-prepend', 'rewrite-legacy'])('%s', { timeout: 60_000 }, async (scenario, { signal, onTestFinished }) => {
+    const running = runScenario(scenario, signal);
+    // A timed-out test keeps executing. Drain its browser and writer before
+    // another scenario can replace the shared HTTP fixture state.
+    onTestFinished(async () => { await running.catch(() => undefined); }, 10_000);
+    await running;
+  });
 });

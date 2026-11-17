@@ -4,21 +4,35 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /** Real compositor frames are required to test viewport acknowledgements. */
-export async function captureBrowserDom(browser: string, directory: string, url = pathToFileURL(join(directory, 'index.html')).href): Promise<string> {
+export async function captureBrowserDom(browser: string, directory: string, url = pathToFileURL(join(directory, 'index.html')).href, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
   const profile = join(directory, 'profile');
   const child = spawn(browser, ['--headless', '--disable-gpu', '--no-sandbox', '--no-first-run', '--disable-background-networking', '--password-store=basic', '--use-mock-keychain',
     '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore' });
+  // Register immediately: exitCode stays null when Chrome exits from a signal.
+  const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
   let socket: WebSocket | undefined;
+  let stopped = false;
   const deadline = Date.now() + 45_000;
   const tick = () => new Promise((resolve) => setTimeout(resolve, 25));
-  try {
+  let timer: ReturnType<typeof setTimeout>;
+  let onAbort: () => void;
+  const interrupted = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Browser capture timed out after 45000ms')), 45_000);
+    onAbort = () => reject(signal!.reason);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    child.once('error', reject);
+  });
+  const capture = async (): Promise<string> => {
     let port = '';
     while (!port) {
-      if (child.exitCode !== null || Date.now() > deadline) throw new Error('Isolated browser did not start');
+      if (child.exitCode !== null || child.signalCode !== null || Date.now() > deadline) throw new Error('Isolated browser did not start');
       port = await readFile(join(profile, 'DevToolsActivePort'), 'utf8').then((text) => text.split('\n')[0], () => '');
       if (!port) await tick();
     }
+    if (stopped) throw new Error('Browser capture stopped');
     const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as { webSocketDebuggerUrl: string; type: string }[];
+    if (stopped) throw new Error('Browser capture stopped');
     socket = new WebSocket(pages.find((page) => page.type === 'page')!.webSocketDebuggerUrl);
     await new Promise<void>((resolve, reject) => { socket!.addEventListener('open', () => resolve()); socket!.addEventListener('error', () => reject(new Error('Browser debugger connection failed'))); });
     let sequence = 0;
@@ -56,9 +70,17 @@ export async function captureBrowserDom(browser: string, directory: string, url 
       if (Date.now() > deadline) throw new Error(`Browser scenarios did not finish: ${await evaluate('document.body.dataset.scenario')}`);
       await tick();
     }
+  };
+  try {
+    // Bound every stage, including debugger connection, navigation and commands.
+    return await Promise.race([capture(), interrupted]);
   } finally {
+    stopped = true;
+    clearTimeout(timer!);
+    signal?.removeEventListener('abort', onAbort!);
     socket?.close();
-    child.kill();
-    if (child.exitCode === null) await new Promise<void>((resolve) => child.once('exit', () => resolve()));
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+    const forceKill = setTimeout(() => child.kill('SIGKILL'), 2000);
+    try { await closed; } finally { clearTimeout(forceKill); }
   }
 }

@@ -263,10 +263,16 @@ export async function coEditFromGit(
   granularity: 'commit' | 'merge' = 'commit',
 ): Promise<CoEditResponse> {
   const n = Math.min(Math.max(commits, 1), MAX_COMMITS);
-  const [{ history, totalCommits }, uncommitted] = await Promise.all([
+  // Drain both children before reporting a failure. A still-running Git
+  // process can keep cwd locked on Windows after the caller starts cleanup.
+  const [historyResult, uncommittedResult] = await Promise.allSettled([
     collectHistory(cwd, filePath, n, granularity),
     collectUncommitted(cwd, filePath),
   ]);
+  if (historyResult.status === 'rejected') throw historyResult.reason;
+  if (uncommittedResult.status === 'rejected') throw uncommittedResult.reason;
+  const { history, totalCommits } = historyResult.value;
+  const uncommitted = uncommittedResult.value;
   return { target: filePath, totalCommits, history, uncommitted };
 }
 

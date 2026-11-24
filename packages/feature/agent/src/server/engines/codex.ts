@@ -13,6 +13,8 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import type { EngineSpec, ImageData, RunCtx } from './types';
 import { mergeStashedCodexRollout, stashCodexRollout } from './shared/noHistoryRollout';
+import { cancelCodexSuggestion, startCodexSuggestion } from './codexSuggestion';
+import { broadcastPromptSuggestion } from '../promptSuggestionBroadcast';
 import {
   CODEX_AGENT_MESSAGE_TYPE,
   CODEX_IMAGE_ONLY_TEXT,
@@ -728,8 +730,22 @@ async function runCodexAppServerWithInput(ctx: RunCtx, input: CodexRunInput): Pr
   const finished = new Promise<void>((resolve) => {
     settle = resolve;
   });
+  /** The thread this run opened, once known; the suggestion forks it. */
+  let mainThreadId: string | null = null;
+  /**
+   * Set once the connection has been handed to the post-turn suggestion (see
+   * the `finally` below). From then on the run is over, and every notification
+   * belongs to the ephemeral fork — none may reach the adapter.
+   */
+  let suggestionHandler: ((n: CodexNotification) => void) | null = null;
+  /** The try below ran to its end without throwing. */
+  let succeeded = false;
 
   const onNotification = (n: CodexNotification): void => {
+    if (suggestionHandler) {
+      suggestionHandler(n);
+      return;
+    }
     for (const out of shim.handle(n)) {
       if (out.kind === 'text-delta') {
         adapter.noteAssistantText(out.text);
@@ -854,6 +870,7 @@ async function runCodexAppServerWithInput(ctx: RunCtx, input: CodexRunInput): Pr
     const thread = opened.thread as { id?: string; path?: string | null } | undefined;
     const threadId = thread?.id;
     if (!threadId) throw new Error('codex app-server returned no thread id');
+    mainThreadId = threadId;
     // The protocol hands back the rollout's path, so the sub-agent reader never
     // has to go looking for it — and a resume that fell back to a fresh thread
     // gets pointed at the new file instead of the old session's.
@@ -934,20 +951,49 @@ async function runCodexAppServerWithInput(ctx: RunCtx, input: CodexRunInput): Pr
     // last so a real engine error (which the adapter already holds) wins the
     // race to explain what happened.
     if (closedReason && !ctx.signal.aborted && !terminal) throw closedReason;
+    succeeded = true;
   } finally {
     input.close();
     ctx.signal.removeEventListener('abort', abortStartup);
-    client.dispose();
-    // dispose() only starts the teardown. Returning before the child is gone would let the
-    // next turn on this session (and the no-history stash merge in codexSpec.run) overlap
-    // a server that may still write the rollout. Bounded: a wedged child must not hang Stop.
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([
-      client.exited,
-      new Promise<void>((resolve) => { timer = setTimeout(resolve, CHILD_EXIT_TIMEOUT_MS); }),
-    ]);
-    clearTimeout(timer);
-    cleanupImageFiles(imageFiles);
+    /**
+     * A cleanly completed turn hands the still-live connection to the
+     * suggestion instead of tearing it down, and the run returns right away so
+     * the spinner stops now rather than ~6s later. The suggestion owns the
+     * child (and the images, which the fork may re-read) from here; the next
+     * run on this session waits for it in `codexSpec.run`.
+     *
+     * Opt-in from the browser chat only, so scheduled tasks and delegations
+     * never pay for a prediction nobody reads. Skipped on a session's first
+     * turn (matching the claude CLI) and for no-history turns, whose stashed
+     * rollout is merged back the moment this returns. Only after the try ran
+     * to the end: a turn that threw tears down as usual and keeps its error.
+     */
+    const suggestFor = mainThreadId;
+    if (
+      succeeded && suggestFor && terminal === 'completed' && !ctx.signal.aborted &&
+      ctx.sessionId && ctx.params.promptSuggestions === true && ctx.params.noHistory !== true
+    ) {
+      suggestionHandler = startCodexSuggestion({
+        transport: client,
+        threadId: suggestFor,
+        publish: (suggestion) => {
+          Effect.runFork(broadcastPromptSuggestion({ sessionId: suggestFor, suggestion }));
+        },
+        onSettled: () => cleanupImageFiles(imageFiles),
+      });
+    } else {
+      client.dispose();
+      // dispose() only starts the teardown. Returning before the child is gone would let the
+      // next turn on this session (and the no-history stash merge in codexSpec.run) overlap
+      // a server that may still write the rollout. Bounded: a wedged child must not hang Stop.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        client.exited,
+        new Promise<void>((resolve) => { timer = setTimeout(resolve, CHILD_EXIT_TIMEOUT_MS); }),
+      ]);
+      clearTimeout(timer);
+      cleanupImageFiles(imageFiles);
+    }
   }
 }
 
@@ -956,6 +1002,10 @@ export const codexSpec: EngineSpec = {
   // No preflight: the orchestrator's own "prompt or images" check is sufficient.
   runner: {
     async run(ctx: RunCtx) {
+      // The previous turn's suggestion child still holds this thread's writer
+      // lock; resuming next to it would be refused and fall back to a fresh,
+      // history-less thread. Kill it and wait for it to be gone first.
+      await cancelCodexSuggestion(ctx.sessionId);
       const sessionPath = ctx.sessionId ? ((await findCodexSession(ctx.sessionId))?.path ?? null) : null;
       if (ctx.params.noHistory !== true || !ctx.sessionId) {
         await runCodexAppServer(ctx);

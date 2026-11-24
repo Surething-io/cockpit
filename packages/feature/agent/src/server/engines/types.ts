@@ -47,6 +47,9 @@ export interface DispatchParams {
   // typed while a turn was streaming, or while the run stays resident for background tasks).
   // Opt-in, so an in-process caller such as the scheduler never lands in a run it did not start.
   inject?: boolean;
+  // codex-only: predict the user's next prompt after a completed turn (engines/codexSuggestion.ts).
+  // Opt-in, sent by the browser chat alone, so scheduled tasks and delegations never pay for it.
+  promptSuggestions?: boolean;
 }
 
 /** A user message handed to a live run (DispatchParams.inject). The engine decides where it

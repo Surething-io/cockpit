@@ -14,7 +14,10 @@ export function useWebSocket(options: { url: string; onMessage: (data: unknown) 
 }
 
 export function deliverSessionMessage(data: unknown, url?: string) {
-  const listener = url ? listeners.get(url) : listeners.values().next().value;
+  // Without a url: the session stream — other sockets (e.g. /ws/global-state) may be open too.
+  const listener = url
+    ? listeners.get(url)
+    : [...listeners.entries()].find(([key]) => key.startsWith('/ws/session-stream'))?.[1];
   if (!listener) throw new Error('Session stream is not connected');
   for (const receive of [...listener]) receive(data);
 }

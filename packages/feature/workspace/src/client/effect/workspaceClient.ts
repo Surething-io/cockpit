@@ -51,6 +51,8 @@ const httpPostJson = <A>(
 
 export interface SettingsResponse {
   language?: string
+  /** Absent means on. Read server-side by feature-agent's codexSuggestion.ts. */
+  codexPromptSuggestions?: boolean
   [key: string]: unknown
 }
 

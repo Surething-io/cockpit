@@ -1014,7 +1014,10 @@
     "languageAuto": "System",
     "switchDark": "Switch to dark",
     "switchLight": "Switch to light",
-    "agentsBundled": "bundled"
+    "agentsBundled": "bundled",
+    "codexSection": "Codex",
+    "codexSuggestions": "Suggest next prompt",
+    "codexSuggestionsDescription": "After each reply, ask Codex to predict your next message and show it in the input box (Tab to accept). Costs one small extra request per turn."
   },
   "editor": {
     "placeholder": "Write something... Type / for commands",

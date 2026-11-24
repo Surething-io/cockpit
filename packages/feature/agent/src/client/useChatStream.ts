@@ -100,8 +100,8 @@ interface UseChatStreamReturn {
   rateLimitInfo: RateLimitInfo | null;
   apiRetryInfo: ApiRetryInfo | null;
   backgroundTasks: BackgroundTaskInfo[];
-  /** The engine's predicted next prompt for the current session (claude `prompt_suggestion`), or
-   *  null. Cleared on send; never restored from disk. */
+  /** The engine's predicted next prompt for the current session (claude `prompt_suggestion`, or
+   *  codex's post-run `prompt-suggestion` push), or null. Cleared on send; never restored from disk. */
   promptSuggestion: string | null;
   handleSend: (
     content: string,
@@ -737,6 +737,21 @@ export function useChatStream(
     },
   });
 
+  // Codex predicts the next prompt AFTER its run has ended (server/engines/codexSuggestion.ts), when
+  // the session-stream socket above is already closed, so it arrives over the always-on global-state
+  // socket instead. Dropped while a turn is loading: it predicted the message just sent.
+  const isLoadingRef = useRef(isLoading);
+  isLoadingRef.current = isLoading;
+  const onGlobalStateMessage = useCallback((raw: unknown) => {
+    const msg = raw as { type?: string; data?: { sessionId?: unknown; suggestion?: unknown } };
+    if (msg.type !== 'prompt-suggestion' || isLoadingRef.current) return;
+    const sid = sessionIdRef.current;
+    const text = typeof msg.data?.suggestion === 'string' ? msg.data.suggestion.trim() : '';
+    if (!sid || msg.data?.sessionId !== sid || !text) return;
+    setSuggestion({ sessionId: sid, text });
+  }, []);
+  useWebSocket({ url: '/ws/global-state', enabled: engine === 'codex', onMessage: onGlobalStateMessage });
+
   // Send message
   const handleSend = useCallback(
     async (
@@ -854,6 +869,8 @@ export function useChatStream(
             ...(isClaudeEngine && claudeThinking !== undefined && { claudeThinking }),
             ...(engine === 'codex' && codexModel && { model: codexModel }),
             ...(engine === 'codex' && codexReasoningEffort && { codexReasoningEffort }),
+            // Ask for a predicted next prompt; the server honours settings.json's toggle.
+            ...(engine === 'codex' && { promptSuggestions: true }),
             ...(engine === 'grok' && { model: grokModel && grokModel !== 'grok-build' ? grokModel : GROK_DEFAULT_MODEL }),
             ...(engine === 'grok' && { grokReasoningEffort: grokReasoningEffort || GROK_DEFAULT_REASONING }),
             // Plan mode: only meaningful on a claude engine.

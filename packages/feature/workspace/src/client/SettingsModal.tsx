@@ -32,14 +32,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   // Language: 'en', 'zh', or 'auto' (use browser detection)
   const [language, setLanguageState] = useState<string>('auto');
+  // Codex next-prompt prediction; absent in settings.json means on.
+  const [codexSuggestions, setCodexSuggestions] = useState(true);
 
   // Fetch current language setting from backend on open
   useEffect(() => {
     if (!isOpen) return;
     BrowserRuntime.runPromiseExit(loadSettings()).then((exit) => {
-      if (exit._tag === 'Success' && exit.value.language) {
-        setLanguageState(exit.value.language);
-      }
+      if (exit._tag !== 'Success') return;
+      if (exit.value.language) setLanguageState(exit.value.language);
+      setCodexSuggestions(exit.value.codexPromptSuggestions !== false);
     });
   }, [isOpen]);
 
@@ -55,6 +57,13 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       : lang;
     i18n.changeLanguage(effective);
   }, [i18n]);
+
+  const handleCodexSuggestionsChange = useCallback((enabled: boolean) => {
+    setCodexSuggestions(enabled);
+    BrowserRuntime.runFork(
+      saveSettings({ codexPromptSuggestions: enabled }).pipe(Effect.orElse(() => Effect.void))
+    );
+  }, []);
 
   const extensionStatus = bridge ? 'installed' as const : 'not-installed' as const;
   const extensionVersion = bridge?.version ?? null;
@@ -163,6 +172,28 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-border" />
+
+          {/* Codex Section */}
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              {t('settings.codexSection')}
+            </label>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={codexSuggestions}
+                onChange={(e) => handleCodexSuggestionsChange(e.target.checked)}
+                className="mt-0.5 accent-brand"
+              />
+              <span className="space-y-0.5">
+                <span className="block text-xs font-medium text-foreground">{t('settings.codexSuggestions')}</span>
+                <span className="block text-xs text-muted-foreground leading-relaxed">{t('settings.codexSuggestionsDescription')}</span>
+              </span>
+            </label>
           </div>
 
           {/* Divider */}

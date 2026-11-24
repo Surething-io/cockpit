@@ -1011,7 +1011,10 @@
     "languageAuto": "跟随系统",
     "switchDark": "切换暗色",
     "switchLight": "切换亮色",
-    "agentsBundled": "内置"
+    "agentsBundled": "内置",
+    "codexSection": "Codex",
+    "codexSuggestions": "预测下一句",
+    "codexSuggestionsDescription": "每轮回复后让 Codex 猜你下一句要说什么，显示在输入框里（按 Tab 采用）。每轮会多一次小请求。"
   },
   "editor": {
     "placeholder": "写点什么... 输入 / 打开快捷命令",

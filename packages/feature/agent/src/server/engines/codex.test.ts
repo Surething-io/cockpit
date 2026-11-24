@@ -103,6 +103,29 @@ vi.mock('./codexAppServer/client', () => ({
     },
   },
 }));
+/** The post-turn suggestion is unit-tested in codexSuggestion.test.ts; here only the hand-off. */
+const suggestion = vi.hoisted(() => ({
+  started: [] as Array<{ threadId: string; transport: unknown }>,
+  routed: [] as Array<{ method: string }>,
+  cancelled: [] as Array<string | undefined>,
+  cancelGate: null as null | Promise<void>,
+  reset() {
+    suggestion.started = [];
+    suggestion.routed = [];
+    suggestion.cancelled = [];
+    suggestion.cancelGate = null;
+  },
+}));
+vi.mock('./codexSuggestion', () => ({
+  startCodexSuggestion(opts: { threadId: string; transport: unknown }) {
+    suggestion.started.push(opts);
+    return (n: { method: string }) => { suggestion.routed.push(n); };
+  },
+  async cancelCodexSuggestion(threadId: string | undefined) {
+    suggestion.cancelled.push(threadId);
+    await suggestion.cancelGate;
+  },
+}));
 vi.mock('@cockpit/shared-utils', () => ({
   sanitizedSpawnEnv: () => ({}),
 }));
@@ -779,5 +802,81 @@ describe('codex mcp / web_search / todo_list items', () => {
 
     stream.close();
     await p;
+  });
+});
+
+describe('codex post-turn prompt suggestion hand-off', () => {
+  const ctx = (over: Record<string, unknown> = {}) => ({
+    prompt: 'hello', images: undefined, cwd: '/repo', sessionId: 'sdk-thread',
+    params: { promptSuggestions: true } as never, signal: new AbortController().signal,
+    emit: vi.fn(), rekey: vi.fn(), currentKey: () => 'k', acceptInput: vi.fn(),
+    ...over,
+  });
+
+  beforeEach(() => {
+    mocks.rolloutPath = null;
+    appServer.reset();
+    suggestion.reset();
+    appServer.script = [{ type: 'turn.completed' }];
+  });
+
+  it('hands the live connection to the suggestion instead of disposing it', async () => {
+    await codexSpec.runner.run(ctx() as never);
+    expect(suggestion.started).toHaveLength(1);
+    expect(suggestion.started[0].threadId).toBe('sdk-thread');
+    expect(appServer.disposed).toBe(0);
+  });
+
+  it('routes every later notification to the suggestion, none to the transcript', async () => {
+    const emit = vi.fn();
+    await codexSpec.runner.run(ctx({ emit }) as never);
+    const before = emit.mock.calls.length;
+    appServer.notify?.({ method: 'item/agentMessage/delta', params: { threadId: 'fork', delta: 'leak' } });
+    appServer.notify?.({ method: 'turn/completed', params: { threadId: 'fork' } });
+    expect(emit.mock.calls.length).toBe(before);
+    expect(suggestion.routed.map((n) => n.method)).toEqual(['item/agentMessage/delta', 'turn/completed']);
+  });
+
+  it.each([
+    ['the browser did not opt in', { params: {} }],
+    ['it is the session\'s first turn', { sessionId: undefined }],
+    ['the turn ran without history', { params: { promptSuggestions: true, noHistory: true } }],
+  ])('tears down as before when %s', async (_why, over) => {
+    await codexSpec.runner.run(ctx(over) as never);
+    expect(suggestion.started).toHaveLength(0);
+    expect(appServer.disposed).toBe(1);
+  });
+
+  it('does not suggest after a failed turn', async () => {
+    // The protocol's only terminal is turn/completed; failure rides on its status.
+    appServer.script = [];
+    appServer.onTurnStart = () => queueMicrotask(() => appServer.notify?.({
+      method: 'turn/completed', params: { turn: { status: 'failed', error: { message: 'boom' } } },
+    }));
+    await expect(codexSpec.runner.run(ctx() as never)).rejects.toThrow(/boom/);
+    expect(suggestion.started).toHaveLength(0);
+    expect(appServer.disposed).toBe(1);
+  });
+
+  it('does not suggest after a stopped turn', async () => {
+    const abort = new AbortController();
+    appServer.script = [];
+    const run = codexSpec.runner.run(ctx({ signal: abort.signal }) as never);
+    await appServer.ready();
+    abort.abort();
+    await run;
+    expect(suggestion.started).toHaveLength(0);
+  });
+
+  it('waits for the previous suggestion to be gone before opening the thread', async () => {
+    let release = () => {};
+    suggestion.cancelGate = new Promise<void>((resolve) => { release = resolve; });
+    const run = codexSpec.runner.run(ctx() as never);
+    await new Promise((r) => setImmediate(r));
+    expect(suggestion.cancelled).toEqual(['sdk-thread']);
+    expect(appServer.requests).toHaveLength(0);
+    release();
+    await run;
+    expect(appServer.requests.map((r) => r.method)).toContain('thread/resume');
   });
 });

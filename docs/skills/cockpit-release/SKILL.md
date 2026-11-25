@@ -86,15 +86,42 @@ rm -rf .next-prod/cache
 # Pack into a tarball locally
 npm pack    # produces surething-cockpit-1.0.x.tgz
 
-# Install into a clean, isolated directory — POSTINSTALL must succeed
+# Install into a clean, isolated directory — POSTINSTALL must succeed.
+# HOME points at a throwaway dir too (see "Isolate HOME" below); the npm cache
+# stays the real one so the install doesn't re-download every dependency.
 TARBALL=$(ls -t surething-cockpit-*.tgz | head -1)
 SMOKE_DIR=$(mktemp -d)
-(cd "$SMOKE_DIR" && npm install -g --prefix . "$OLDPWD/$TARBALL") || {
+SMOKE_HOME=$(mktemp -d)    # throwaway HOME + data dir for 2a AND 2b
+# npm_config_cache goes FIRST: bash expands later prefix assignments with the
+# earlier ones applied, so after HOME= "$HOME/.npm" would be the temp dir.
+(cd "$SMOKE_DIR" && npm_config_cache="$HOME/.npm" HOME="$SMOKE_HOME" \
+  npm install -g --prefix . "$OLDPWD/$TARBALL") || {
   echo "❌ Install failed — DO NOT push"
   exit 1
 }
 "$SMOKE_DIR/bin/cockpit" --version    # must report the new version
-# Keep $SMOKE_DIR around for step 2b; clean up at the end.
+# Keep $SMOKE_DIR and $SMOKE_HOME around for step 2b; clean up at the end.
+```
+
+**Isolate HOME, not just the data dir.** Both the postinstall and every server
+boot write into the *real* `~`, whatever `COCKPIT_HOME` says:
+
+- `~/.cockpit/chrome-extension/` — overwritten with the tarball's extension;
+- `~/.cockpit/bridge/bridge-host.sh` and each browser's
+  `NativeMessagingHosts/com.opencockpit.bridge.json` — re-pointed at the
+  **temp install** (`$SMOKE_DIR/…/bin/bridge-host.mjs`);
+- `~/.cockpit/bridge/instances/3458.json` — so the human's Chrome extension
+  connects to the smoke server.
+
+The bridge dir is fixed at `~/.cockpit/bridge` on purpose (one browser, one
+native host, every instance), so `COCKPIT_HOME` does not move it. Without
+`HOME="$SMOKE_HOME"`, step 2c's `rm -rf "$SMOKE_DIR"` leaves the human's Chrome
+pointing at a deleted host: **OpenCockpit Bridge not connected** until their
+prod cockpit restarts (v1.1.5 hit exactly this). If it happened anyway, put it
+back with:
+
+```bash
+node -e "import('$(npm root -g)/@surething/cockpit/bin/bridgeInstall.mjs').then(m => m.installNativeHost())"
 ```
 
 If `npm install` errors with `ERR_MODULE_NOT_FOUND` / postinstall failures / missing files / 404 on workspace `@cockpit/*` packages, the published `package.json` `dependencies` list is broken (e.g. listing private workspace packages npm can't fetch). **Reset and fix**:
@@ -128,8 +155,9 @@ The cockpit binary picks up `PORT=3458` from env and binds there. `env -i` strip
 # Boot the JUST-PACKED tarball, not the globally-linked cockpit.
 # Re-install into a temp dir if you don't already have one from step 2a.
 SMOKE_PORT=3458
-SMOKE_HOME=$(mktemp -d)    # isolated data dir — avoids the "already running cockpit" guard
-env -i PATH="$PATH" HOME="$HOME" COCKPIT_HOME="$SMOKE_HOME" PORT=$SMOKE_PORT COCKPIT_ENV=prod COCKPIT_NO_OPEN=1 \
+# $SMOKE_HOME from 2a: HOME (keeps the native-host registration off the real ~,
+# see "Isolate HOME") and data dir (avoids the "already running cockpit" guard).
+env -i PATH="$PATH" HOME="$SMOKE_HOME" COCKPIT_HOME="$SMOKE_HOME/.cockpit" PORT=$SMOKE_PORT COCKPIT_ENV=prod COCKPIT_NO_OPEN=1 \
   "$SMOKE_DIR/bin/cockpit" > /tmp/cock-smoke.log 2>&1 &
 COCK_PID=$!
 sleep 12      # cold-start of next-server + WS + share server takes ~8-12s
@@ -247,7 +275,15 @@ lsof -i :$SMOKE_PORT -sTCP:LISTEN -P -n >/dev/null && {
   exit 1
 }
 
-# Drop the install dir, the isolated data dir, and the local tarball — the
+# Nothing may point into the temp install before it is deleted (see 2a,
+# "Isolate HOME"); otherwise the human's Chrome extension loses its host.
+grep -q "$SMOKE_DIR" ~/.cockpit/bridge/bridge-host.sh 2>/dev/null && {
+  echo "❌ the real native host points into the smoke install — restore it (2a) before cleanup"
+  exit 1
+}
+[ -e ~/.cockpit/bridge/instances/$SMOKE_PORT.json ] && echo "⚠️ smoke instance registered in the real ~/.cockpit/bridge"
+
+# Drop the install dir, the isolated HOME/data dir, and the local tarball — the
 # first two are ~39 MB combined, and the tarball name collides with the next
 # bump if left behind.
 rm -rf "$SMOKE_DIR" "$SMOKE_HOME" surething-cockpit-*.tgz

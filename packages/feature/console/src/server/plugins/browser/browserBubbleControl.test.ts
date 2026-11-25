@@ -22,7 +22,9 @@ process.env.COCKPIT_HOME = home
 // A real path under the OS temp dir, not a hard-coded "/tmp/..." literal:
 // resolveProjectCwd() runs the input through path.resolve(), which on Windows
 // turns "/tmp/x" into "<drive>:\tmp\x" and breaks the equality assertions.
-const PROJECT = resolve(join(tmpdir(), "cockpit-bubble-test-project"))
+// Unique per run: a fixed name is shared by every checkout on the machine, so
+// two concurrent runs delete each other's directories.
+const PROJECT = resolve(mkdtempSync(join(tmpdir(), "cockpit-bubble-test-project-")))
 const SUBDIR = join(PROJECT, "packages", "deep")
 
 /** Broadcast frames captured off the fake /ws/global-state client set. */

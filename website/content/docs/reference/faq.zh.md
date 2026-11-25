@@ -39,13 +39,15 @@ Claude session token 过期。再跑一次 `claude` 刷新。
 
 ## 气泡行为异常
 
-**浏览器气泡显示空白页**
+**打开的网页出现在 Chrome 标签页里，而不是 Console 里**
 
-最常见是网站拒绝被 iframe 嵌入。装 [Chrome 扩展](/zh/docs/console/chrome-extension/#安装与自动重载)一般就好。
+这是有意的设计：网页在真实的 Chrome 标签页里打开（归在 **Cockpit** 分组下），所以带着你的登录状态，也不会被网站拒绝加载。浏览器气泡只用于本地 HTML 应用和文件预览。见 [浏览器](/zh/docs/console/browser/)。
 
-**浏览器气泡是登出状态**
+**AI 操作不了标签页**
 
-同一个答案 —— 装 Chrome 扩展。不装的话气泡不跟你正常 Chrome 共享 cookie。
+- 提示「OpenCockpit Bridge 未连接」：安装或重新加载 [Chrome 扩展](/zh/docs/console/chrome-extension/#安装)。
+- 提示 "Waiting for the user to allow control"：那是你自己的标签页，在扩展小面板里回答（图标上显示 **?**）。
+- 命令卡住或提到网站访问权限：把扩展的 **网站访问权限** 设为 **在所有网站上**。
 
 **数据库气泡连不上**
 
@@ -123,7 +125,7 @@ npm install -g @surething/cockpit@<旧版本>
 
 **浏览器气泡吃内存**
 
-每个浏览器气泡是浏览器里的一个 **iframe**(不是单独的 Chrome tab,即便装了扩展也一样)。开 10 个气泡就是同一个 Cockpit 页面里 10 个 iframe 的开销。关掉不在用的气泡;[休眠机制](/zh/docs/console/browser/#气泡生命周期)会在气泡不可见 5 分钟后自动卸载 iframe 省内存,主动唤醒重新加载。
+每个浏览器气泡（本地 HTML 应用或文件预览）是 Cockpit 页面里的一个 **iframe**。开 10 个气泡就是同一个 Cockpit 页面里 10 个 iframe 的开销。关掉不在用的气泡;[休眠机制](/zh/docs/console/browser/#气泡生命周期)会在气泡不可见 5 分钟后自动卸载 iframe 省内存,主动唤醒重新加载。
 
 ## 我的问题不在这
 

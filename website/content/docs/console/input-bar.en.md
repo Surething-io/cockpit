@@ -18,7 +18,7 @@ The order means aliases always win first: if `db = postgresql://user@localhost/m
 
 | Prefix | What opens |
 |---|---|
-| `http://…` / `https://…` | **Browser bubble** — drives a real Chrome tab |
+| `http://…` / `https://…` | **Chrome tab** — opens in the **Cockpit** tab group; the AI can drive it ([Browser](/en/docs/console/browser/)) |
 | `postgresql://…` / `postgres://…` | **PostgreSQL bubble** |
 | `mysql://…` | **MySQL bubble** |
 | `redis://…` / `rediss://…` (TLS) | **Redis bubble** |
@@ -86,7 +86,7 @@ Use ⚡ to set things up, use `/` for everyday running.
 
 ## Multiple bubbles, side by side
 
-Every Enter creates a new bubble — they stack in the panel and you can drag any of them around to reorder. Two PostgreSQL connections to different databases, two browser bubbles on different sites, and a terminal all at once: no problem.
+Every Enter creates a new bubble — they stack in the panel and you can drag any of them around to reorder. Two PostgreSQL connections to different databases, a couple of HTML previews, and a terminal all at once: no problem. (URLs are the exception — they open as Chrome tabs, not bubbles.)
 
 `Cmd+M` maximises the focused bubble; press it again or hit `Esc` to restore.
 

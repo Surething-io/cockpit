@@ -7,7 +7,7 @@ From `npm install` to a real, agent-driven task on your own project — in one p
 | **Node.js** | 20.x | Tested on 20 LTS and 22; older versions are not supported. |
 | **Claude Code** | latest | Needed for the default Claude engine. `npm install -g @anthropic-ai/claude-code`, then run `claude` once so it can save its token to `~/.claude/`. |
 | **Git** | any recent | Powers the Git status / history / blame views. |
-| **Chrome / Chromium** | any recent | Optional — only if you use the Browser bubble or the Chrome extension. |
+| **Chrome / Chromium** | any recent | Optional — only if the AI should drive web pages (with the Chrome extension). |
 | **OS** | macOS / Linux / Windows | Native install on all three. WSL2 works on Windows but isn't required. |
 
 ## Install
@@ -28,7 +28,7 @@ cockpit -v
 
 ### Optional: Chrome extension
 
-Only needed if you want the Browser bubble to inspect real Chrome tabs (read the DOM, capture network requests, run JavaScript). The Agent and Explorer panels work without it. See [Chrome Extension → Install](/en/docs/console/chrome-extension/#install) for the four-click setup.
+Only needed if the AI should drive web pages — your Chrome tabs and the Console's browser bubbles (read the DOM, click and type, capture network requests, run JavaScript). The Agent and Explorer panels work without it. See [Chrome Extension → Install](/en/docs/console/chrome-extension/#install) for the setup.
 
 ### Optional: different port
 
@@ -139,7 +139,7 @@ Once the code's in, run it locally:
 
 1. Switch to **Console** (`Cmd+3`), type `zsh` for an interactive terminal, then `npm run dev`.
 2. The terminal bubble's header carries a **short-ID badge** — click it to copy `cockpit terminal <id>` to your clipboard so the AI can read what the terminal's doing via Cockpit's CLI: `cockpit terminal <id> output` (recent output), `cockpit terminal <id> wait` (wait for the running command to settle), `cockpit terminal list` (list all registered terminals).
-3. Still in Console, type your app's URL (e.g. `http://localhost:3456`) to open a Browser bubble. Click that bubble's short-ID badge to grab `cockpit browser <id>` the same way. **With the [Chrome extension](/en/docs/console/chrome-extension/#install) installed**, `cockpit browser <id> <action>` drives a real Chrome tab — supported actions include `snapshot` / `navigate` / `click` / `type` / `fill` / `hover` / `evaluate` / `console` / `network` / `cookies` / `storage` / `perf`. Without the extension you still get the page in an iframe but with limited reach.
+3. Still in Console, type your app's URL (e.g. `http://localhost:3456`). It opens as a Chrome tab in the **Cockpit** tab group, and a toast shows its command, e.g. `cockpit browser xyz789` (the extension's toolbar popup has a **Copy** button for it too). **With the [Chrome extension](/en/docs/console/chrome-extension/#install) installed**, `cockpit browser <id> <action>` drives that tab with real input — `snapshot` / `click` / `type` / `fill` / `evaluate` / `console` / `network` / `dialog` / `upload` / `viewport` / `screenshot` and [more](/en/docs/reference/cli/#cockpit-browser). Without the extension the page still opens, but the AI can't drive it.
 4. In Agent, use **`/cc`** and paste both short IDs into the prompt to ask the AI for an end-to-end check:
 
    ```text
@@ -149,7 +149,7 @@ Once the code's in, run it locally:
        and the UI should refresh in real time
    ```
 
-   `/cc` has the AI drive your terminal and browser bubbles directly through the `cockpit` CLI, capture network traffic and DOM, then hand you the evidence.
+   `/cc` has the AI drive your terminal and the browser tab directly through the `cockpit` CLI, capture network traffic and DOM, then hand you the evidence.
 
 ### Bug fixing — `/fx` → `/cg` → `/design` → `/go`
 
@@ -186,7 +186,7 @@ Switch to another worktree's tab to chase a bug. The loop mirrors feature work, 
 - **worktrees** — 5 parallel work streams, features and bugs side by side
 - **Agent** — built-in slash commands (`/qa /spec /design /go /cr /fx /cg /cc`) plus highlight-comment for multi-round alignment
 - **Explorer** — **Status** tab plus comment-driven fix-up loop
-- **Console** — zsh service runner + Browser bubble + each bubble's **short-ID badge** so the AI can close the loop through the `cockpit` CLI
+- **Console** — zsh service runner + web pages opened as Chrome tabs + **short ids** for terminals and tabs so the AI can close the loop through the `cockpit` CLI
 
 ## Upgrading
 

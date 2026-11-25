@@ -144,7 +144,7 @@ Use when the code change is done and you want the AI to **actually run it**, cli
     and the UI should refresh in real time
 ```
 
-`/cc` switches the AI into a mode that **uses the Cockpit CLI** — `cockpit terminal <id> output` to read terminal output, `cockpit browser <id> click/type/network` to drive a Browser bubble, etc. Give **short IDs** when available. Otherwise the AI lists project bubbles and matches their titles or URLs; it can open a browser bubble itself and closes those it creates when done. Terminal observation is read-only. It defaults to `cockpit` (production); use `/cc dev …` or explicitly name `cockpit-dev` for development.
+`/cc` switches the AI into a mode that **uses the Cockpit CLI** — `cockpit terminal <id> output` to read terminal output, `cockpit browser <id> click/type/network` to drive a Chrome tab or browser bubble, etc. Give **short IDs** when available. Otherwise the AI lists tabs and bubbles and matches their titles or URLs; it can open a page itself (`cockpit browser open`) and closes what it opened when done. Your own tabs ask for permission in the extension's popup first. Terminal observation is read-only. It defaults to `cockpit` (production); use `/cc dev …` or explicitly name `cockpit-dev` for development.
 
 Typically chained after [`/go`](#go-land-the-change) — `/go` writes the code, `/cc` verifies it actually works in the rendered UI. Full walkthrough in [Quickstart](/en/docs/get-started/quickstart/#end-to-end-verification--console---cc).
 

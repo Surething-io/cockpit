@@ -3,7 +3,7 @@ The OpenCockpit CLI is a thin layer over the running Cockpit server's HTTP API. 
 | Command | Purpose |
 |---|---|
 | [`cockpit`](#cockpit) | Start the server (the main entry point) |
-| [`cockpit browser`](#cockpit-browser) | Drive a Browser bubble — navigate, click, evaluate JS, capture network |
+| [`cockpit browser`](#cockpit-browser) | Drive your Chrome tabs and Console browser bubbles — click, type, evaluate JS, capture network, emulate devices |
 | [`cockpit terminal`](#cockpit-terminal) | Read a Terminal bubble's output (read-only; no stdin) |
 | [`cockpit codegraph`](#cockpit-codegraph) | Query the project-wide code index from a shell |
 | [`cockpit connection`](#cockpit-connection) | List all bubbles (terminal + browser) with their titles |
@@ -78,14 +78,14 @@ The `--port` flag wins when both are set. (`<data-dir>/server.json` is written b
 
 | Sub-command | Purpose |
 |---|---|
-| `cockpit browser <id> <action>` | Drive a running Browser bubble (navigate, click, evaluate JS, capture network, …) |
+| `cockpit browser <id> <action>` | Drive a Chrome tab or a Console browser bubble (navigate, click, evaluate JS, capture network, …) |
 | `cockpit terminal <id> <action>` | Read from a running Terminal bubble (`list` / `output` / `wait`; read-only) |
 
 Both target an already-running Cockpit server at `localhost:3457`. They're the same APIs the in-app UI uses; exposing them as CLI commands lets you script the bubbles from anywhere.
 
 See:
 
-- [`cockpit browser`](#cockpit-browser) — full action list (25+ actions: snapshot, click, type, network, perf, …)
+- [`cockpit browser`](#cockpit-browser) — full action list (snapshot, click, type, upload, dialog, viewport, network, …)
 - [`cockpit terminal`](#cockpit-terminal) — list / output / wait (read-only)
 
 ### Upgrading
@@ -179,45 +179,66 @@ Keep the tunnel's original `Host` header. If it is rewritten to `localhost`, the
 
 ## cockpit browser
 
-`cockpit browser <id> <action>` (or `cockpit browser` for the short form) drives a Browser bubble in your running Cockpit instance from outside — from the AI in a chat, from a shell script, from CI, from anywhere.
+`cockpit browser` drives web pages in **your Chrome** and the **browser bubbles** in Cockpit's Console — from the AI in a chat, a shell script, or CI. It needs the [OpenCockpit Bridge extension](/en/docs/console/chrome-extension/#install).
 
-The `<id>` is the short ID badge from the Browser bubble's title bar. Click the badge to register the bubble and copy a starter command to your clipboard.
+- **Web pages are Chrome tabs.** `cockpit browser open <url>` opens one in the **Cockpit** tab group (in the background unless `--show`), with your logins. Any of your existing tabs can be driven too, by its id; the first command on a tab you haven't allowed asks you in the extension's popup.
+- **Bubbles are for local content.** `cockpit browser open <file>` opens a local HTML app or file preview as a Console bubble.
+
+Every target has a short id like `qmmm`. Get a tab's id from `cockpit browser tabs`, from the toast when Cockpit opens it, or from the extension's popup (**Copy**); a bubble's id is the badge in its title bar.
 
 The CLI is designed for **AI-driven E2E**: every command has an actionable error template, silent failures are caught and warned, and the act/wait/assert cycle composes into atomic steps. Prefer selector-based interaction (`--text`, `--selector`) over snapshot refs — refs go stale on every re-render.
+
+### Targets
+
+| Command | What it does |
+|---|---|
+| `cockpit browser open <url> [--show]` | Open a web page as a Chrome tab in the **Cockpit** group. Allowed for the AI straight away |
+| `cockpit browser open <path> [--cwd PATH]` | Open a local HTML app or file as a Console bubble in the project that owns `--cwd`. Exits `2` if no Cockpit window has that project open |
+| `cockpit browser tabs` | Every Chrome tab with its id, whether it is opened by Cockpit / allowed / will ask, and `[debugging]` while the extension's debugger is on it |
+| `cockpit browser list` | What Cockpit is working with: bubbles, plus tabs it opened or you allowed |
+| `cockpit browser <id> show` | Bring a tab to the front |
+| `cockpit browser <id> release` | Hand a tab you allowed back — the next command asks again |
+| `cockpit browser <id> close` | Close a bubble, or a tab Cockpit opened (never your own tabs) |
 
 ### Quick examples
 
 ```bash
-# Diagnose where the AI is currently parked (cheap, never blocks)
-cockpit browser xa7k2 health
-cockpit browser xa7k2 status
+# Open a page and find your way around
+cockpit browser open http://localhost:3000        # → "qmmm  →  tab opened in Google Chrome"
+cockpit browser qmmm status
+cockpit browser qmmm snapshot --filter 'button'
 
-# Find and interact (selector-first; refs go stale on re-render)
-cockpit browser xa7k2 snapshot --filter 'role=button' --include-hidden-text
-cockpit browser xa7k2 click --text "Sign in"
-cockpit browser xa7k2 click --selector 'button[type="submit"]'
-cockpit browser xa7k2 fill --selector 'input[name="email"]' --value "user@example.com"
-cockpit browser xa7k2 submit --form-selector 'form#login'
+# Interact (selector-first; refs go stale on re-render)
+cockpit browser qmmm click --text "Sign in"
+cockpit browser qmmm fill --selector 'input[name="email"]' --value "user@example.com"
+cockpit browser qmmm submit --form-selector 'form#login'
+
+# Things that usually block automation
+cockpit browser qmmm click --text "Delete"         # → "the page opened a confirm dialog"
+cockpit browser qmmm dialog accept
+cockpit browser qmmm upload e7#v2 ./fixtures/avatar.png
+cockpit browser qmmm drag e3#v2 '#done-column'
 
 # Probe the backend (inherits page auth)
-cockpit browser xa7k2 fetch /api/users/me
-cockpit browser xa7k2 fetch /api/items --method POST --body '{"name":"hello"}'
-cockpit browser xa7k2 fetch /api/items --json '$.data[0].id'
+cockpit browser qmmm fetch /api/users/me
 
 # act → wait → assert (atomic E2E)
-cockpit browser xa7k2 click --text "Save"
-cockpit browser xa7k2 wait --network-idle --quiet-ms 500
-cockpit browser xa7k2 assert --selector '[role="status"]' --text "Saved"
-cockpit browser xa7k2 assert --fetch /api/items --jsonpath '$.count' --equals 5
+cockpit browser qmmm click --text "Save"
+cockpit browser qmmm wait --network-idle --quiet-ms 500
+cockpit browser qmmm assert --selector '[role="status"]' --text "Saved"
 
-# Test isolation
-cockpit browser xa7k2 reset --cookies --storage --reload
-cockpit browser xa7k2 set --type cookie --name token --value abc123 --path /
-
-# Run arbitrary JS (escape hatch — prefer fetch/click-by-selector when possible)
-cockpit browser xa7k2 evaluate "document.title"
-cockpit browser xa7k2 evaluate --all-frames "await fetch('/api/x').then(r=>r.json())"
+# Test conditions (stay on until reset)
+cockpit browser qmmm viewport iphone --reload
+cockpit browser qmmm emulate --network slow-3g --cpu 4
+cockpit browser qmmm screenshot --full
+cockpit browser qmmm viewport reset && cockpit browser qmmm emulate reset
 ```
+
+### Tabs vs bubbles
+
+Everything below works on both, unless marked **tabs**. On tabs, `click` / `type` / `key` / `hover` / `scroll` / `drag` use **real input** through Chrome's input pipeline (pages see trusted events); pass `--dom` to use synthetic DOM events instead. While the AI works on a tab, Chrome shows *"OpenCockpit Bridge started debugging this browser"* — see [the debugging bar](/en/docs/console/chrome-extension/#using-it).
+
+**Frames.** On tabs, `snapshot` includes iframes — cross-origin ones too — nested under their `<iframe>` line, and open shadow DOM. Refs inside a frame look like `f7:e3#v1` and work with every command; `--frame 7` points `--selector` / `--text` / `evaluate` at that frame. In a **background** tab Chrome can't deliver real input into a cross-origin frame or scroll with the wheel; those fall back to DOM events and the output says so (`show` the tab first for real input).
 
 ### Full action list
 
@@ -225,34 +246,57 @@ cockpit browser xa7k2 evaluate --all-frames "await fetch('/api/x').then(r=>r.jso
 
 | Action | What it does |
 |---|---|
-| `list` | List every Browser bubble currently registered |
-| `snapshot [--filter <regex>] [--include-hidden-text] [--max-depth N]` | Accessibility tree. Banner explains the format. `--filter` greps server-side; `--include-hidden-text` surfaces text collapsed inside `<summary>` / container nodes |
-| `screenshot` | PNG of the page, saved to `/tmp`; the path is printed |
+| `snapshot [--filter <regex>] [--include-hidden-text] [--max-depth N] [--frame N]` | Accessibility tree. Banner explains the format. `--filter` greps server-side; `--include-hidden-text` surfaces text collapsed inside `<summary>` / container nodes |
+| `screenshot` | PNG of the visible page, saved to `/tmp`; the path is printed |
+| `screenshot --full` / `screenshot <ref>` | **Tabs:** the whole page, or one element |
 | `url` | Current URL |
 | `title` | Page title |
 | `status` | One-line summary: URL, title, last console error, last failed request, top visible buttons. Run after a long gap to re-orient |
 | `bounds <ref>` | Position and size of an element |
 | `attrs <ref>` | All HTML attributes of an element |
 | `computed <ref>` | Computed CSS for an element |
-| `events <ref>` | Event listeners attached to an element |
-| `cookies` | All cookies for the page |
+| `events <ref>` | Event listeners on an element. **Tabs:** every registered listener, plus the event types handled on its ancestors (where React / Vue delegate) |
+| `cookies` | The page's JS-visible cookies (`document.cookie`) |
 | `storage --type local\|session` | localStorage or sessionStorage contents |
-| `theme --mode dark\|light` | Force the bubble's theme |
 
 #### Interaction
 
-Selector-based forms are preferred — refs are valid only until the next snapshot or re-render.
+Selector-based forms are preferred — refs are valid only until the next snapshot or re-render. `--selector` and `--text` match **visible** elements only (a hidden twin, e.g. a collapsed mobile menu, is skipped); `--nth` counts visible matches.
 
 | Action | What it does |
 |---|---|
-| `click [<ref>] [--text <substr>] [--selector <css>] [--nth N] [--exact]` | Click by ref, by visible text/aria-label, or by CSS selector. Refs go stale on re-render; selector and `--text` survive |
+| `click [<ref>] [--text <substr>] [--selector <css>] [--nth N] [--exact]` | Click by ref, by visible text/aria-label, or by CSS selector |
+| `click <ref> --at X,Y` | Click a point inside the element, from its top-left corner, in px or `%` (`--at 50%,50%`) — canvas, maps, charts. `hover` takes it too |
+| `click <ref> --hold <ms>` | Long press (mouse, or a finger on an emulated phone) |
 | `fill [<ref>] [--selector <css>] --value <v>` | Set the value via native setter + dispatch `input` event (works on React-controlled inputs) |
-| `type <ref> <text>` | Type into the focused input via CDP key events. May silently miss on React-controlled inputs — prefer `fill --selector` |
+| `type <ref> <text> [--insert]` | Type into an input. On tabs every character is a real key press; `--insert` commits the whole text at once, the way an IME does |
 | `submit [--form-selector <css>]` | Call `form.requestSubmit()`. Works where pressing `Enter` is ignored by `onKeyDown` |
-| `hover <ref>` | Hover over an element |
+| `hover <ref>` | Hover over an element (on tabs, CSS `:hover` applies) |
 | `focus <ref>` | Focus an element |
-| `scroll --direction up\|down\|left\|right` | Scroll the page |
+| `scroll <up\|down\|left\|right> [<ref>] [--amount PX]` | Scroll the page or the element under `<ref>`. On tabs a real wheel turn, a swipe on an emulated phone |
 | `key <key>` | Press a key (`Enter`, `Ctrl+A`, `Shift+Tab`, …). On React inputs, prefer `submit` |
+| `drag <ref> <to-ref\|css>` / `drag <ref> --dx N --dy N` | **Tabs:** drag and drop. Native HTML5 drag-and-drop and pointer-driven lists / sliders both work |
+| `upload <ref> <file> [file…]` | **Tabs:** put local files into an `<input type=file>` (snapshot marks it `file`; it may be hidden — `--selector` works too) or into the button that opens the file chooser. No OS dialog appears. Needs **Allow access to file URLs** on the extension |
+
+#### Dialogs
+
+**Tabs.** An `alert` / `confirm` / `prompt` / "leave this page?" dialog pauses the page. The command that opened it reports it; every other command fails at once with the dialog's text until it is answered.
+
+| Action | What it does |
+|---|---|
+| `dialog` | Show the open dialog, if any |
+| `dialog accept [--text <T>]` | Press OK (`--text` answers a prompt) |
+| `dialog dismiss` | Press Cancel |
+
+#### Test conditions
+
+**Tabs.** These stay on — and keep Chrome's debugging bar up — until reset, `release`, or **Stop** in the extension's popup.
+
+| Action | What it does |
+|---|---|
+| `viewport <iphone\|android\|ipad\|WxH> [--landscape] [--reload] [--mobile] [--dpr N] [--ua UA]` | Emulate a device: size, pixel ratio, touch and User-Agent. Clicks become taps. Add `--reload` when the site picks mobile markup from the User-Agent. No argument shows the current one; `viewport reset` undoes it |
+| `theme dark\|light\|reset` | Emulate `prefers-color-scheme` |
+| `emulate [--network offline\|slow-3g\|fast-3g\|slow-4g] [--cpu N] [--block "<pattern>,…"] [--media print] [--reduced-motion on]` | Network conditions, CPU slowdown, blocked URLs, print media, reduced motion. Each flag takes `off`; `emulate reset` clears all; no flags shows what is on. Chrome does not let extensions emulate a timezone or locale |
 
 #### Wait — synchronisation between act and assert
 
@@ -294,7 +338,7 @@ Selector-based forms are preferred — refs are valid only until the next snapsh
 
 | Action | What it does |
 |---|---|
-| `evaluate <js>` | Run a JS expression in the page; result printed as JSON. `--all-frames` runs in every iframe. Large results are transparently chunked back to the CLI |
+| `evaluate <js> [--frame N] [--all-frames]` | Run a JS expression in the page; result printed as JSON. `--frame` picks one iframe, `--all-frames` runs in every frame. Pages whose CSP blocks `eval` are handled automatically |
 
 Use `evaluate` as an escape hatch when none of the higher-level actions fit. For plain HTTP calls, prefer `fetch`; for clicks, prefer `click --text` / `--selector`; for assertions, prefer `assert --selector`.
 
@@ -311,10 +355,14 @@ Use `evaluate` as an escape hatch when none of the higher-level actions fit. For
 
 | Action | What it does |
 |---|---|
-| `health` | **Server-side** snapshot of the bridge: WS status, pending command count, time since last successful command. Never round-trips to the page, so it works even when the page itself is blocked on a long-running `evaluate` |
+| `health` | **Server-side** snapshot of the bridge: connection status, pending command count, time since last successful command. Never round-trips to the page, so it works even when the page itself is blocked on a long-running `evaluate` |
 | `health --deep` | Also probes the page itself (`readyState`, `snapshotEpoch`, page-side timestamp). May block if the page is busy |
+| `perf [--metric timing\|memory\|resources\|runtime]` | Performance metrics including Core Web Vitals. `runtime` (**tabs**): layout / style / script time, DOM nodes, JS heap |
+| `coverage start\|stop\|status` | **Tabs:** how much of each stylesheet was actually used between `start` and `stop` (and of each script, where the browser allows it — Chrome doesn't for extensions). Reload after `start` to include page load |
 
-#### Network capture
+#### Network & console capture
+
+On tabs, capture starts with the first `network` / `console` / `network_record` call — it only sees activity from then on, so reload to catch the page load. It stops 2 minutes after the last read (a `network_record` keeps it running until the recording ends).
 
 | Action | What it does |
 |---|---|
@@ -324,7 +372,6 @@ Use `evaluate` as an escape hatch when none of the higher-level actions fit. For
 | `network_record status` | Whether recording is on |
 | `network_detail <reqId>` | Full request/response detail for one request |
 | `console [--level error\|warn\|info\|debug] [--clear]` | Console messages |
-| `perf [--metric timing\|memory\|resources]` | Performance metrics including Core Web Vitals |
 
 ### Snapshot output
 
@@ -335,8 +382,12 @@ Use `evaluate` as an escape hatch when none of the higher-level actions fit. For
 # Text inside <details>/<summary> and unnamed container <div>/<section> is collapsed.
 # Grep on role / aria-label, NOT on user-visible emoji / text.
 # Tips: --include-hidden-text surfaces collapsed innerText; --filter <regex> reduces output.
+# Frames: refs inside an iframe look like f7:e3#v1 — pass them as-is.
 body [e0#v3]
   ...
+  iframe [src=checkout.example.com] [e14#v3]
+    frame f7 https://checkout.example.com/…
+      button "Pay" [f7:e3#v1]
 ```
 
 Each addressable element gets a ref like `e5#v3`. The `#v3` suffix is the snapshot epoch — refs from an earlier snapshot are rejected with a clear "stale" error that points you to `click --text` / `click --selector` as the re-render-safe alternative. **Most AI workflows should skip refs entirely and use `--text` / `--selector` directly.**
@@ -352,19 +403,21 @@ These actions are most prone to **silent failure** — CDP reports "succeeded" e
 
 ### Output format
 
-Most actions return **JSON** on stdout — easy to pipe into `jq`, `gron`, or to read from the AI. `url`, `title`, and `network_detail` return plain text. `screenshot` returns a file path. `snapshot` returns the banner + plain-text accessibility tree. `health`, `status`, `wait`, and `assert` print a one-line human-friendly summary. `fetch` prints `[status] (contentType)` followed by the body, or `[status] $.jsonpath =` followed by the extracted value.
+Most actions return **JSON** on stdout — easy to pipe into `jq`, `gron`, or to read from the AI. `url`, `title`, and `network_detail` return plain text. `screenshot` returns a file path. `snapshot` returns the banner + plain-text accessibility tree. `health`, `status`, `wait`, `assert`, `dialog`, `upload`, `drag`, `viewport`, `emulate` and `coverage` print a short human-friendly summary. `fetch` prints `[status] (contentType)` followed by the body, or `[status] $.jsonpath =` followed by the extracted value.
 
-Warnings (silent-failure detection, cookie not accepted, etc.) go to **stderr**. The main result stays on stdout, so a `>` redirect captures the real data while letting the AI still see the warning.
+Warnings (silent-failure detection, DOM-event fallback in a background tab, etc.) go to **stderr**. The main result stays on stdout, so a `>` redirect captures the real data while letting the AI still see the warning.
 
 ### Exit codes
 
-`0` on success, non-zero on failure (stale ref, network error, assertion failure, no matching element, etc.). See the [main CLI page](#cockpit) for the full exit code list.
+`0` on success, non-zero on failure (stale ref, network error, assertion failure, no matching element, a dialog blocking the page, etc.). `open <path>` exits `2` when no Cockpit window picked the bubble up. See the [main CLI page](#cockpit) for the full exit code list.
 
 ### When NOT to use this CLI
 
 - **Testing LLM-agent driven flows end-to-end.** The agent's stochastic tool choice and `stop_reason` make UI assertions flaky. Prefer a thin runtime script that calls the same middleware or service directly with controlled inputs.
 - **Pages that stream or re-render for >10 s.** `evaluate` calls queue behind page work and may time out (~15 s default). Run `wait --extension-ready` between acts and asserts; if it stays hung, pivot to a service-level test.
-- **Multi-tab / popup OAuth flows.** Each Browser bubble tracks one tab. Open the secondary tab in its own bubble, or stub the OAuth handshake.
+- **Timezone / locale-dependent behaviour.** Chrome doesn't let extensions emulate those; use a headless browser (e.g. Playwright) for such tests.
+
+Popups and `target="_blank"` links open as ordinary Chrome tabs: find them with `cockpit browser tabs`. A tab opened by the page (not by Cockpit) asks for permission on its first command.
 
 ## cockpit terminal
 

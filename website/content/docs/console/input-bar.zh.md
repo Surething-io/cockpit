@@ -15,7 +15,7 @@ Console 面板底部有一个**命令输入框**。每次你回车,OpenCockpit �
 
 | 触发前缀 | 开什么 |
 |---|---|
-| `http://…` / `https://…` | **浏览器气泡** —— 驱动真实 Chrome 标签页 |
+| `http://…` / `https://…` | **Chrome 标签页** —— 在 **Cockpit** 分组里打开，AI 可以操作（[浏览器](/zh/docs/console/browser/)） |
 | `postgresql://…` / `postgres://…` | **PostgreSQL 气泡** |
 | `mysql://…` | **MySQL 气泡** |
 | `redis://…` / `rediss://…`(TLS) | **Redis 气泡** |
@@ -83,7 +83,7 @@ top  htop  less  man
 
 ## 多个气泡并排
 
-每次回车开一个新气泡 —— 它们在面板里堆叠,可以拖任意一个重排。同时连两个不同库的 PostgreSQL、两个不同站点的浏览器气泡、再加一个终端:都没问题。
+每次回车开一个新气泡 —— 它们在面板里堆叠,可以拖任意一个重排。同时连两个不同库的 PostgreSQL、开几个 HTML 预览、再加一个终端:都没问题。(网址例外 —— 它们以 Chrome 标签页打开,不生成气泡。)
 
 `Cmd+M` 把当前聚焦的气泡最大化;再按或 `Esc` 还原。
 

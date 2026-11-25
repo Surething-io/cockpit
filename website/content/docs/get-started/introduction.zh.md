@@ -64,7 +64,7 @@ Cockpit 整个 UI 就是三个并行渲染的面板。它们永远不卸载 —�
 |---|---|
 | `ls`、`make build`、`pytest`…… | 一次性命令气泡 |
 | `zsh`、`bash` | 完整交互式终端 —— `vim`、`top`、平时在 iTerm 跑的都能跑 |
-| `https://example.com` | 浏览器气泡（驱动真实 Chrome 标签页） |
+| `https://example.com` | 在 Chrome 标签页里打开（归在 **Cockpit** 分组下），AI 可以操作 |
 | `postgresql://...` / `postgres://...` | PostgreSQL 气泡 |
 | `mysql://...` | MySQL 气泡 |
 | `redis://...` | Redis 气泡 |
@@ -77,7 +77,7 @@ Cockpit 整个 UI 就是三个并行渲染的面板。它们永远不卸载 —�
 
 - **通过评注做代码引用。** 在 Explorer 里划选一段代码，加评注（`Cmd+/` 或浮动工具栏）。可以跨文件加多条；准备好问 AI 时，Agent 里的**评注**模态会把每条评注渲染成格式化代码块（文件路径 + 行号区间 + 代码 + 你的备注），直接复制粘贴到聊天。Cockpit "把这段代码告诉 AI" 的官方路径就是评注 —— 没有拖拽功能。
 - **从搜索跳到文件。** `Cmd+P` 打开模糊文件搜索，命中后落到 Explorer 文件树对应位置，准备好评注 / 预览 / blame。
-- **Browser ↔ Agent。** 每个浏览器气泡(以及一次性命令气泡、交互式终端气泡)标题栏都有一个**短 ID 徽章**。点击它注册气泡并把 `cockpit browser <id>` / `cockpit terminal <id>` 复制到剪贴板 —— 粘到聊天里 AI 就能通过 Cockpit CLI 驱动这个气泡。
+- **气泡、标签页 ↔ Agent。** 每个终端气泡(一次性命令或交互式)标题栏都有一个**短 ID 徽章**,点击复制 `cockpit terminal <id>`。每个 Chrome 标签页也有 id,Cockpit 打开它时会在提示里给出,扩展小面板里也能看到(`cockpit browser <id>`)。粘到聊天里,AI 就能通过 Cockpit CLI 操作对应的终端或标签页。
 
 ## 谁应该用
 

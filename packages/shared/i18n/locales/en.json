@@ -1005,7 +1005,7 @@
     "browserExtension": "Browser Extension",
     "extensionInstalled": "OpenCockpit Bridge connected",
     "extensionNotInstalled": "OpenCockpit Bridge not connected",
-    "extensionDescription": "Lets `cockpit browser` drive Console browser bubbles and your Chrome tabs. Every tab gets an id (shown on the extension icon); Cockpit asks before acting on a tab you have not allowed, one tab at a time.",
+    "extensionDescription": "Lets `cockpit browser` drive your Chrome tabs and Console browser bubbles. Every tab gets an id (in the extension's popup and icon tooltip); Cockpit asks before acting on a tab you haven't allowed — permission is per tab.",
     "installSteps": "Installation steps:",
     "step1": "1. Open Chrome and navigate to",
     "step2": "2. Enable \"Developer mode\" in the top-right corner",

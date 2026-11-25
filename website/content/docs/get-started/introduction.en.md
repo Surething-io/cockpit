@@ -64,7 +64,7 @@ The "everything else" surface. Type into the input bar at the bottom and Cockpit
 |---|---|
 | `ls`, `make build`, `pytest`… | One-shot command bubble |
 | `zsh`, `bash` | Full interactive terminal — `vim`, `top`, anything you'd run in iTerm |
-| `https://example.com` | Browser bubble (drives a real Chrome tab) |
+| `https://example.com` | Opens in a Chrome tab (in the **Cockpit** tab group) the AI can drive |
 | `postgresql://...` / `postgres://...` | PostgreSQL bubble |
 | `mysql://...` | MySQL bubble |
 | `redis://...` | Redis bubble |
@@ -77,7 +77,7 @@ Each bubble is draggable; `Cmd+M` maximises the focused one. Bubbles persist acr
 
 - **Code references via comments.** In Explorer, select a range of code and add a comment (`Cmd+/` or the floating toolbar). Add as many as you need across files; when you're ready to ask the AI, the **Comments** modal in Agent renders every pinned comment as a formatted block (file path + line range + code + your note) that you can copy straight into chat. This is the supported path for "tell the AI about this specific code" — there is no drag-and-drop.
 - **Jump to file from search.** `Cmd+P` opens fuzzy file search and lands you in the Explorer tree at the matched file, ready to comment / preview / blame.
-- **Bubbles ↔ Agent.** Every Browser bubble (and one-shot / interactive terminal bubble) carries a **short-ID badge** in its title bar. Click it to register the bubble and copy `cockpit browser <id>` / `cockpit terminal <id>` to your clipboard — paste it into chat and the AI can drive that exact bubble through Cockpit's CLI.
+- **Bubbles & tabs ↔ Agent.** Every terminal bubble (one-shot or interactive) carries a **short-ID badge** in its title bar — click it to copy `cockpit terminal <id>`. Every Chrome tab has an id too, shown in the toast when Cockpit opens it and in the extension's popup (`cockpit browser <id>`). Paste either into chat and the AI can drive that exact terminal or tab through Cockpit's CLI.
 
 ## Who this is for
 

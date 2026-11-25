@@ -1002,7 +1002,7 @@
     "browserExtension": "浏览器插件",
     "extensionInstalled": "OpenCockpit Bridge 已连接",
     "extensionNotInstalled": "OpenCockpit Bridge 未连接",
-    "extensionDescription": "让 `cockpit browser` 能操作 Console 里的浏览器气泡和你的 Chrome 标签页。每个标签页都有 id（显示在插件图标上）；Cockpit 操作一个你还没允许的标签页前会先问你，按标签页逐个授权。",
+    "extensionDescription": "让 `cockpit browser` 能操作你的 Chrome 标签页和 Console 里的浏览器气泡。每个标签页都有 id（在插件小面板和图标的悬停提示里）；Cockpit 操作一个你还没允许的标签页前会先问你，按标签页逐个授权。",
     "installSteps": "安装步骤：",
     "step1": "1. 打开 Chrome 地址栏输入",
     "step2": "2. 开启右上角「开发者模式」",

@@ -1,162 +1,163 @@
-The OpenCockpit Chrome extension is optional. Most of Cockpit — Agent, Explorer, terminal / database bubbles — works fine without it. You only need it if you want the **Browser bubble** to behave like a real Chrome tab instead of a plain iframe.
+The OpenCockpit Bridge extension lets [`cockpit browser`](/en/docs/reference/cli/#cockpit-browser) — and the AI in your chats — drive your real Chrome: the tabs you choose, with your own logins, plus the local HTML apps and file previews shown in Console bubbles.
 
-If you ever fight CORS errors, login-cookie issues, or "this site refuses to be embedded" messages in a Browser bubble, the extension is the fix.
+It is optional. The Agent, Explorer, terminals and database bubbles work without it; you need it only when something should act inside a browser page.
 
 | Section | What's in it |
 |---|---|
-| [What it does](#what-it-does) | The four capabilities the extension unlocks for the Browser bubble |
-| [Install](#install) | Three-minute setup, plus how the auto-reload across upgrades works |
-| [Permissions](#permissions) | What Chrome asks for, why each permission is needed, and the privacy boundaries |
+| [What it does](#what-it-does) | How commands reach the browser, and what the AI can do in a tab |
+| [Install](#install) | Three-minute setup, the two Chrome settings to check, and updating |
+| [Using it](#using-it) | Per-tab permission, the toolbar popup, the debugging bar |
+| [Permissions](#permissions) | What Chrome asks for, why, and the trust model |
 
 ## What it does
 
-Cockpit ships an optional Chrome extension. You don't need it for most of Cockpit — the Agent, Explorer, and database / terminal bubbles work fine without it. You only need it if you want the **Browser bubble** to behave like a real Chrome tab instead of a plain iframe.
+### How commands get to Chrome
 
-If you ever fight CORS errors, login-cookie issues, or "this site refuses to be embedded" messages in a Browser bubble, the extension is the fix.
+```text
+cockpit browser … ──▶ Cockpit server ──▶ native host ──▶ extension ──▶ your tab
+                      (per-boot token)   (bin/bridge-host.mjs)
+```
 
-### What it adds
+- Cockpit registers a small **native messaging host** with every Chromium browser it finds (Chrome, Edge, Brave, Vivaldi, Arc, Opera, Chromium) on macOS, Linux and Windows, each time it starts. You don't install anything else.
+- The host connects to every running Cockpit instance (prod and dev alike) using a token that changes on every server start.
+- The extension takes commands **only** from that host. No web page — Cockpit's own UI included — can send it a command. It does not rewrite headers, inject cookies or disguise pages; sites run exactly as they would without it.
 
-The extension does four things, all scoped to Cockpit's Browser bubbles:
+### What the AI can do in a tab
 
-#### 1. Reuses your real Chrome cookies
+Everything a person at the keyboard can:
 
-Without the extension, an iframe inside Cockpit doesn't share cookies with the rest of your Chrome — so if you're logged into a site in your normal browser, the Browser bubble sees it as logged out. The extension injects the right cookies before each request so the bubble appears logged in just like your main browser tabs.
+- **Read the page** — an accessibility-tree snapshot that includes cross-origin iframes and shadow DOM, plus `evaluate` for JavaScript.
+- **Act with real input** — clicks, typing, keys, hover, scrolling, drag-and-drop and long presses go through Chrome's own input pipeline, so pages see trusted events.
+- **Handle what usually blocks automation** — `alert` / `confirm` / `prompt` dialogs and file uploads (no OS file picker appears).
+- **Inspect** — console messages, network requests with bodies, event listeners, performance metrics, CSS coverage, and full-page or single-element screenshots.
+- **Test conditions** — phone / tablet viewports with touch, dark theme, offline or slow networks, CPU throttling, blocked URLs and print media.
 
-#### 2. Intercepts link clicks
-
-`target="_blank"` links would normally open a new tab in Chrome and lose the connection to Cockpit. The extension catches those clicks and routes them back into Cockpit — either updating the current Browser bubble's URL or opening a new bubble, depending on context. This keeps your AI-driven workflows intact across navigations.
-
-#### 3. Captures full network request bodies
-
-The `network` and `network_record` actions of [`cockpit browser`](/en/docs/reference/cli/#cockpit-browser) can return request and response bodies — but only if the extension is installed. Without it, you get URL and status info, no bodies.
-
-#### 4. Enables in-page JavaScript execution
-
-The `evaluate` action runs JavaScript in the page context. Without the extension this is restricted by iframe sandboxing; with it, you can run anything you'd run in a Chrome DevTools console.
-
-### Without the extension
-
-You can still:
-
-- Load any page that doesn't refuse iframes (most public sites, `localhost`).
-- Click around, scroll, see what's there.
-- Take screenshots (limited resolution).
-- Get URL, title, and minimal element info.
-
-You can't:
-
-- Stay logged in to sites you use in your normal Chrome.
-- Keep links working when they'd open new tabs.
-- See request / response bodies in network captures.
-- Run arbitrary JavaScript with full page access.
-
-### Privacy
-
-The extension only activates on tabs Cockpit has explicitly told it about (it tracks them with a hidden `_cockpit=1` URL parameter). It doesn't read or interfere with any other browsing you do in Chrome.
-
-See [Permissions](#permissions) for the exact list of permissions the extension requests and why.
+Web pages always open as **real Chrome tabs** (grouped under **Cockpit**), so they have your logins and nothing refuses to load. Console bubbles are only for Cockpit-served content: local HTML apps and file previews.
 
 ## Install
 
-Installing the Cockpit Chrome extension takes about three minutes. The extension files were already copied to your Cockpit data folder when you installed Cockpit — you just need to tell Chrome about them.
+The extension files are copied to `~/.cockpit/chrome-extension/` when you install or update Cockpit. Chrome just needs to be pointed at them once.
 
 ### Step by step
 
-#### 1. Get the extension path
+#### 1. Copy the path
 
-In Cockpit, open **Settings**. Find the **Chrome Extension** section. Click **Copy extension path**.
-
-That puts something like `~/.cockpit/chrome-extension/` (the full absolute path) on your clipboard.
+In Cockpit, open **Settings → Browser Extension** and click **Copy extension directory path**.
 
 #### 2. Open Chrome's extensions page
 
-In Chrome, go to `chrome://extensions`.
+Go to `chrome://extensions` (or the same page in Edge, Brave, …).
 
-#### 3. Enable Developer mode
+#### 3. Turn on Developer mode
 
-Top-right corner of the extensions page, there's a **Developer mode** toggle. Turn it on. This is required to load unpacked extensions; it doesn't affect anything else.
+Top-right toggle. It is needed to load an extension from a folder and changes nothing else.
 
 #### 4. Load unpacked
 
-Three buttons appear when Developer mode is on: **Load unpacked**, **Pack extension**, **Update**. Click **Load unpacked**.
+Click **Load unpacked** and pick the folder you copied in step 1. The card **OpenCockpit Bridge** appears.
 
-A file picker opens. Paste the path you copied in step 1, hit Open / Select.
+#### 5. Check two settings on the card
 
-That's it. The extension card appears in your extensions list. **The card title says "OpenCockpit Bridge"** (that's the `name` field in `manifest.json`) and shows the version number.
+Click **Details** on the card:
+
+- **Site access** must be **On all sites**. Which tabs Cockpit may act on is still decided by you, tab by tab (see [Using it](#using-it)); without site access Chrome silently blocks the extension from running in pages. If it is withheld, the toolbar popup shows a **Grant access to all sites** button.
+- **Allow access to file URLs** — turn it on if the AI should be able to **upload files** into web pages. Everything else works without it.
 
 ### Verify
 
-Switch back to Cockpit, refresh the page. In **Settings → Chrome Extension**, the indicator turns **green** with the extension version number next to it.
+In **Settings → Browser Extension** the indicator shows **OpenCockpit Bridge connected**. You can also run:
 
-If you open a Browser bubble after this, the URL bar gets a small marker showing the bubble is now extension-powered.
+```bash
+cockpit browser tabs
+```
 
-### Updating and reloading
+which lists your open tabs with their ids.
 
-When you `cockpit update` to a new Cockpit version, the extension files in `~/.cockpit/chrome-extension/` get refreshed. **Chrome does not automatically pick up those file changes** — Chrome extensions have no native file-watching reload. To activate the new version:
+### Updating
 
-1. Open Cockpit's **Settings → Chrome Extension**. Once the extension is installed, a **Reload extension** button appears there — click it.
-2. Or go to `chrome://extensions` and click the refresh icon on the **OpenCockpit Bridge** card.
+`cockpit update` refreshes the files in `~/.cockpit/chrome-extension/`, but **Chrome keeps running the old code until the extension is reloaded**:
 
-You don't need to reinstall in Chrome — just reload. Refresh any open Browser bubble afterwards to pick up the new code.
+- **Settings → Browser Extension → Reload extension**, or
+- the reload icon on the **OpenCockpit Bridge** card in `chrome://extensions`.
 
-### Removing the extension
+### Removing
 
-To remove:
-
-1. In Chrome go to `chrome://extensions`.
-2. Find the Cockpit card.
-3. Click **Remove**.
-
-Cockpit's Settings indicator will go back to grey on next page load.
+`chrome://extensions` → **OpenCockpit Bridge** → **Remove**.
 
 ### Common issues
 
-- **"Failed to load" in Chrome** — the path you pasted doesn't point to a folder. Re-copy from Settings, paste exactly.
-- **Extension loads but Cockpit settings still says "not installed"** — refresh the Cockpit page in your browser.
-- **Indicator stays grey after refresh** — the extension is on a different Chrome profile than the one Cockpit is open in. Switch profiles or install the extension into both.
+- **"OpenCockpit Bridge not connected"** — Cockpit must be running (it registers the native host on start). If you installed a new Chromium browser after starting Cockpit, restart Cockpit once.
+- **Commands hang or fail with a site-access message** — set **Site access** to **On all sites** (step 5).
+- **Upload fails with "Allow access to file URLs"** — turn that switch on (step 5).
+- **Behaviour didn't change after updating** — reload the extension (see [Updating](#updating)).
+
+## Using it
+
+### Every tab has an id
+
+Every tab gets a short, stable id such as `qmmm`. Find it in the toolbar popup (with a **Copy** button that copies `cockpit browser qmmm`), in the icon's tooltip, or with `cockpit browser tabs`. Give it to the AI and it can work on that tab.
+
+### Permission is per tab
+
+- Tabs **Cockpit opens** (e.g. a URL typed into the Console input bar, or `cockpit browser open <url>`) are allowed automatically.
+- **Any other tab** — one of yours — is not. The first command on it brings that tab to the front and asks in the toolbar popup: **Allow this tab** or **Deny**. Allowing one tab never allows another tab, even on the same site.
+- **Stop** in the popup, or `cockpit browser <id> release`, takes the permission back; the next command asks again.
+- `close` only closes tabs Cockpit opened, never yours.
+
+### The toolbar icon
+
+| Icon | Meaning |
+|---|---|
+| Grey | Cockpit will ask before acting on this tab |
+| Green dot | Cockpit may act on this tab |
+| Orange dot | Cockpit is driving this tab right now |
+| **?** badge | Cockpit is asking for permission — click the icon to answer |
+
+### The popup
+
+Click the icon to see:
+
+- **Cockpit is driving now** — tabs the debugger is attached to and why (e.g. *console & network capture, 2 min left · iPhone 15 viewport*). Click a row to switch to that tab; **Stop** lets go immediately and undoes any emulation.
+- **This tab** — its id, **Copy**, and **Allow** / **Stop**.
+- **Other tabs Cockpit may control** — click to switch, **Stop** to revoke.
+
+### "OpenCockpit Bridge started debugging this browser"
+
+Chrome shows this bar on **every** tab whenever the extension's debugger is attached to **any** tab. The extension cannot change its text or limit it to one tab — use the popup or the orange icon to see which tab it is.
+
+The debugger lets go a few seconds after the last command, except while something needs it to stay:
+
+- console / network capture — ends 2 minutes after the AI last reads it;
+- a viewport, theme or `emulate` setting — until it is reset;
+- an open dialog waiting for an answer.
+
+**Stop** in the popup or **Cancel** on the bar ends it at once, and the page gets its normal size back.
 
 ## Permissions
 
-When you load the Cockpit Chrome extension, Chrome shows a permissions list. This page explains what each permission is for, so you can decide whether you're comfortable with it.
-
-### The permissions
-
-| Permission | Why Cockpit needs it |
+| Permission | Why |
 |---|---|
-| **`storage`** | Save the extension's own settings (which Cockpit instance to talk to, etc.) — small, local, doesn't touch your browsing data. |
-| **`cookies`** | Read the cookies for sites you visit in Cockpit's Browser bubble, so it can inject them when the iframe requests the same site. This is what "stay logged in" looks like under the hood. |
-| **`declarativeNetRequest`** | Inject the cookies above into outgoing requests via Chrome's network rules layer. Each rule is scoped to a specific Cockpit tab — never to the rest of your browser. |
-| **`webNavigation`** | Track when a Cockpit-marked iframe navigates so the extension knows which bubble corresponds to which Chrome frame. |
-| **`tabs`** | Identify which Chrome tab is the Cockpit tab so the extension can scope its work to it. |
-| **`scripting`** | Inject the small content-script that handles link interception and JavaScript evaluation inside Browser bubbles. |
-| **`webRequest`** | Watch the final headers Chrome sends, used for debugging the cookie injection above. Read-only — doesn't modify requests. |
-| **`host_permissions: <all_urls>`** | The extension needs to be able to operate on whatever URL you load in a Browser bubble. Since you can load any URL, the extension has to be allowed on all of them. |
-| **`externally_connectable: localhost / 127.0.0.1`** | Allow the Cockpit web app running on `http://localhost:*` or `http://127.0.0.1:*` to message the extension directly — for fast, ordered cookie injection that survives page navigation. |
-| **`web_accessible_resources`** | Exposes `disguise.js`, `automation.js`, and `network-capture.js` so the Cockpit page can inject them into Browser bubbles — these are the scripts that disguise the frame as a real tab, run automation actions, and capture network traffic. |
-| **`declarative_net_request` rule_resources** | A bundled DNR ruleset; one rule strips the `_cockpit=1` marker from request URLs before they leave Chrome, so external servers never see it. |
+| **`nativeMessaging`** | The only way commands arrive: from the native host Cockpit registered. |
+| **`debugger`** | Real input, dialogs, uploads, screenshots, emulation and console / network capture (Chrome DevTools Protocol). Attached only while working, which is when Chrome shows its debugging bar. |
+| **`scripting`** | Run the page-reading code (snapshot, element lookup) in the tab or bubble being driven. |
+| **`tabs`**, **`tabGroups`** | List tabs with their ids, open / show / close the tabs Cockpit opens, and keep them in the **Cockpit** group. |
+| **`webNavigation`** | Find the frames inside a page (iframes, Console bubbles). |
+| **`storage`** | Remember tab ids and which tabs you allowed, across browser restarts. |
+| **`alarms`** | Reconnect to the native host if it restarts. |
+| **`clipboardWrite`** | The **Copy** button in the popup. |
+| **`host_permissions: <all_urls>`** | Chrome requires it to run in whatever page you allow. Which tabs Cockpit actually touches is your per-tab choice. |
 
-### Privacy boundaries
+A content script also runs in every frame but stays inert unless the frame is a Cockpit Console bubble (named `cockpit-bubble-…`, inside a local Cockpit page, same origin as it); there it records console and network activity for `cockpit browser`.
 
-The extension is built to do its work **only on tabs Cockpit is using**. The mechanism: Cockpit adds a hidden `_cockpit=1` parameter to every URL it loads in a Browser bubble. The extension only enables its features on tabs / iframes whose top-level URL matches.
+### What it doesn't do
 
-So while the permissions say "all URLs" (which is required for it to be technically able to run on whatever site you ask Cockpit to load), it's gated by the `_cockpit=1` marker:
-
-- Your normal Chrome browsing tabs → extension does nothing.
-- Other extensions' iframes → extension does nothing.
-- Cockpit-marked iframes → extension enables cookie injection, link interception, evaluate JS.
-
-### What the extension doesn't do
-
-To be specific about what it does NOT do, even with the broad permissions:
-
-- It does not read or send any browsing data to any server.
-- It does not modify pages you visit outside Cockpit.
-- It does not inject cookies into requests outside the Cockpit-marked frames.
-- It does not log keystrokes, mouse movements, or anything else passively.
-- It does not phone home — no telemetry, no analytics, no auto-update server (it updates only via your `cockpit update`).
-
-The full extension source code is in the Cockpit npm package under `chrome-extension/` — if you're security-conscious, you can read it yourself.
+- It doesn't accept commands from web pages — only from the native host, which only relays from Cockpit servers holding the current token.
+- It doesn't act on a tab you haven't allowed (or that Cockpit didn't open).
+- It doesn't rewrite requests or responses, inject cookies, or read your cookies.
+- It doesn't send browsing data anywhere — no telemetry, no update server; it updates only with Cockpit.
 
 ### Trust model
 
-The reason the extension is shipped *as code you load yourself* (rather than published on the Chrome Web Store) is precisely so you can audit it. You're trusting Cockpit-the-tool, not a third-party publisher. Every install is whatever your `~/.cockpit/chrome-extension/` folder contains.
+The extension is shipped as code you load yourself, so you can read it: it's the `chrome-extension/` folder of the Cockpit package, and the trust model is spelled out at the top of `chrome-extension/background.js`.
+
+One consequence worth stating plainly: once you allow a tab, the AI acts in it **with your login**. Allow tabs the way you'd hand someone your keyboard — and **Stop** them when the work is done.

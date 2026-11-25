@@ -143,7 +143,7 @@ AI 会：
     测一下 chat 输入框的发送功能,验证消息能正确入库且 UI 实时刷新
 ```
 
-`/cc` 把 AI 切到**操作 Cockpit CLI** 的模式 —— 把 `cockpit terminal <id> output` 拿终端输出、`cockpit browser <id> click/type/network` 等驱动浏览器气泡当作主要工具。有**短 ID** 时可以直接提供；没有时，AI 会列出当前项目的气泡，按标题或 URL 匹配，也可以自行打开浏览器气泡并在用完后关闭。终端仅支持只读观察。默认使用 `cockpit` 操作生产实例；`/cc dev …` 或明确指定 `cockpit-dev` 才操作开发实例。
+`/cc` 把 AI 切到**操作 Cockpit CLI** 的模式 —— 把 `cockpit terminal <id> output` 拿终端输出、`cockpit browser <id> click/type/network` 等操作 Chrome 标签页或浏览器气泡当作主要工具。有**短 ID** 时可以直接提供；没有时，AI 会列出标签页和气泡，按标题或 URL 匹配，也可以自己打开页面（`cockpit browser open`）并在用完后关闭。你自己的标签页会先在扩展小面板里询问授权。终端仅支持只读观察。默认使用 `cockpit` 操作生产实例；`/cc dev …` 或明确指定 `cockpit-dev` 才操作开发实例。
 
 通常配合 [`/go`](#go-落地改动) 使用 —— `/go` 写完代码,`/cc` 验证它确实活在用户那一侧。详细 walkthrough 见[快速开始](/zh/docs/get-started/quickstart/#端到端验证-console-拉起服务-cc-测试)。
 

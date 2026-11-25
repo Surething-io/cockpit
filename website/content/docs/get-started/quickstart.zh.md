@@ -7,7 +7,7 @@
 | **Node.js** | 20.x | 在 20 LTS 和 22 上测试通过；不支持更老的版本。 |
 | **Claude Code** | 最新版 | 默认 Claude 引擎需要。`npm install -g @anthropic-ai/claude-code`，然后跑一次 `claude` 让它把 token 存到 `~/.claude/`。 |
 | **Git** | 任意近期版本 | 驱动 Git 状态 / 历史 / blame 视图。 |
-| **Chrome / Chromium** | 任意近期版本 | 可选 —— 仅当使用浏览器气泡或 Chrome 扩展时需要。 |
+| **Chrome / Chromium** | 任意近期版本 | 可选 —— 仅当需要 AI 操作网页（配合 Chrome 扩展）时需要。 |
 | **操作系统** | macOS / Linux / Windows | 三平台原生支持。Windows 上 WSL2 可用但非必需。 |
 
 ## 安装
@@ -28,7 +28,7 @@ cockpit -v
 
 ### 可选：Chrome 扩展
 
-仅当你想用浏览器气泡接管真实 Chrome 标签页（读取 DOM、抓网络请求、在页面上执行 JavaScript）时才需要。Agent 和 Explorer 面板不用它也能跑。四步安装见 [Chrome 扩展 → 安装与自动重载](/zh/docs/console/chrome-extension/#安装与自动重载)。
+仅当你需要 AI 操作网页时才需要：你的 Chrome 标签页，以及 Console 里的浏览器气泡（读取 DOM、点击输入、抓网络请求、在页面上执行 JavaScript）。Agent 和 Explorer 面板不用它也能跑。安装步骤见 [Chrome 扩展 → 安装](/zh/docs/console/chrome-extension/#安装)。
 
 ### 可选：换端口
 
@@ -136,7 +136,7 @@ Cockpit 真正发挥威力的地方是**并行工作流** —— 同时开多个
 
 1. 切到 **Console**(`Cmd+3`),输入 `zsh` 起一个交互式终端,再 `npm run dev`。
 2. 终端气泡头部有个**短 ID 徽章**,点它把 `cockpit terminal <id>` 复制到剪贴板 —— 这样 AI 能通过 Cockpit CLI 读它的输出:`cockpit terminal <id> output`(拿最近输出)、`cockpit terminal <id> wait`(等命令收尾)、`cockpit terminal list`(列出所有注册过的终端)。
-3. 还在 Console,输入应用 URL(比如 `http://localhost:3456`)打开浏览器气泡。点浏览器气泡头部的短 ID 徽章拿到 `cockpit browser <id>`。**装了 [Chrome 扩展](/zh/docs/console/chrome-extension/#安装与自动重载) 后**通过 `cockpit browser <id> <action>` 真驱动 Chrome 标签页 —— 支持的 action 包括 `snapshot` / `navigate` / `click` / `type` / `fill` / `hover` / `evaluate` / `console` / `network` / `cookies` / `storage` / `perf`;不装也能在 iframe 里显示页面但功能有限。
+3. 还在 Console,输入应用 URL(比如 `http://localhost:3456`)。它会在 **Cockpit** 分组里以 Chrome 标签页打开,同时弹出提示给出它的命令,例如 `cockpit browser xyz789`(扩展工具栏小面板里也有 **Copy** 按钮)。**装了 [Chrome 扩展](/zh/docs/console/chrome-extension/#安装) 后**通过 `cockpit browser <id> <action>` 用真实输入操作这个标签页 —— `snapshot` / `click` / `type` / `fill` / `evaluate` / `console` / `network` / `dialog` / `upload` / `viewport` / `screenshot` 等,[完整列表](/zh/docs/reference/cli/#cockpit-browser);不装扩展页面照样会打开,但 AI 没法操作它。
 4. 在 Agent 用 **`/cc`** 让 AI 端到端测一遍 —— 把两个短 ID 顺手粘进 prompt 里:
 
    ```text
@@ -145,7 +145,7 @@ Cockpit 真正发挥威力的地方是**并行工作流** —— 同时开多个
        测一下 chat 输入框的发送功能,验证消息能正确入库且 UI 实时刷新
    ```
 
-   `/cc` 让 AI 通过 `cockpit` CLI 直接驱动你给的终端和浏览器气泡,抓网络、读 DOM,把验证证据给你看。
+   `/cc` 让 AI 通过 `cockpit` CLI 直接驱动你给的终端和浏览器标签页,抓网络、读 DOM,把验证证据给你看。
 
 ### bug 修复 —— `/fx` → `/cg` → `/design` → `/go`
 
@@ -180,7 +180,7 @@ Cockpit 真正发挥威力的地方是**并行工作流** —— 同时开多个
 - **worktree**: 并行 5 条工作线,需求 + bug 互不打扰
 - **Agent**: `/qa /spec /design /go /cr /fx /cg /cc` 内置斜杠命令 + 划词评论的多轮对齐
 - **Explorer**: **变更** tab + 评注驱动的代码修复循环
-- **Console**: zsh 跑服务 + 浏览器气泡 + 气泡的**短 ID 徽章**注册,让 AI 能通过 `cockpit` CLI 闭环驱动它们
+- **Console**: zsh 跑服务 + 网页以 Chrome 标签页打开 + 终端和标签页的**短 ID**,让 AI 能通过 `cockpit` CLI 闭环驱动它们
 
 ## 升级
 

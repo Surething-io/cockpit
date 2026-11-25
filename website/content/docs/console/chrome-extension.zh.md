@@ -1,162 +1,163 @@
-OpenCockpit 的 Chrome 扩展是可选的。Cockpit 的大部分能力 —— Agent、Explorer、终端 / 数据库气泡 —— 不装也能跑。只有当你想让**浏览器气泡**像真实 Chrome 标签页那样工作(而不是普通 iframe)时才需要它。
+OpenCockpit Bridge 扩展让 [`cockpit browser`](/zh/docs/reference/cli/#cockpit-browser)（以及对话里的 AI）能操作你真实的 Chrome：你允许的标签页（用的是你自己的登录状态），以及 Console 气泡里的本地 HTML 应用和文件预览。
 
-如果你在浏览器气泡里碰到 CORS 报错、登录 cookie 丢失、"此网站拒绝在 iframe 中嵌入" 这类问题,扩展就是答案。
+它是可选的。Agent、Explorer、终端、数据库气泡都不依赖它；只有需要在浏览器页面里动手时才用得上。
 
 | 章节 | 内容 |
 |---|---|
-| [功能介绍](#功能介绍) | 扩展给浏览器气泡解锁的 4 项能力 |
-| [安装与自动重载](#安装与自动重载) | 3 分钟搞定,以及升级时的自动重载机制 |
-| [权限说明](#权限说明) | Chrome 申请的权限、为什么需要,以及隐私边界 |
+| [功能介绍](#功能介绍) | 命令怎么到达浏览器，AI 在标签页里能做什么 |
+| [安装](#安装) | 3 分钟装好、两个要检查的 Chrome 设置、升级后怎么生效 |
+| [使用](#使用) | 按标签页授权、工具栏小面板、顶部的调试提示条 |
+| [权限说明](#权限说明) | Chrome 申请的权限、为什么需要、信任模型 |
 
 ## 功能介绍
 
-Cockpit 自带一个可选的 Chrome 扩展。Cockpit 大部分功能不需要它 —— Agent、Explorer、数据库 / 终端气泡没扩展也能用。只有想让**浏览器气泡**表现得像真正的 Chrome 标签页（而不是 iframe）时才需要。
+### 命令怎么到达 Chrome
 
-如果你在浏览器气泡里跟 CORS 错误、登录 cookie 问题、"这个网站拒绝被嵌入"消息斗争，装扩展就是答案。
+```text
+cockpit browser … ──▶ Cockpit 服务 ──▶ 本地桥接程序 ──▶ 扩展 ──▶ 你的标签页
+                      （每次启动换新 token） （bin/bridge-host.mjs）
+```
 
-### 它加什么
+- Cockpit 每次启动都会给本机找到的每个 Chromium 系浏览器（Chrome、Edge、Brave、Vivaldi、Arc、Opera、Chromium）注册一个 **native messaging 本地程序**，macOS、Linux、Windows 都支持，不需要你额外安装什么。
+- 本地程序会连上所有正在运行的 Cockpit 实例（prod 和 dev 都算），用的 token 每次服务启动都会更换。
+- 扩展**只**接受这个本地程序发来的命令。任何网页（包括 Cockpit 自己的界面）都无法给它发命令。它不改请求头、不注入 cookie、不伪装页面，网站的运行方式和没装它时完全一样。
 
-扩展做四件事，全部局限在 Cockpit 的浏览器气泡上：
+### AI 在标签页里能做什么
 
-#### 1. 复用你真实 Chrome 的 cookie
+人坐在电脑前能做的，它基本都能做：
 
-不装扩展时，Cockpit 里的 iframe 不跟你 Chrome 的其它部分共享 cookie —— 所以你在正常浏览器里登录的网站，气泡看到的是未登录态。扩展在每次请求前注入对的 cookie，让气泡看起来跟你主浏览器 tab 一样是登录态。
+- **读页面**：无障碍树快照，包括跨域 iframe 和 shadow DOM；还能用 `evaluate` 执行 JavaScript。
+- **用真实输入操作**：点击、输入、按键、悬停、滚动、拖放、长按都走 Chrome 自己的输入通道，页面收到的是可信事件。
+- **处理通常会卡住自动化的东西**：`alert` / `confirm` / `prompt` 弹窗，以及文件上传（不会弹出系统文件选择框）。
+- **排查问题**：控制台消息、带请求/响应正文的网络请求、事件监听器、性能指标、CSS 覆盖率，以及整页或单个元素的截图。
+- **模拟测试环境**：手机/平板视口（含触屏）、深色模式、断网或弱网、CPU 降速、屏蔽指定请求、打印样式。
 
-#### 2. 拦截链接点击
+网页一律在**真实的 Chrome 标签页**里打开（归在 **Cockpit** 分组下），所以带着你的登录状态，也不会遇到「拒绝被嵌入」。Console 气泡只用于 Cockpit 自己提供的内容：本地 HTML 应用和文件预览。
 
-`target="_blank"` 链接正常会在 Chrome 开新 tab、失去跟 Cockpit 的连接。扩展抓这些点击路由回 Cockpit —— 视情况更新当前浏览器气泡的 URL 或开新气泡。这让 AI 驱动的工作流跨页面跳转都不断。
+## 安装
 
-#### 3. 抓完整网络请求 body
-
-[`cockpit browser`](/zh/docs/reference/cli/#cockpit-browser) 的 `network` 和 `network_record` action 能返回 request / response body —— 但只有装了扩展才行。不装的话只有 URL 和状态信息，没 body。
-
-#### 4. 启用页面内 JavaScript 执行
-
-`evaluate` action 在页面上下文里跑 JavaScript。不装扩展时受 iframe 沙箱限制；装了之后，你能跑任何 Chrome DevTools 控制台能跑的东西。
-
-### 不装扩展时
-
-你仍能：
-
-- 加载任何不拒绝 iframe 的页面（多数公开站、`localhost`）。
-- 点击、滚动、看内容。
-- 截图（分辨率受限）。
-- 获取 URL、标题、最小元素信息。
-
-你不能：
-
-- 在你正常 Chrome 里用过的站保持登录。
-- 让本来会开新 tab 的链接继续工作。
-- 在网络抓取里看 request / response body。
-- 跑有完整页面访问权限的任意 JavaScript。
-
-### 隐私
-
-扩展只在 Cockpit 显式告诉它的 tab 上激活（用一个隐藏的 `_cockpit=1` URL 参数追踪）。它不读、不干扰你在 Chrome 里做的任何其它浏览。
-
-完整权限列表和原因见 [权限](#权限说明)。
-
-## 安装与自动重载
-
-装 Cockpit Chrome 扩展大约 3 分钟。扩展文件在你装 Cockpit 时已经复制到了 Cockpit 数据目录 —— 你只是要告诉 Chrome 这件事。
+安装或升级 Cockpit 时，扩展文件会复制到 `~/.cockpit/chrome-extension/`，只需要在 Chrome 里指向它一次。
 
 ### 一步步
 
-#### 1. 拿到扩展路径
+#### 1. 复制路径
 
-在 Cockpit 里打开**设置**。找到 **Chrome 扩展** 区块。点 **复制扩展路径**。
+在 Cockpit 里打开 **设置 → 浏览器插件**，点 **复制插件目录路径**。
 
-会把类似 `~/.cockpit/chrome-extension/`（完整绝对路径）放到你剪贴板。
+#### 2. 打开扩展程序页
 
-#### 2. 打开 Chrome 扩展页
-
-在 Chrome 里访问 `chrome://extensions`。
+在 Chrome 地址栏打开 `chrome://extensions`（Edge、Brave 等同理）。
 
 #### 3. 打开开发者模式
 
-扩展页右上角有个 **开发者模式** 开关。打开。要加载未打包扩展必须开这个；它不影响别的。
+右上角的开关。从文件夹加载扩展需要它，不影响其他东西。
 
 #### 4. 加载已解压的扩展程序
 
-开发者模式打开后会出现 3 个按钮：**加载已解压的扩展程序**、**打包扩展程序**、**更新**。点 **加载已解压的扩展程序**。
+点 **加载已解压的扩展程序**，选第 1 步复制的文件夹。列表里出现 **OpenCockpit Bridge** 卡片即可。
 
-文件选择器打开。粘贴第 1 步复制的路径，按 Open / Select。
+#### 5. 检查卡片上的两个设置
 
-完事。扩展卡片出现在你的扩展列表里。**卡片标题是 "OpenCockpit Bridge"**(`manifest.json` 里的 `name` 字段),带版本号。
+点卡片上的 **详情**：
+
+- **网站访问权限** 必须是 **在所有网站上**。Cockpit 能操作哪些标签页仍然由你逐个决定（见 [使用](#使用)）；没有这个权限，Chrome 会悄悄阻止扩展在页面里运行。如果权限被收回，工具栏小面板里会出现 **Grant access to all sites** 按钮。
+- **允许访问文件网址**：想让 AI 往网页里**上传文件**就打开它，其他功能不需要。
 
 ### 确认
 
-切回 Cockpit，刷新页面。在**设置 → Chrome 扩展**，指示器变**绿**，旁边带扩展版本号。
+**设置 → 浏览器插件** 里显示 **OpenCockpit Bridge 已连接**。也可以运行：
 
-之后打开浏览器气泡时，URL 栏会有个小标记表示气泡现在被扩展驱动。
+```bash
+cockpit browser tabs
+```
 
-### 升级与重载
+会列出你打开的标签页和它们的 id。
 
-`cockpit update` 升级 Cockpit 时,`~/.cockpit/chrome-extension/` 里的扩展文件会被刷新。**Chrome 不会自动捡起这些文件改动** —— Chrome 扩展默认没有这个机制。要让新版生效:
+### 升级后
 
-1. 打开 Cockpit **设置 → Chrome 扩展**。装好扩展后会出现 **Reload 扩展** 按钮 —— 点它。
-2. 或者 `chrome://extensions` 里手动点 **Cockpit** 卡片的刷新按钮。
+`cockpit update` 会更新 `~/.cockpit/chrome-extension/` 里的文件，但 **Chrome 在扩展重新加载之前会一直运行旧代码**：
 
-不用在 Chrome 里重装,**只是重载**。刷新已经开的浏览器气泡才能用上新版扩展。
+- **设置 → 浏览器插件 → 重载插件**，或者
+- 在 `chrome://extensions` 里点 **OpenCockpit Bridge** 卡片上的刷新图标。
 
-### 移除扩展
+### 移除
 
-要移除：
-
-1. Chrome 里访问 `chrome://extensions`。
-2. 找到 Cockpit 卡片。
-3. 点 **Remove**。
-
-Cockpit 设置里的指示器下次页面加载时变回灰色。
+`chrome://extensions` → **OpenCockpit Bridge** → **移除**。
 
 ### 常见问题
 
-- **Chrome 里 "Failed to load"** —— 你粘的路径不指向文件夹。从设置里再复制一次，准确粘贴。
-- **扩展加载了但 Cockpit 设置仍显示 "未安装"** —— 在浏览器里刷新 Cockpit 页面。
-- **刷新后指示器还是灰** —— 扩展装在了跟 Cockpit 打开的不同的 Chrome profile 里。换 profile 或两边都装。
+- **显示「OpenCockpit Bridge 未连接」**：Cockpit 需要在运行（它启动时注册本地程序）。如果是在 Cockpit 启动之后才装的新浏览器，重启一次 Cockpit。
+- **命令卡住，或提示网站访问权限**：把 **网站访问权限** 设为 **在所有网站上**（第 5 步）。
+- **上传失败，提示 "Allow access to file URLs"**：打开那个开关（第 5 步）。
+- **升级后行为没变**：重新加载扩展（见 [升级后](#升级后)）。
+
+## 使用
+
+### 每个标签页都有 id
+
+每个标签页都有一个固定的短 id，例如 `qmmm`。在工具栏小面板里能看到（**Copy** 按钮会复制 `cockpit browser qmmm`），鼠标悬停在图标上也能看到，或者运行 `cockpit browser tabs`。把它交给 AI，AI 就能操作这个标签页。
+
+### 按标签页授权
+
+- **Cockpit 打开的标签页**（比如在 Console 输入栏里输入网址，或 `cockpit browser open <url>`）自动允许。
+- **其他标签页**（你自己的）默认不允许。第一次对它发命令时，那个标签页会被切到前台，并在工具栏小面板里询问 **Allow this tab** / **Deny**。允许一个标签页不会连带允许别的，同一网站的也不会。
+- 小面板里的 **Stop**，或 `cockpit browser <id> release`，会收回授权，下次再操作时重新询问。
+- `close` 只会关掉 Cockpit 打开的标签页，不会关你的。
+
+### 工具栏图标
+
+| 图标 | 含义 |
+|---|---|
+| 灰色 | Cockpit 操作这个标签页前会先问你 |
+| 绿点 | Cockpit 可以操作这个标签页 |
+| 橙点 | Cockpit 正在操作这个标签页 |
+| **?** 标记 | Cockpit 在请求授权，点图标回答 |
+
+### 小面板
+
+点图标会看到：
+
+- **Cockpit is driving now**：调试器正连着的标签页和原因（例如 *console & network capture, 2 min left · iPhone 15 viewport*）。点整行切到那个标签页；**Stop** 立即断开，并撤销各种模拟设置。
+- **This tab**：当前标签页的 id、**Copy**、**Allow** / **Stop**。
+- **Other tabs Cockpit may control**：点击切过去，**Stop** 收回授权。
+
+### 「OpenCockpit Bridge 已开始调试此浏览器」
+
+只要扩展的调试器连着**任意一个**标签页，Chrome 就会在**所有**标签页顶部显示这条提示。扩展改不了它的文字，也没法只在一个标签页上显示；要知道是哪个标签页，看小面板或橙色图标。
+
+调试器会在最后一条命令后几秒钟断开，以下情况除外：
+
+- 控制台/网络抓取：AI 最后一次读取后 2 分钟结束；
+- 视口、深色模式或 `emulate` 设置：直到被重置；
+- 有弹窗在等待回答。
+
+点小面板里的 **Stop** 或提示条上的 **取消** 会立刻结束，页面也会恢复正常尺寸。
 
 ## 权限说明
 
-你加载 Cockpit Chrome 扩展时，Chrome 会显示一份权限列表。这一页解释每项权限干什么用，方便你决定是否能接受。
-
-### 权限
-
-| 权限 | Cockpit 为什么需要它 |
+| 权限 | 用途 |
 |---|---|
-| **`storage`** | 存扩展自己的设置（连哪个 Cockpit 实例等）—— 小、本地、不碰你的浏览数据。 |
-| **`cookies`** | 读你在 Cockpit 浏览器气泡里访问的网站的 cookie，气泡请求同站时注入。这就是"保持登录"在底层的样子。 |
-| **`declarativeNetRequest`** | 通过 Chrome 网络规则层把上面的 cookie 注入到出站请求。每条规则限定在特定 Cockpit tab 上 —— 不影响浏览器其它部分。 |
-| **`webNavigation`** | 追踪 Cockpit 标记的 iframe 何时导航，让扩展知道哪个气泡对应哪个 Chrome frame。 |
-| **`tabs`** | 识别哪个 Chrome tab 是 Cockpit tab，让扩展把工作限定在那。 |
-| **`scripting`** | 注入小的 content script 处理浏览器气泡里的链接拦截和 JavaScript 执行。 |
-| **`webRequest`** | 观察 Chrome 最终发出的 header，用于调试上面 cookie 注入的正确性。只读 —— 不改请求。 |
-| **`host_permissions: <all_urls>`** | 扩展要能在你浏览器气泡里加载的任何 URL 上工作。因为你能加载任意 URL，扩展技术上得允许在所有 URL 上。 |
-| **`externally_connectable: localhost / 127.0.0.1`** | 让运行在 `http://localhost:*` 或 `http://127.0.0.1:*` 上的 Cockpit web app 直接给扩展发消息 —— 用于快速、有序的 cookie 注入，跨页面导航也有效。 |
-| **`web_accessible_resources`** | 暴露 `disguise.js` / `automation.js` / `network-capture.js` 给 Cockpit 页面注入到浏览器气泡里 —— 实现伪装真实 tab、自动化 action、网络抓取的实际代码。 |
-| **`declarative_net_request` rule_resources** | 内置 DNR 规则集，其中一条规则把请求 URL 里的 `_cockpit=1` 标记在发出前剥掉，避免外部服务器看到。 |
+| **`nativeMessaging`** | 命令的唯一来源：Cockpit 注册的本地程序。 |
+| **`debugger`** | 真实输入、弹窗、上传、截图、模拟、控制台/网络抓取（Chrome DevTools Protocol）。只在工作时连接，这时 Chrome 会显示调试提示条。 |
+| **`scripting`** | 在被操作的标签页或气泡里运行读取页面的代码（快照、查找元素）。 |
+| **`tabs`**、**`tabGroups`** | 列出标签页和 id，打开/显示/关闭 Cockpit 打开的标签页，并把它们放进 **Cockpit** 分组。 |
+| **`webNavigation`** | 找到页面里的各个框架（iframe、Console 气泡）。 |
+| **`storage`** | 记住标签页 id 和你允许过的标签页，浏览器重启后依然有效。 |
+| **`alarms`** | 本地程序重启后自动重连。 |
+| **`clipboardWrite`** | 小面板里的 **Copy** 按钮。 |
+| **`host_permissions: <all_urls>`** | Chrome 要求有它才能在你允许的页面里运行。Cockpit 实际操作哪些标签页，由你逐个决定。 |
 
-### 隐私边界
-
-扩展被设计成**只在 Cockpit 用的 tab 上**做事。机制：Cockpit 给浏览器气泡里加载的每个 URL 加一个隐藏的 `_cockpit=1` 参数。扩展只在顶级 URL 带这个标记的 tab / iframe 上启用功能。
-
-所以虽然权限说"所有 URL"（技术上必需，因为你可能让 Cockpit 加载任意站），但被 `_cockpit=1` 标记 gate 住：
-
-- 你正常的 Chrome 浏览 tab → 扩展什么都不做。
-- 其它扩展的 iframe → 扩展什么都不做。
-- Cockpit 标记的 iframe → 扩展启用 cookie 注入、链接拦截、JS 执行。
+扩展还有一段内容脚本会在每个框架里加载，但除非这个框架是 Cockpit 的 Console 气泡（名为 `cockpit-bubble-…`，位于本地 Cockpit 页面内、且与它同源），否则什么都不做；在气泡里它负责记录控制台和网络活动，供 `cockpit browser` 读取。
 
 ### 扩展**不做**什么
 
-明确一下，即使有这么宽的权限，扩展**不**：
-
-- 读或发送任何浏览数据到任何服务器。
-- 修改你在 Cockpit 外访问的页面。
-- 给 Cockpit 标记 frame 之外的请求注入 cookie。
-- 记录键盘、鼠标移动、或被动收集任何东西。
-- "回家" —— 没有遥测、没有分析、没有自动更新服务器（只通过你的 `cockpit update` 更新）。
-
-完整扩展源码在 Cockpit npm 包的 `chrome-extension/` 下 —— 你在意安全可以自己读。
+- 不接受网页发来的命令，只接受本地程序的；本地程序也只转发持有当前 token 的 Cockpit 服务的命令。
+- 不操作你没允许（也不是 Cockpit 打开）的标签页。
+- 不改写请求或响应，不注入 cookie，也不读取你的 cookie。
+- 不往任何地方发送浏览数据：没有遥测，没有更新服务器，只随 Cockpit 一起更新。
 
 ### 信任模型
 
-扩展不发布到 Chrome 应用商店、**作为你自己加载的代码**发出来，正是为了让你能审计。你信任的是 Cockpit 这个工具，不是第三方发布者。每次安装就是你 `~/.cockpit/chrome-extension/` 文件夹里的内容。
+扩展以「你自己加载的代码」的形式提供，方便你审查：它就是 Cockpit 包里的 `chrome-extension/` 目录，信任模型写在 `chrome-extension/background.js` 的开头。
+
+有一点要说清楚：一旦你允许了某个标签页，AI 就是**带着你的登录状态**在里面操作。像把键盘交给别人一样谨慎地允许标签页，用完记得点 **Stop**。

@@ -39,13 +39,15 @@ Your Claude session token expired. Run `claude` again to refresh it.
 
 ## A bubble isn't behaving
 
-**Browser bubble shows a blank page**
+**A web page I opened shows up in a Chrome tab, not in the Console**
 
-Most likely the site refuses to be embedded in an iframe. Install the [Chrome extension](/en/docs/console/chrome-extension/#install) — it'll usually fix this.
+That's by design: web pages open as real Chrome tabs (in the **Cockpit** tab group), so they have your logins and no site refuses to load. Browser bubbles are only for local HTML apps and file previews. See [Browser](/en/docs/console/browser/).
 
-**Browser bubble is logged out**
+**The AI can't drive a tab**
 
-Same answer — install the Chrome extension. Without it, the bubble has no shared cookies with your normal Chrome.
+- *"OpenCockpit Bridge not connected"* — install or reload the [Chrome extension](/en/docs/console/chrome-extension/#install).
+- *"Waiting for the user to allow control"* — it's one of your own tabs; answer in the extension's popup (its icon shows **?**).
+- *Commands hang or mention site access* — set the extension's **Site access** to **On all sites**.
 
 **Database bubble fails to connect**
 
@@ -123,7 +125,7 @@ The first few seconds after opening a large project (10k+ files) are slow — Co
 
 **Browser bubbles eat memory**
 
-Each Browser bubble is an **iframe** inside Cockpit's page (not a separate Chrome tab, even with the extension installed). Ten bubbles is the overhead of ten iframes in one Cockpit page. Close bubbles you're not actively using; the [sleep mechanism](/en/docs/console/browser/#bubble-lifecycle) also auto-unloads iframes after 5 minutes off-screen and reloads them on wake.
+Each Browser bubble (a local HTML app or file preview) is an **iframe** inside Cockpit's page. Ten bubbles is the overhead of ten iframes in one Cockpit page. Close bubbles you're not actively using; the [sleep mechanism](/en/docs/console/browser/#bubble-lifecycle) also auto-unloads iframes after 5 minutes off-screen and reloads them on wake.
 
 ## I have a question that isn't here
 

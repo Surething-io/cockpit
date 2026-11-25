@@ -1,9 +1,15 @@
 /**
  * handleBrowser — Effect-based WebSocket handler.
  *
+ * The bubble UI's coordination socket. Commands themselves are executed by
+ * the OpenCockpit Bridge extension (see browserExtHandler.ts); this socket
+ * only lets the server ask the UI to wake the bubble / frame a screenshot.
+ *
  * Protocol:
  *  - On register, reply with { type: "registered", shortId }.
- *  - The client sends { type: "browser:cmd-result", reqId, ok, data?, error? }
+ *  - Server → UI: { type: "browser:ui", reqId?, op } (ensure-ready,
+ *    prepare-screenshot, screenshot-done).
+ *  - UI → server: { type: "browser:cmd-result", reqId, ok, data?, error? }
  *    which is forwarded to resolvePendingRequest.
  *
  * Implementation notes:
@@ -18,7 +24,7 @@ import type { WSConnection } from "@cockpit/effect-services"
 import { fromWebSocket } from "@cockpit/effect-runtime/server"
 import {
   registerBrowser,
-  unregisterBrowser,
+  unregisterBubbleSocket,
   resolvePendingRequest,
 } from "@cockpit/feature-console/server"
 
@@ -51,7 +57,7 @@ export const handleBrowser = (
     // the project that hosts it (used by /api/connection/list filtering).
     const shortId = yield* Effect.acquireRelease(
       Effect.sync(() => registerBrowser(fullId, ws, projectCwd, tabId)),
-      () => Effect.sync(() => unregisterBrowser(fullId))
+      () => Effect.sync(() => unregisterBubbleSocket(fullId, ws))
     )
 
     yield* Effect.logInfo("ws/browser registered").pipe(

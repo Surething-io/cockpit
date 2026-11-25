@@ -91,8 +91,11 @@ framework boot. See `MODULES.md` for the dependency rules.
   autocomplete route read it, so adding a command is `mkdir skills/<cmd>` +
   one file. Shipped in `package.json#files`, so anything added here lands in
   the npm package. Project-internal playbooks go in `/docs/skills/` instead.
-- `/chrome-extension/` - Chrome extension (Manifest V3, independent
-  sub-project)
+- `/chrome-extension/` - OpenCockpit Bridge (Manifest V3, plain JS). Takes
+  commands only over Native Messaging from `bin/bridge-host.mjs`, which relays
+  from servers authenticated by a per-boot token (`/ws/browser-ext`). No
+  page-facing channel and no header/cookie rewriting — the trust model is in
+  the header of `chrome-extension/background.js`; keep it that way
 - `/bin/` - CLI entry points (`cockpit.mjs`, `postinstall.mjs`)
 
 ## HTML Apps Runtime

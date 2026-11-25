@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { accessSync, cpSync, existsSync, mkdirSync } from 'fs';
+import { accessSync, cpSync, existsSync, mkdirSync, rmSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
@@ -61,6 +61,16 @@ if (process.platform !== 'win32') {
   } catch {}
 }
 
+// OpenCockpit Bridge native host: register it with every installed Chromium
+// browser now, so the extension can connect before the first server boot
+// (server.mjs refreshes it on every boot as well).
+try {
+  const { installNativeHost } = await import('./bridgeInstall.mjs');
+  await installNativeHost();
+} catch (err) {
+  console.warn('[postinstall] native host registration failed:', err?.message ?? err);
+}
+
 // chrome-extension → ~/.cockpit/chrome-extension/
 // Installed via npm: projectRoot sits under node_modules (no src/ dir) → copy into the user dir.
 // Via npm link: projectRoot is the source checkout (has src/) → no copy needed.
@@ -72,6 +82,9 @@ if (isNpmInstall) {
     const dest = join(cockpitDir, 'chrome-extension');
     accessSync(src);
     mkdirSync(cockpitDir, { recursive: true });
+    // Replace, don't merge: files a newer extension dropped must not linger
+    // in the folder Chrome loads (it is loaded unpacked from here).
+    rmSync(dest, { recursive: true, force: true });
     cpSync(src, dest, { recursive: true, force: true });
 
     if (process.platform !== 'win32') {

@@ -4,11 +4,11 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { publishTopic } from '@cockpit/effect-react';
 import { Topics } from '@cockpit/effect-services';
 
-interface BrowserCmd {
-  type: 'browser:cmd';
-  reqId: string;
-  action: string;
-  params: Record<string, unknown>;
+/** Server → UI coordination request (see src/lib/effect/browserHandler.ts). */
+interface UiRequest {
+  type: 'browser:ui';
+  reqId?: string;
+  op: 'ensure-ready' | 'prepare-screenshot' | 'screenshot-done';
 }
 
 // Client-side shortId calculation (shares the same algorithm as the server)
@@ -16,6 +16,12 @@ import { toShortId } from '@cockpit/shared-utils';
 
 /**
  * WebSocket bridge hook used by BrowserBubble
+ *
+ * Registers the bubble with the server so `cockpit browser <shortId>` can
+ * address it. Commands are executed by the OpenCockpit Bridge extension, which
+ * finds the bubble's iframe by its `name`; this socket only answers the
+ * server's coordination requests: wait until the iframe is awake, and frame /
+ * restore the UI around a screenshot.
  *
  * - shortId is always available (client-side CRC32 calculation)
  * - WS is established on demand: connect() returns a Promise that resolves on open
@@ -34,7 +40,8 @@ export function useBrowserBridge(
   const shortId = useMemo(() => toShortId(fullId), [fullId]);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
-  const pendingCmdsRef = useRef<BrowserCmd[]>([]);
+  /** ensure-ready requests waiting for the iframe to finish loading */
+  const pendingReadyRef = useRef<string[]>([]);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldConnectRef = useRef(false);
 
@@ -45,108 +52,72 @@ export function useBrowserBridge(
   // Pending resolvers for connect()
   const connectResolversRef = useRef<Array<() => void>>([]);
 
-  // Handle messages returned from the iframe content script
-  useEffect(() => {
-    const handleMessage = (e: MessageEvent) => {
-      // cmd-result: command execution result → forward back to WS
-      if (e.data?.type === 'cockpit:cmd-result') {
-        const { reqId, ok, data, error } = e.data;
-        const ws = wsRef.current;
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: 'browser:cmd-result',
-            reqId, ok, data, error,
-          }));
-        }
-        return;
-      }
-
-      // prepare-screenshot: ensure the iframe is visible before taking a screenshot, return bounds
-      if (e.data?.type === 'cockpit:prepare-screenshot') {
-        const iframe = iframeRef.current;
-        if (!iframe?.contentWindow) return;
-
-        // 1) Notify TabManager to switch to console view + show screenshot hint
-        //    Notify Workspace to save the current project and switch to this project
-        const cwd = new URLSearchParams(window.location.search).get('cwd') || '';
-        window.dispatchEvent(new CustomEvent('cockpit-screenshot-state', { detail: { active: true } }));
-        publishTopic(Topics.ScreenshotPrepare, { cwd });
-
-        // 2) Wait for rendering to complete (3 frames + 150ms)
-        requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => {
-          setTimeout(() => {
-            const rect = iframe.getBoundingClientRect();
-            const dpr = window.devicePixelRatio || 1;
-
-            // rect is relative to the project iframe viewport,
-            // but captureVisibleTab captures the entire browser tab,
-            // so accumulate offsets from all ancestor iframes to get absolute coordinates
-            let absX = rect.x;
-            let absY = rect.y;
-            try {
-              let cur: Window = window;
-              while (cur !== cur.top) {
-                const frameEl = cur.frameElement as HTMLElement | null;
-                if (frameEl) {
-                  const frameRect = frameEl.getBoundingClientRect();
-                  absX += frameRect.x;
-                  absY += frameRect.y;
-                }
-                cur = cur.parent;
-              }
-            } catch {
-              // Stop traversal on cross-origin; use the already-accumulated offset
-            }
-
-            iframe.contentWindow?.postMessage({
-              type: 'cockpit:screenshot-bounds',
-              reqId: e.data.reqId,
-              bounds: {
-                x: Math.round(absX * dpr),
-                y: Math.round(absY * dpr),
-                width: Math.round(rect.width * dpr),
-                height: Math.round(rect.height * dpr),
-                dpr,
-              },
-            }, '*');
-          }, 150);
-        })));
-        return;
-      }
-
-      // screenshot-done: screenshot complete, restore UI
-      if (e.data?.type === 'cockpit:screenshot-done') {
-        window.dispatchEvent(new CustomEvent('cockpit-screenshot-state', { detail: { active: false } }));
-        publishTopic(Topics.ScreenshotDone, {});
-        return;
-      }
-
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
+  const reply = useCallback((reqId: string | undefined, ok: boolean, data?: unknown, error?: string) => {
+    const ws = wsRef.current;
+    if (!reqId || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'browser:cmd-result', reqId, ok, data, error }));
   }, []);
 
-  // Send a command to the iframe via postMessage
-  const sendToIframe = useCallback((cmd: BrowserCmd) => {
+  // Frame the bubble for a screenshot: bring the console + this project to the
+  // front, then report the iframe's rect in device pixels relative to the top
+  // window (captureVisibleTab captures the whole browser tab).
+  const prepareScreenshot = useCallback((reqId: string | undefined) => {
     const iframe = iframeRef.current;
-    if (!iframe?.contentWindow) {
-      const ws = wsRef.current;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'browser:cmd-result',
-          reqId: cmd.reqId, ok: false,
-          error: 'iframe not available (page may be sleeping)',
-        }));
-      }
+    if (!iframe) { reply(reqId, false, undefined, 'bubble iframe not mounted (sleeping?)'); return; }
+
+    const cwd = new URLSearchParams(window.location.search).get('cwd') || '';
+    window.dispatchEvent(new CustomEvent('cockpit-screenshot-state', { detail: { active: true } }));
+    publishTopic(Topics.ScreenshotPrepare, { cwd });
+
+    // Wait for rendering to complete (3 frames + 150ms)
+    requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => {
+      setTimeout(() => {
+        const rect = iframe.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        // rect is relative to this (project) frame's viewport; accumulate
+        // ancestor iframe offsets to get top-window coordinates.
+        let absX = rect.x;
+        let absY = rect.y;
+        try {
+          let cur: Window = window;
+          while (cur !== cur.top) {
+            const frameEl = cur.frameElement as HTMLElement | null;
+            if (frameEl) {
+              const frameRect = frameEl.getBoundingClientRect();
+              absX += frameRect.x;
+              absY += frameRect.y;
+            }
+            cur = cur.parent;
+          }
+        } catch {
+          // Stop traversal on cross-origin; use the already-accumulated offset
+        }
+        reply(reqId, true, {
+          x: Math.round(absX * dpr),
+          y: Math.round(absY * dpr),
+          width: Math.round(rect.width * dpr),
+          height: Math.round(rect.height * dpr),
+          dpr,
+        });
+      }, 150);
+    })));
+  }, [iframeRef, reply]);
+
+  const handleUi = useCallback((msg: UiRequest) => {
+    if (msg.op === 'ensure-ready') {
+      if (iframeReadyRef.current) reply(msg.reqId, true, { ready: true });
+      else if (msg.reqId) pendingReadyRef.current.push(msg.reqId);
       return;
     }
-    iframe.contentWindow.postMessage({
-      type: 'cockpit:cmd',
-      reqId: cmd.reqId,
-      action: cmd.action,
-      params: cmd.params,
-    }, '*');
-  }, [iframeRef]);
+    if (msg.op === 'prepare-screenshot') {
+      prepareScreenshot(msg.reqId);
+      return;
+    }
+    if (msg.op === 'screenshot-done') {
+      window.dispatchEvent(new CustomEvent('cockpit-screenshot-state', { detail: { active: false } }));
+      publishTopic(Topics.ScreenshotDone, {});
+    }
+  }, [prepareScreenshot, reply]);
 
   // WS connection: depends only on connected and fullId, not rebuilt when iframeReady changes
   useEffect(() => {
@@ -170,25 +141,13 @@ export function useBrowserBridge(
         for (const resolve of connectResolversRef.current) resolve();
         connectResolversRef.current = [];
 
-        // Flush pending commands
-        if (pendingCmdsRef.current.length > 0) {
-          for (const cmd of pendingCmdsRef.current) sendToIframe(cmd);
-          pendingCmdsRef.current = [];
-        }
       };
 
       ws.onmessage = (event) => {
         let msg: Record<string, unknown>;
         try { msg = JSON.parse(event.data as string); } catch { return; }
 
-        if (msg.type === 'browser:cmd') {
-          const cmd = msg as unknown as BrowserCmd;
-          if (iframeRef.current?.contentWindow && iframeReadyRef.current) {
-            sendToIframe(cmd);
-          } else {
-            pendingCmdsRef.current.push(cmd);
-          }
-        }
+        if (msg.type === 'browser:ui') handleUi(msg as unknown as UiRequest);
       };
 
       ws.onclose = () => {
@@ -213,15 +172,15 @@ export function useBrowserBridge(
       }
       connectResolversRef.current = [];
     };
-  }, [connected, fullId, iframeRef, sendToIframe, projectCwd, tabId]);
+  }, [connected, fullId, handleUi, projectCwd, tabId]);
 
-  // Flush pending commands after iframe is ready
+  // Answer ensure-ready requests once the iframe has loaded
   useEffect(() => {
-    if (iframeReady && pendingCmdsRef.current.length > 0) {
-      for (const cmd of pendingCmdsRef.current) sendToIframe(cmd);
-      pendingCmdsRef.current = [];
+    if (iframeReady && pendingReadyRef.current.length > 0) {
+      for (const reqId of pendingReadyRef.current) reply(reqId, true, { ready: true });
+      pendingReadyRef.current = [];
     }
-  }, [iframeReady, sendToIframe]);
+  }, [iframeReady, reply]);
 
   /** Establish connection. Resolves immediately if already connected, otherwise waits for WS open */
   const connect = useCallback((): Promise<void> => {

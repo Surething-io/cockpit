@@ -1,39 +1,45 @@
 {
   "manifest_version": 3,
   "name": "OpenCockpit Bridge",
-  "version": "1.0.1",
-  "description": "OpenCockpit 浏览器气泡的链接拦截与导航通信桥",
-  "permissions": ["storage", "declarativeNetRequest", "cookies", "webRequest", "webNavigation", "tabs", "scripting"],
-  "host_permissions": ["<all_urls>"],
+  "version": "2.0.0",
+  "description": "Lets OpenCockpit drive the browser tabs you allow.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAugq60H1T0iDfkaa/FeYU/XNcHiU/j68erKi1Uvuhi6tgG2q8CjXCX9YgWEn4m5DoKQvtBvgm8aaPK8EwpsWxOinLnl33Xr4VfsHNCL+nIAaUrgRy7OR9zVWZL45Jh3LcRWR1U/cb5ZKxmgYn8xRyXZ26S0shI4MY4MRfGPkS0DiVULY5CC96avw3L2/822O7/MLwLigHIe+/1YEfJHlLaBkqo16p+tABqCFwB5iTlTydD+Ye7JKcq/s8h3ArqMqgnk2HnfxP8Z7mjjLPR5ztNg++qLYHf/73EEnHuWbj0QfieLF26dxtypLTICC01LtJIlsBksq8NHT/R12rpC5rSQIDAQAB",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "debugger",
+    "nativeMessaging",
+    "scripting",
+    "tabs",
+    "tabGroups",
+    "webNavigation",
+    "storage",
+    "alarms",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "bubble-hook.js"
+      ],
       "run_at": "document_start",
-      "all_frames": true
+      "all_frames": true,
+      "world": "MAIN"
     }
   ],
-  "declarative_net_request": {
-    "rule_resources": [
-      {
-        "id": "remove_frame_headers",
-        "enabled": true,
-        "path": "rules.json"
-      }
-    ]
-  },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
-  "externally_connectable": {
-    "matches": ["http://localhost:*/*", "http://127.0.0.1:*/*"]
+  "action": {
+    "default_title": "OpenCockpit Bridge",
+    "default_popup": "popup.html"
   },
-  "web_accessible_resources": [
-    {
-      "resources": ["disguise.js", "automation.js", "network-capture.js", "messages.js"],
-      "matches": ["<all_urls>"]
-    }
-  ],
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

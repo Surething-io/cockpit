@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { executeCommand as execCmd, interruptCommand as interruptCmd, attachCommand, queryRunningCommands, sendStdin, resizePty, dispose as disposeTerminalWs } from './TerminalWsManager';
 import { matchInput, getPlugin, generatePluginItemId, type PluginItemBase } from './pluginRegistry';
+import { isWebUrl, openWebPage } from './openWebPage';
 import { Effect } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { useWebSocket } from '@cockpit/shared-ui';
@@ -644,6 +645,12 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
 
     if (aliases[firstWord]) {
       actualCommand = aliases[firstWord] + (parts.length > 1 ? ' ' + parts.slice(1).join(' ') : '');
+    }
+
+    // A URL typed into the console opens as a Chrome tab, not a bubble.
+    if (isWebUrl(actualCommand) && !/\s/.test(actualCommand.trim())) {
+      void openWebPage(actualCommand, cwd);
+      return;
     }
 
     const matchedPlugin = matchInput(actualCommand);

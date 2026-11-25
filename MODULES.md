@@ -17,7 +17,7 @@ cockpit/
 │   │                           primitives, utils, i18n dictionary)
 │   └── feature/<name>/         Self-contained feature (client + server)
 ├── bin/                        CLI entry points
-└── chrome-extension/           Chrome extension (independent sub-project)
+└── chrome-extension/           OpenCockpit Bridge extension (independent sub-project)
 ```
 
 `src/` is intentionally minimal — only Next.js framework code and server

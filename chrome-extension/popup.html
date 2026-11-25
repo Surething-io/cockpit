@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; width: 320px; color: #111; }
+  section { padding: 12px 14px; border-bottom: 1px solid #e5e5e5; }
+  section:last-child { border-bottom: 0; }
+  h1 { font-size: 12px; font-weight: 600; margin: 0 0 6px; color: #666; text-transform: uppercase; letter-spacing: .03em; }
+  .host { font-size: 15px; font-weight: 600; word-break: break-all; }
+  .muted { color: #666; }
+  .small { font-size: 12px; }
+  .cmd { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+  code { flex: 1; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: #f3f3f3; padding: 5px 7px; border-radius: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  button { padding: 6px 10px; border-radius: 6px; border: 1px solid #ccc; background: #fff; font: inherit; cursor: pointer; }
+  button.block { display: block; width: 100%; margin-top: 6px; }
+  button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+  button.link { border: 0; background: none; color: #999; padding: 0 4px; font-size: 14px; }
+  button:hover { filter: brightness(0.96); }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
+  .state { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 9px; background: #eee; }
+  button.small { padding: 3px 12px; font-size: 12px; flex: none; }
+  .state.on { background: #dbeafe; color: #1d4ed8; }
+  .tabs { display: flex; flex-direction: column; gap: 2px; margin: 0 -6px; }
+  .tabrow { display: flex; align-items: center; gap: 8px; padding: 6px; border-radius: 6px; }
+  .tabrow.clickable { cursor: pointer; }
+  .tabrow.clickable:hover { background: #f3f3f3; }
+  .off { color: #b45309; }
+  .tabrow.current { background: #eff6ff; }
+  .fav { width: 16px; height: 16px; flex: none; border-radius: 3px; }
+  .fav.blank { background: #ddd; }
+  .meta { flex: 1; min-width: 0; }
+  .meta .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+  .meta .sub { font-size: 11px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .here { color: #2563eb; }
+  section.warn { background: #fef3c7; color: #92400e; }
+  code.sid { flex: none; font-size: 11px; padding: 1px 5px; background: #f3f3f3; border-radius: 4px; }
+  .tabrow { flex-wrap: wrap; row-gap: 3px; }
+  .driving { flex-basis: 100%; padding-left: 24px; font-size: 11px; line-height: 1.35; color: #c2410c; display: flex; align-items: baseline; gap: 5px; }
+  .driving .dot { width: 6px; height: 6px; border-radius: 50%; background: #ea580c; flex: none; transform: translateY(-1px); }
+  section.drivingsec { background: #fff7ed; }
+  button.warnbtn { border-color: #fdba74; color: #c2410c; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #1f1f1f; color: #eee; }
+    section { border-color: #333; }
+    .muted, h1 { color: #aaa; }
+    code { background: #2c2c2c; }
+    button { background: #2a2a2a; border-color: #444; color: #eee; }
+    .state { background: #333; }
+    .state.on { background: #1e3a8a; color: #bfdbfe; }
+    .tabrow.clickable:hover { background: #2a2a2a; }
+    .off { color: #fbbf24; }
+    .tabrow.current { background: #1e293b; }
+    .fav.blank { background: #444; }
+    code.sid { background: #2c2c2c; }
+    section.warn { background: #422006; color: #fcd34d; }
+    .driving { color: #fdba74; }
+    section.drivingsec { background: #2a1a0e; }
+    button.warnbtn { border-color: #9a3412; color: #fdba74; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="popup.js"></script>
+</body>
+</html>

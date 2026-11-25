@@ -118,7 +118,7 @@ An honest snapshot as of July 2026 — each tool wins somewhere. Spotted an erro
 ### Console — Terminal & smart Bubbles
 
 - Full **xterm.js** terminal with shell integration
-- 🌐 **Browser Bubble** — control Chrome via accessibility tree (click, type, navigate, screenshot, network)
+- 🌐 **Browser control** — drive real, logged-in Chrome tabs via accessibility tree (click, type, navigate, screenshot, network); local HTML apps and file previews open as Console bubbles
 - 🐘 **PostgreSQL Bubble** — browse schema, run queries, export
 - 🐬 **MySQL Bubble** — browse databases & tables, run queries
 - 🔴 **Redis Bubble** — browse keys, inspect values, execute commands
@@ -188,7 +188,7 @@ No install, no AI chat (read-only sandbox, 5 min):
 - **Node.js ≥ 22.19** — [nodejs.org](https://nodejs.org/)
 - **Claude Code** — [docs.anthropic.com/en/docs/claude-code](https://docs.anthropic.com/en/docs/claude-code) (default engine)
 - **Git** — for git features (blame, diff, worktree, etc.)
-- **Chrome** *(optional)* — for Browser Bubble; install the bundled extension from `~/.cockpit/chrome-extension`
+- **Chrome / Edge / Brave / other Chromium** *(optional)* — for `cockpit browser` to drive Chrome tabs and Console bubbles; load the bundled OpenCockpit Bridge extension from `~/.cockpit/chrome-extension` (Settings → Browser extension shows the path). Cockpit registers the extension's native messaging host on every boot.
 
 ### Optional, per non-Claude engine
 

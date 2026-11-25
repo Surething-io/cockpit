@@ -8,6 +8,8 @@ import { fileURLToPath } from 'url';
 import next from 'next';
 import { rotateIfLarge } from './bin/rotateLog.mjs';
 import { acquireInstanceLock } from './bin/instanceLock.mjs';
+import { installNativeHost, registerInstance } from './bin/bridgeInstall.mjs';
+import { randomBytes } from 'crypto';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 process.env.COCKPIT_ROOT = __dirname;
@@ -17,6 +19,11 @@ const port = parseInt(process.env.PORT || (dev ? '3456' : '3457'), 10);
 
 process.title = dev ? 'cockpit-dev' : 'cockpit';
 process.env.COCKPIT_PORT = String(port);
+// Per-boot secret the OpenCockpit Bridge native host must present on
+// /ws/browser-ext (read by src/lib/wsServer.ts). Published to the host via
+// ~/.cockpit/bridge/instances/<port>.json once we are listening.
+process.env.COCKPIT_BRIDGE_TOKEN = randomBytes(24).toString('hex');
+let unregisterBridgeInstance = null;
 
 // Data dir (COCKPIT_HOME-aware) — single source for the instance lock + server.json.
 const cockpitHome = process.env.COCKPIT_HOME
@@ -197,6 +204,7 @@ function removeServerJson() {
 process.on('exit', () => {
   try { flushRunningSync?.(); } catch {}
   removeServerJson();
+  try { unregisterBridgeInstance?.(); } catch {}
   releaseInstanceLock();
   killChildren();
 });
@@ -542,6 +550,21 @@ app.prepare().then(async () => {
         managed: process.env.COCKPIT_MANAGED || 'foreground',
       }, null, 2));
     } catch {}
+
+    // OpenCockpit Bridge: advertise this instance to the native host and
+    // (re)register the host with every installed Chromium browser. Both are
+    // idempotent; neither may block or fail the boot.
+    try {
+      unregisterBridgeInstance = registerInstance({
+        port,
+        token: process.env.COCKPIT_BRIDGE_TOKEN,
+        home: cockpitHome,
+        version: buildInfo.version,
+      });
+    } catch (err) {
+      console.warn('[bridge] could not register instance:', err?.message ?? err);
+    }
+    installNativeHost().catch((err) => console.warn('[bridge] native host install failed:', err?.message ?? err));
 
     // Auto-open the browser in prod mode (disable with --no-open)
     if (!dev && !process.env.COCKPIT_NO_OPEN) {

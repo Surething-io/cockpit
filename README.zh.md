@@ -187,7 +187,7 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 - **Node.js ≥ 20** —— [nodejs.org](https://nodejs.org/)
 - **Claude Code** —— [docs.anthropic.com/en/docs/claude-code](https://docs.anthropic.com/en/docs/claude-code)（默认引擎）
 - **Git** —— 用于 Git 相关功能（blame、diff、worktree 等）
-- **Chrome** *(可选)* —— 浏览器气泡需安装 `~/.cockpit/chrome-extension` 中的扩展
+- **Chrome / Edge / Brave 等 Chromium 浏览器** *(可选)* —— `cockpit browser` 操作 Chrome 标签页和 Console 气泡需要加载 `~/.cockpit/chrome-extension` 里的 OpenCockpit Bridge 扩展（设置 → 浏览器插件里有路径）。Cockpit 每次启动都会自动注册扩展需要的 native messaging host。
 
 ### 可选，按引擎
 

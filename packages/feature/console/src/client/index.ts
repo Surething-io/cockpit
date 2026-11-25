@@ -18,7 +18,6 @@ export { RunningTerminalsPanel } from './RunningTerminalsPanel';
 export { useConsoleState, matchInput as matchConsoleInput, type ConsoleItem } from './useConsoleState';
 export { useBrowserBridge } from './useBrowserBridge';
 export { useRunningTerminals } from './useRunningTerminals';
-export { useCockpitBridge, getCockpitBridge } from './useCockpitBridge';
 
 // Bubble plugin contract + registry
 // Importing pluginRegistry registers all 6 built-in plugins as a side-effect.

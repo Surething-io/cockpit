@@ -12,8 +12,8 @@
 import { IncomingMessage } from "http"
 import { parse } from "url"
 import { readFile } from "fs/promises"
-import { randomUUID } from "crypto"
 import { WebSocket } from "ws"
+import { broadcastToGlobalState } from "./globalStateBroadcast"
 import { getTerminalHistoryPath, tightenPrivateData, tightenSecretFiles } from "@cockpit/shared-utils"
 import { resolve as resolvePath } from "path"
 import {
@@ -38,10 +38,15 @@ import {
   registerBrowser,
   unregisterBrowser,
   getBrowserByShortId,
-  createPendingRequest,
-  sendCommandToBrowser,
+  dispatchBrowserCommand,
+  openBrowserTab,
+  closeBrowserTab,
+  extensionRequest,
+  listExtensions,
+  NO_EXTENSION_HINT,
   listBrowsers,
   getBrowserHealth,
+  cockpitCliName,
   readBubbleTitles,
   openBrowserBubble,
   closeBrowserBubble,
@@ -557,8 +562,35 @@ export async function handleBrowserApi(
     res.end(JSON.stringify(data))
   }
 
+  // `list`: what Cockpit is working with — bubbles, plus tabs it opened or
+  // whose site is allowed. `tabs`: every tab in the connected browsers
+  // (url + title only; acting on one still needs its site to be allowed).
   if (action === "list") {
-    sendJson(200, { ok: true, data: listBrowsers() })
+    sendJson(200, { ok: true, data: listBrowsers().filter(b => b.kind === "bubble" || b.allowed || b.origin === "opened") })
+    return true
+  }
+  if (action === "tabs") {
+    sendJson(200, { ok: true, data: listBrowsers().filter(b => b.kind === "tab") })
+    return true
+  }
+
+  // Which browsers have the OpenCockpit Bridge extension connected (Settings
+  // panel + `cockpit browser extension`).
+  if (action === "extensions") {
+    sendJson(200, {
+      ok: true,
+      data: listExtensions().map(e => ({
+        id: e.id, browser: e.browser ?? null, version: e.version ?? null, connectedAt: e.connectedAt,
+      })),
+    })
+    return true
+  }
+
+  // Reload the extension in every connected browser (Settings "reload" button).
+  if (action === "extension_reload") {
+    const exts = listExtensions()
+    await Promise.all(exts.map(e => extensionRequest(e.id, { type: "reload" }, 3000).catch(() => null)))
+    sendJson(200, { ok: true, data: { reloaded: exts.length } })
     return true
   }
 
@@ -576,6 +608,21 @@ export async function handleBrowserApi(
     }
     const cwd = typeof p.cwd === "string" && p.cwd ? p.cwd : process.cwd()
     const waitMs = typeof p.waitMs === "number" ? p.waitMs : 8000
+    // Web pages (http/https, localhost included) always open as real Chrome
+    // tabs; only Cockpit-served content (local HTML apps, file previews)
+    // becomes a Console bubble. `--tab` is still accepted and changes nothing.
+    if (/^https?:\/\//i.test(url) || (cmdParams as { tab?: unknown }).tab) {
+      try {
+        const projectCwd = resolveProjectCwd(cwd)
+        const opened = await openBrowserTab({
+          url, projectCwd, show: !!(cmdParams as { show?: unknown }).show, timeout: Math.max(5000, waitMs),
+        })
+        sendJson(200, { ok: true, data: { ...opened, url, projectCwd, kind: "tab", registered: true, cli: cockpitCliName() } })
+      } catch (err) {
+        sendJson(503, { ok: false, error: (err as Error).message })
+      }
+      return true
+    }
     try {
       const opened = await openBrowserBubble({ cwd, url })
       const deadline = Date.now() + Math.max(0, waitMs)
@@ -597,7 +644,7 @@ export async function handleBrowserApi(
       return true
     }
     const browser = getBrowserByShortId(id)
-    if (browser) {
+    if (browser?.kind === "bubble") {
       if (browser.ws && browser.ws.readyState === WebSocket.OPEN) {
         browser.ws.close()
       }
@@ -631,6 +678,15 @@ export async function handleBrowserApi(
   if (action === "close") {
     const p = cmdParams as { cwd?: unknown }
     const known = getBrowserByShortId(id)
+    if (known?.kind === "tab") {
+      try {
+        const r = await closeBrowserTab(id)
+        sendJson(200, { ok: true, data: { shortId: id, fullId: known.fullId, kind: "tab", removed: r.closed } })
+      } catch (err) {
+        sendJson(503, { ok: false, error: (err as Error).message })
+      }
+      return true
+    }
     let projectCwd = known?.projectCwd
     let tabId = known?.tabId
     let fullId: string | null = known?.fullId ?? null
@@ -658,7 +714,12 @@ export async function handleBrowserApi(
     return true
   }
 
-  const browser = getBrowserByShortId(id)
+  // A bubble that is not registered (never connected, or asleep) is still
+  // addressable by its id: ask the UIs to wake + register it, then go on.
+  let browser = getBrowserByShortId(id)
+  if (!browser || (browser.kind === "bubble" && (!browser.ws || browser.ws.readyState !== WebSocket.OPEN))) {
+    browser = (await wakeBubble(id, Math.min(timeout, 8000))) ?? browser
+  }
   if (!browser) {
     const all = listBrowsers().map(b => b.shortId)
     const suggestions = fuzzyTopK(id, all, 3)
@@ -669,19 +730,22 @@ export async function handleBrowserApi(
         : "\n  No browsers currently connected. Open a browser bubble in the cockpit console."
     sendJson(404, {
       ok: false,
-      error: `Browser "${id}" not found.${hint}\n  Run: cockpit browser list`,
+      error:
+        `Browser "${id}" not found.${hint}\n` +
+        `  If it is a bubble, its project must be open in a Cockpit window (it is woken automatically).\n` +
+        `  Run: cockpit browser list   (tabs: cockpit browser tabs)`,
     })
     return true
   }
-  if (!browser.ws || browser.ws.readyState !== WebSocket.OPEN) {
+  if (browser.kind === "bubble" && (!browser.ws || browser.ws.readyState !== WebSocket.OPEN)) {
     sendJson(503, {
       ok: false,
       error:
-        `Browser "${id}" is disconnected (WS closed).\n` +
+        `Browser "${id}" is disconnected (the bubble's UI socket is closed).\n` +
         `  Recover:\n` +
-        `    1. Refresh the browser tab to re-register the extension.\n` +
+        `    1. Open (or reload) the project in Cockpit so the bubble re-registers.\n` +
         `    2. Run \`cockpit browser list\` to confirm the shortId.\n` +
-        `    3. If the bubble is gone, re-open it from the cockpit console panel.`,
+        `    3. If the bubble is gone, re-open it: cockpit browser open <url>`,
     })
     return true
   }
@@ -689,39 +753,51 @@ export async function handleBrowserApi(
   // For --deep, rewrite the action so the extension picks up `health_deep`.
   const wsAction = action === "health" ? "health_deep" : action
 
-  const reqId = `r-${randomUUID().slice(0, 8)}`
-  const sent = sendCommandToBrowser(id, reqId, wsAction, cmdParams)
-  if (!sent) {
-    sendJson(503, { ok: false, error: "Failed to send command (WS write failed)" })
-    return true
-  }
-
   try {
-    const data = await createPendingRequest(reqId, timeout)
+    const data = await dispatchBrowserCommand(id, wsAction, cmdParams, timeout)
     sendJson(200, { ok: true, data })
   } catch (err) {
     // Timeout / browser error. Wrap with diagnostic guidance.
     const msg = (err as Error).message
-    if (/timeout/i.test(msg)) {
+    const code = (err as { code?: string }).code
+    if (code === "NO_EXTENSION") {
+      sendJson(503, { ok: false, error: msg === NO_EXTENSION_HINT ? msg : `${msg}\n${NO_EXTENSION_HINT}` })
+    } else if (/timeout/i.test(msg)) {
       const h = getBrowserHealth(id)
       sendJson(504, {
         ok: false,
         error:
           `${msg} (action "${action}").\n` +
-          `  Bridge state: ws=${h.ws} pending=${h.pendingCommands}` +
+          `  Bridge state: target=${h.ws} extension=${h.extension} pending=${h.pendingCommands}` +
           (h.lastSuccessMs !== null ? ` lastSuccess=${Math.round(h.lastSuccessMs / 1000)}s ago (${h.lastSuccessAction})` : "") +
           `\n` +
           `  Diagnose:\n` +
           `    cockpit browser ${id} health                # cheap server-side probe\n` +
-          `    cockpit browser ${id} wait --extension-ready (Phase 2)\n` +
+          `    cockpit browser ${id} wait --extension-ready\n` +
           `  If the bridge state shows fresh activity, the page itself is blocked.\n` +
           `  Consider a service-level test if driven by an async LLM/agent flow.`,
       })
     } else {
-      sendJson(504, { ok: false, error: msg })
+      sendJson(code === "TARGET_NOT_FOUND" ? 404 : 502, { ok: false, error: msg })
     }
   }
   return true
+}
+
+/**
+ * Broadcast `browser-wake` and wait for the bubble owning `shortId` to
+ * register an open socket. Returns the entry, or undefined if no open
+ * Cockpit page owns that id within `waitMs`.
+ */
+async function wakeBubble(shortId: string, waitMs: number) {
+  broadcastToGlobalState({ type: "browser-wake", shortId })
+  const deadline = Date.now() + waitMs
+  while (Date.now() < deadline) {
+    const entry = getBrowserByShortId(shortId)
+    if (entry && (entry.kind !== "bubble" || (entry.ws && entry.ws.readyState === WebSocket.OPEN))) return entry
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  return undefined
 }
 
 // Fuzzy ranking — surfaces "evluate" → "evaluate" while filtering
@@ -766,7 +842,7 @@ interface ConnectionListItem {
   title?: string
   projectCwd?: string
   tabId?: string
-  /** Terminal: the shell command. Browser: empty — use /api/browser/info if needed. */
+  /** Terminal: the shell command. Browser tab: its URL. Bubble: empty — use /api/browser/url. */
   command?: string
   /** Terminal: pid running? Browser: WS connected? */
   alive: boolean
@@ -845,14 +921,19 @@ export async function handleConnectionApi(
   }
 
   for (const b of browsers) {
-    if (!sameCwd(b.projectCwd)) continue
+    // Tabs: only those Cockpit opened or may act on. A tab with no project
+    // (an allowed site the user browses) is listed for every project.
+    if (b.kind === "tab" && !b.allowed && b.origin !== "opened") continue
+    const global = b.kind === "tab" && !b.projectCwd
+    if (!global && !sameCwd(b.projectCwd)) continue
     if (aliveOnly && !b.connected) continue
     out.push({
       type: "browser",
       shortId: b.shortId,
-      title: titleOf(b.projectCwd, b.tabId, b.fullId),
+      title: titleOf(b.projectCwd, b.tabId, b.fullId) ?? (b.kind === "tab" ? b.title : undefined),
       projectCwd: b.projectCwd,
       tabId: b.tabId,
+      command: b.kind === "tab" ? b.url : undefined,
       alive: b.connected,
     })
   }

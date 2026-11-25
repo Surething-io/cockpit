@@ -1,16 +1,24 @@
 /**
- * Cockpit Browser Automation Layer (ES Module)
+ * OpenCockpit Bridge — page automation core (classic script, ISOLATED world).
  *
- * Injected into the Cockpit iframe; receives automation commands from
- * BrowserBubble, builds the a11y tree, performs DOM operations, and
- * returns results.
+ * Injected on demand by the service worker via chrome.scripting into exactly
+ * one frame: a Cockpit browser bubble, or a Chrome tab the user shared / that
+ * Cockpit opened. It builds the a11y tree, resolves refs, and performs DOM
+ * operations. It has NO message listener: the only entry point is
+ * `globalThis.__cockpitCore.run(action, params)`, which the service worker
+ * calls through chrome.scripting.executeScript. A page cannot reach it.
  *
- * Dynamically import()-ed by activateCockpitBridge() in content.js.
- * Runs in the content script isolated world (retains chrome.runtime access).
+ * State (refs, snapshot epoch, recording) lives in the extension's isolated
+ * world for the lifetime of the document, so it survives between commands.
+ *
+ * Console / network data:
+ *   - bubbles: pulled from bubble-hook.js (MAIN world) over CustomEvents;
+ *   - tabs: captured by the service worker over CDP and passed in as
+ *     `params.__capture` (null when capture is not running).
  */
-
-let _realParent = null;
-let _chrome = null;
+(function () {
+'use strict';
+if (globalThis.__cockpitCore) return;
 
 const LOG_PREFIX = '[Cockpit Automation]';
 
@@ -234,6 +242,10 @@ function buildA11yTree(root = document.body, opts = {}) {
         if (el.value) extras.push(`value="${el.value.slice(0, 30)}"`);
       }
       if (el instanceof HTMLSelectElement && el.value) extras.push(`value="${el.value}"`);
+      if (el instanceof HTMLInputElement && el.type === 'file') extras.push(el.multiple ? 'file, multiple' : 'file');
+      if (el instanceof HTMLIFrameElement && el.src) {
+        try { extras.push(`src=${new URL(el.src, location.href).host || el.src.slice(0, 40)}`); } catch { /* odd src */ }
+      }
       if (el.getAttribute('aria-expanded')) extras.push(`expanded=${el.getAttribute('aria-expanded')}`);
       if (el.getAttribute('aria-selected') === 'true') extras.push('selected');
       if (el.getAttribute('aria-disabled') === 'true' || el.hasAttribute('disabled')) extras.push('disabled');
@@ -256,6 +268,12 @@ function buildA11yTree(root = document.body, opts = {}) {
 
     for (const child of el.children) {
       walk(child, isContainer ? depth : depth + 1);
+    }
+    // Open shadow roots are part of what the user sees (web components).
+    if (el.shadowRoot) {
+      for (const child of el.shadowRoot.children) {
+        walk(child, isContainer ? depth : depth + 1);
+      }
     }
   }
 
@@ -289,42 +307,49 @@ function safeRegex(src) {
 // ============================================================================
 
 const consoleBuffer = [];
-const MAX_CONSOLE_BUFFER = 500;
-const originalConsole = {};
+const networkBuffer = [];
 
-function initConsoleCapture() {
-  ['log', 'info', 'warn', 'error', 'debug'].forEach(level => {
-    originalConsole[level] = console[level];
-    console[level] = function (...args) {
-      consoleBuffer.push({
-        level,
-        text: args.map(a => {
-          try { return typeof a === 'string' ? a : JSON.stringify(a); }
-          catch { return String(a); }
-        }).join(' '),
-        timestamp: Date.now(),
-      });
-      if (consoleBuffer.length > MAX_CONSOLE_BUFFER) {
-        consoleBuffer.splice(0, consoleBuffer.length - MAX_CONSOLE_BUFFER);
-      }
-      originalConsole[level].apply(console, args);
-    };
-  });
+// 'hook' (bubble), 'external' (tab, CDP capture running) or 'none' (tab, no capture)
+let captureSource = 'hook';
+
+function replaceArray(target, items) {
+  target.length = 0;
+  for (const item of items || []) target.push(item);
+}
+
+/** Pull the latest console/network snapshot before reading the buffers. */
+function refreshBuffers() {
+  if (captureSource !== 'hook') return;
+  let snapshot = null;
+  const onSync = (e) => {
+    try { snapshot = JSON.parse(e.detail); } catch { /* ignore */ }
+  };
+  window.addEventListener('cockpit:hook-sync', onSync);
+  try {
+    window.dispatchEvent(new CustomEvent('cockpit:hook-pull'));
+  } finally {
+    window.removeEventListener('cockpit:hook-sync', onSync);
+  }
+  if (snapshot) {
+    replaceArray(consoleBuffer, snapshot.console);
+    replaceArray(networkBuffer, snapshot.network);
+  }
+}
+
+function requireCapture(what) {
+  if (captureSource === 'none') {
+    throw new Error(
+      `${what} needs console/network capture, which is not running on this tab.\n` +
+      `  Start it first:  cockpit browser <id> network_record start   (or run \`console\` once)\n` +
+      `  Capture only sees activity after it starts — reload the page if you need the initial load.`
+    );
+  }
 }
 
 // ============================================================================
-// Network capture (receives entries sent via CustomEvent from the Main
-// World's network-capture.js)
-//
-// fetch / XHR interception runs in the Main World (network-capture.js);
-// this layer is only responsible for: storing the buffer, managing
-// recording state, and handling CLI commands.
+// Network recording state (body capture is done by bubble-hook.js)
 // ============================================================================
 
-const networkBuffer = [];
-const MAX_NETWORK_BUFFER = 500;
-
-// Recording state: managed by this layer, synced to the Main World via CustomEvent
 const networkRecording = {
   active: false,
   filters: {},   // { url, method, status }
@@ -332,38 +357,83 @@ const networkRecording = {
   startedAt: 0,
 };
 
-// Clear body data from all entries (called on expiry)
 function clearAllBodies() {
-  for (const entry of networkBuffer) {
-    entry.requestHeaders = null;
-    entry.requestBody = null;
-    entry.responseHeaders = null;
-    entry.responseBody = null;
-  }
+  window.dispatchEvent(new CustomEvent('cockpit:hook-clear-bodies'));
 }
 
-// Sync recording state to the Main World's network-capture.js
 function syncRecordingToMainWorld() {
-  window.dispatchEvent(new CustomEvent('cockpit:network-recording', {
-    detail: { active: networkRecording.active, filters: networkRecording.filters },
+  window.dispatchEvent(new CustomEvent('cockpit:hook-recording', {
+    detail: JSON.stringify({ active: networkRecording.active, filters: networkRecording.filters }),
   }));
 }
 
-// Listen for network entries sent from the Main World
-function initNetworkListener() {
-  // Placeholder entry received when a request starts (preserves initiation order)
-  window.addEventListener('cockpit:network-entry', (e) => {
-    networkBuffer.push(e.detail);
-    if (networkBuffer.length > MAX_NETWORK_BUFFER) networkBuffer.splice(0, 1);
-  });
-  // Update received when the response completes (fills in status / duration / body etc.)
-  window.addEventListener('cockpit:network-update', (e) => {
-    const update = e.detail;
-    const entry = networkBuffer.find(r => r.id === update.id);
-    if (entry) Object.assign(entry, update);
-  });
-  // Notify the Main World: the Isolated World is ready, cached entries can be flushed
-  window.dispatchEvent(new CustomEvent('cockpit:network-bridge-ready'));
+/** Laid out and not hidden by CSS — something a person could actually click. */
+function isRendered(el) {
+  const r = el.getBoundingClientRect();
+  if (r.width === 0 && r.height === 0) return false;
+  if (typeof el.checkVisibility === 'function') return el.checkVisibility({ visibilityProperty: true });
+  return el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+}
+
+/**
+ * Pick the nth match among the VISIBLE ones: responsive pages often carry a
+ * hidden twin (mobile menu, template copy) ahead of the element on screen.
+ * `includeHidden` is for targets that are legitimately hidden (file inputs).
+ */
+function pickVisible(all, nth, what, includeHidden) {
+  const pool = includeHidden ? all : all.filter(isRendered);
+  if (!pool.length) {
+    throw new Error(`${all.length} match${all.length > 1 ? 'es' : ''} for ${what}, but none is visible (hidden by CSS or zero-size). ` +
+      'Open whatever reveals it first, or pick it from a fresh snapshot.');
+  }
+  if (nth >= pool.length) {
+    const hidden = all.length - pool.length;
+    throw new Error(`Only ${pool.length} visible match${pool.length > 1 ? 'es' : ''} for ${what}${hidden ? ` (${hidden} hidden skipped)` : ''}, nth=${nth} out of range`);
+  }
+  return pool[nth];
+}
+
+function resolveClickTarget({ ref, text, selector, exact = false, nth = 0, includeHidden = false }) {
+  if (ref) return findByRef(ref);
+  if (selector) {
+    const all = Array.from(document.querySelectorAll(selector));
+    if (!all.length) throw new Error(`No element matching selector "${selector}"`);
+    return pickVisible(all, nth, `selector "${selector}"`, includeHidden);
+  }
+  if (text) {
+    const candidates = Array.from(document.querySelectorAll(
+      'button, a, [role="button"], [role="link"], [role="tab"], [role="menuitem"], input[type="submit"], input[type="button"]'
+    ));
+    const matches = candidates.filter(c => {
+      const t = (c.textContent || '').trim();
+      const aria = c.getAttribute('aria-label') || '';
+      return exact ? (t === text || aria === text) : (t.includes(text) || aria.includes(text));
+    });
+    if (!matches.length) throw new Error(`No clickable element with text "${text}" (searched button / a / role=button|link|tab|menuitem / input[type=submit|button])`);
+    return pickVisible(matches, nth, `text "${text}"`, includeHidden);
+  }
+  throw new Error('click requires one of: ref (positional or --ref), --text, --selector');
+}
+
+/**
+ * `--at X,Y`: a point inside the element, from its top-left corner, in CSS
+ * pixels or percent ("20,30", "50%,50%"). For targets with no child to aim at:
+ * canvas, maps, charts, image hotspots.
+ */
+function pointInElement(r, at, label) {
+  const parts = String(at).split(',').map((p) => p.trim());
+  if (parts.length !== 2) throw new Error(`--at takes X,Y (e.g. 20,30 or 50%,50%), got "${at}"`);
+  const coord = (p, size) => {
+    const m = p.match(/^(\d+(?:\.\d+)?)(%?)$/);
+    if (!m) throw new Error(`--at takes X,Y (e.g. 20,30 or 50%,50%), got "${at}"`);
+    return m[2] ? (Number(m[1]) / 100) * size : Number(m[1]);
+  };
+  const dx = coord(parts[0], r.width);
+  const dy = coord(parts[1], r.height);
+  if (dx > r.width || dy > r.height) {
+    throw new Error(`--at ${at} is outside ${label}, which is ${Math.round(r.width)}x${Math.round(r.height)}`);
+  }
+  return { x: r.left + dx, y: r.top + dy };
 }
 
 // ============================================================================
@@ -384,74 +454,114 @@ const handlers = {
   snapshot: async ({ filter, includeHiddenText, maxDepth } = {}) =>
     buildA11yTree(document.body, { filter, includeHiddenText, maxDepth }),
 
-  screenshot: async () => {
-    // 1) Notify the parent page (project iframe): switch to console view + switch to this project + return the iframe bounds
-    const boundsReqId = 'ss-' + Date.now();
-    const bounds = await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Timeout preparing screenshot')), 5000);
-      const handler = (event) => {
-        if (event.data?.type === 'cockpit:screenshot-bounds' && event.data.reqId === boundsReqId) {
-          window.removeEventListener('message', handler);
-          clearTimeout(timeout);
-          resolve(event.data.bounds);
-        }
-      };
-      window.addEventListener('message', handler);
-      _realParent.postMessage({ type: 'cockpit:prepare-screenshot', reqId: boundsReqId }, '*');
-    });
-
-    // 2) captureVisibleTab captures the entire browser tab
-    const dataUrl = await new Promise((resolve, reject) => {
-      _chrome.runtime.sendMessage({ type: 'cockpit:capture-tab' }, (response) => {
-        if (_chrome.runtime.lastError) { reject(new Error(_chrome.runtime.lastError.message)); return; }
-        if (response?.ok) resolve(response.dataUrl);
-        else reject(new Error(response?.error || 'Screenshot failed'));
-      });
-    });
-
-    // 3) Crop to the iframe area
-    const img = new Image();
-    await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = dataUrl; });
-    const cropCanvas = document.createElement('canvas');
-    cropCanvas.width = bounds.width;
-    cropCanvas.height = bounds.height;
-    const cropCtx = cropCanvas.getContext('2d');
-    cropCtx.drawImage(img, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, bounds.width, bounds.height);
-    const result = cropCanvas.toDataURL('image/png');
-
-    // 4) Notify the parent page the screenshot is done, restore the UI
-    _realParent.postMessage({ type: 'cockpit:screenshot-done' }, '*');
-
-    return { image: result, format: 'png' };
+  click: async ({ ref, text, selector, exact = false, nth = 0, at }) => {
+    const el = resolveClickTarget({ ref, text, selector, exact, nth });
+    el.scrollIntoView({ block: 'nearest' });
+    const label = ref || (text ? `text:${text}` : `selector:${selector}`);
+    if (at == null) {
+      el.click();
+      return { clicked: label, nth };
+    }
+    // Synthetic events at the point, on whatever is drawn there.
+    const { x, y } = pointInElement(el.getBoundingClientRect(), at, label);
+    const target = document.elementFromPoint(x, y) || el;
+    const init = { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, button: 0, view: window };
+    target.dispatchEvent(new PointerEvent('pointerdown', { ...init, pointerId: 1, isPrimary: true }));
+    target.dispatchEvent(new MouseEvent('mousedown', init));
+    target.dispatchEvent(new PointerEvent('pointerup', { ...init, pointerId: 1, isPrimary: true }));
+    target.dispatchEvent(new MouseEvent('mouseup', init));
+    target.dispatchEvent(new MouseEvent('click', init));
+    return { clicked: label, nth, at };
   },
 
-  click: async ({ ref, text, selector, exact = false, nth = 0 }) => {
-    let el;
-    if (ref) {
-      el = findByRef(ref);
-    } else if (selector) {
-      const all = document.querySelectorAll(selector);
-      if (!all.length) throw new Error(`No element matching selector "${selector}"`);
-      if (nth >= all.length) throw new Error(`Only ${all.length} matches for selector "${selector}", nth=${nth} out of range`);
-      el = all[nth];
-    } else if (text) {
-      const candidates = Array.from(document.querySelectorAll(
-        'button, a, [role="button"], [role="link"], [role="tab"], [role="menuitem"], input[type="submit"], input[type="button"]'
-      ));
-      const matches = candidates.filter(c => {
-        const t = (c.textContent || '').trim();
-        const aria = c.getAttribute('aria-label') || '';
-        return exact ? (t === text || aria === text) : (t.includes(text) || aria.includes(text));
-      });
-      if (!matches.length) throw new Error(`No clickable element with text "${text}" (searched button / a / role=button|link|tab|menuitem / input[type=submit|button])`);
-      if (nth >= matches.length) throw new Error(`Only ${matches.length} matches for text "${text}", nth=${nth} out of range`);
-      el = matches[nth];
-    } else {
-      throw new Error('click requires one of: ref (positional or --ref), --text, --selector');
+  // Internal — trusted-input support for tabs. Resolves the same targets as
+  // click / type, scrolls the element into view and returns its centre in
+  // top-level viewport CSS pixels (the service worker then dispatches real
+  // input over CDP). Tabs only run the core in their top frame, so the
+  // element's own viewport is the tab's viewport.
+  _locate: async ({ ref, text, selector, exact = false, nth = 0, focus = false, clear = false, noScroll = false, at }) => {
+    const el = resolveClickTarget({ ref, text, selector, exact, nth });
+    if (!noScroll) el.scrollIntoView({ block: 'center', inline: 'center' });
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) {
+      throw new Error(`Element ${ref || selector || text} has no layout box (hidden?); try --dom or evaluate`);
     }
-    el.scrollIntoView({ block: 'nearest' });
-    el.click();
-    return { clicked: ref || (text ? `text:${text}` : `selector:${selector}`), nth };
+    if (focus) el.focus();
+    if (clear && 'value' in el) {
+      const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (setter) setter.call(el, ''); else el.value = '';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    const label = ref || (text ? `text:${text}` : `selector:${selector}`);
+    const point = at != null ? pointInElement(r, at, label) : { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    return {
+      x: point.x,
+      y: point.y,
+      left: r.left, top: r.top, width: r.width, height: r.height,
+      inView: r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth,
+      tag: el.tagName.toLowerCase(),
+      label: ref || (text ? `text:${text}` : `selector:${selector}`),
+    };
+  },
+
+  // Tag an element so CDP can find it (DOM.setFileInputFiles, event
+  // listeners need a remote object). Works on hidden elements too: a file
+  // input is usually display:none behind a styled button.
+  _mark: async ({ ref, text, selector, exact = false, nth = 0 }) => {
+    const el = resolveClickTarget({ ref, text, selector, exact, nth, includeHidden: true });
+    const nonce = `m${Math.random().toString(36).slice(2)}`;
+    el.setAttribute('data-cockpit-mark', nonce);
+    return {
+      nonce,
+      tag: el.tagName.toLowerCase(),
+      type: el instanceof HTMLInputElement ? el.type : null,
+      multiple: el instanceof HTMLInputElement ? el.multiple : false,
+      label: ref || (text ? `text:${text}` : `selector:${selector}`),
+    };
+  },
+
+  _unmark: async ({ nonce }) => {
+    document.querySelector(`[data-cockpit-mark="${nonce}"]`)?.removeAttribute('data-cockpit-mark');
+    return true;
+  },
+
+  // Which <iframe> in this document is the child frame that posts `nonce`?
+  // The extension cannot map a frame id to its owner element, but the owner's
+  // contentWindow IS the message source — same check across origins.
+  _frameOwner: async ({ nonce, timeout = 1500 }) => new Promise((resolve) => {
+    const done = (v) => { clearTimeout(timer); removeEventListener('message', onMsg, true); resolve(v); };
+    const onMsg = (e) => {
+      if (!e.data || e.data.__cockpitFrameProbe !== nonce) return;
+      e.stopImmediatePropagation();
+      const frames = [];
+      const collect = (root) => {
+        for (const f of root.querySelectorAll('iframe, frame')) frames.push(f);
+        for (const host of root.querySelectorAll('*')) if (host.shadowRoot) collect(host.shadowRoot);
+      };
+      collect(document);
+      const el = frames.find((f) => f.contentWindow === e.source);
+      if (!el) return done(null);
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      const ref = elementToRef.get(el);
+      done({
+        ref: ref && Number(ref.split('#v')[1]) === snapshotEpoch ? ref : null,
+        x: r.left + el.clientLeft + parseFloat(cs.paddingLeft || '0'),
+        y: r.top + el.clientTop + parseFloat(cs.paddingTop || '0'),
+        width: el.clientWidth, height: el.clientHeight,
+      });
+    };
+    addEventListener('message', onMsg, true);
+    const timer = setTimeout(() => done(null), timeout);
+  }),
+
+  _frameProbe: async ({ nonce }) => {
+    // A few sends: the parent's listener may still be on its way in.
+    for (const ms of [0, 60, 180, 400, 800]) {
+      setTimeout(() => parent.postMessage({ __cockpitFrameProbe: nonce }, '*'), ms);
+    }
+    return true;
   },
 
   type: async ({ ref, text, clear }) => {
@@ -621,6 +731,7 @@ const handlers = {
     if (networkIdle) {
       let quietSince = null;
       await poll(() => {
+        refreshBuffers();
         const now = Date.now();
         const inflight = networkBuffer.filter(e =>
           e.status == null &&
@@ -661,67 +772,13 @@ const handlers = {
     throw new Error('wait requires one of: --text, --ref, --url, --time, --selector, --network-idle, --dom-stable');
   },
 
-  evaluate: async ({ js, allFrames }) => {
-    // Executed in the main world via background.js's chrome.scripting.executeScript.
-    // Not restricted by the page's CSP; can access page JS variables (React state, etc.).
-    // allFrames: true → execute in all frames (solves cross-origin iframe access).
-    // Large results (>6 KiB) are auto-stashed in the MAIN world and returned as a descriptor;
-    // the cock-browser CLI recognizes the descriptor and backfills the content via evaluate_chunk.
-    return new Promise((resolve) => {
-      _chrome.runtime.sendMessage({ type: 'cockpit:evaluate', js, allFrames: !!allFrames }, (response) => {
-        if (_chrome.runtime.lastError) {
-          resolve({ error: _chrome.runtime.lastError.message });
-          return;
-        }
-        if (response?.ok) resolve(response.data);
-        else resolve({ error: response?.error || 'Evaluation failed' });
-      });
-    });
-  },
-
-  evaluate_chunk: async ({ token, offset = 0, size = 5000 }) => {
-    // Reads a slice of a token's content from the MAIN-world stash. The token
-    // comes from the descriptor returned by the previous evaluate. Note the
-    // stash lives on the page window, so page navigation/reload loses it;
-    // must be the same browser session and the same page context.
-    //
-    // Returns { chunk, done, nextOffset, totalBytes, isString };
-    // size defaults to 5000 to keep each returned object's JSON serialization
-    // < 6000, well below Chrome's ~8192-byte implicit truncation threshold at
-    // the chrome.runtime message boundary.
-    const offNum = Number(offset) || 0;
-    const szNum = Math.min(Math.max(1, Number(size) || 5000), 7000);
-    const tokStr = String(token);
-    const js =
-      '(()=>{' +
-        'const M=window.__cockpit_eval_stash_v1__;' +
-        "if(!M)return{error:'stash not initialised — nothing has been chunked, or page was reloaded after evaluate'};" +
-        'const e=M.get(' + JSON.stringify(tokStr) + ');' +
-        "if(!e)return{error:'token not found or expired (stash TTL is 10 min, and page navigation clears it)'};" +
-        'const off=' + offNum + ';' +
-        'const sz=' + szNum + ';' +
-        'const chunk=e.payload.slice(off,off+sz);' +
-        'const nextOffset=off+chunk.length;' +
-        'const done=nextOffset>=e.payload.length;' +
-        'if(done)M.delete(' + JSON.stringify(tokStr) + ');' +
-        'return{chunk,done,nextOffset,totalBytes:e.payload.length,isString:e.isString};' +
-      '})()';
-    return new Promise((resolve) => {
-      _chrome.runtime.sendMessage({ type: 'cockpit:evaluate', js, allFrames: false }, (response) => {
-        if (_chrome.runtime.lastError) { resolve({ error: _chrome.runtime.lastError.message }); return; }
-        if (response?.ok) resolve(response.data);
-        else resolve({ error: response?.error || 'evaluate_chunk failed' });
-      });
-    });
-  },
-
   console: async ({ level, clear: doClear }) => {
-    if (doClear) { consoleBuffer.length = 0; return { cleared: true }; }
+    if (doClear) { consoleBuffer.length = 0; window.dispatchEvent(new CustomEvent('cockpit:hook-clear', { detail: 'console' })); return { cleared: true }; }
     return level ? consoleBuffer.filter(m => m.level === level) : [...consoleBuffer];
   },
 
   network: async ({ status, method: fm, type: ft, clear: doClear }) => {
-    if (doClear) { networkBuffer.length = 0; return { cleared: true }; }
+    if (doClear) { networkBuffer.length = 0; window.dispatchEvent(new CustomEvent('cockpit:hook-clear', { detail: 'network' })); return { cleared: true }; }
     let filtered = [...networkBuffer];
     if (status) {
       const ranges = status.split(',').map(s => s.trim());
@@ -1304,34 +1361,44 @@ function simpleJsonPath(data, path) {
 }
 
 // ============================================================================
-// Command dispatch
+// Entry point (called by the service worker via chrome.scripting)
 // ============================================================================
 
-function handleCommand(event) {
-  if (!event.data || event.data.type !== 'cockpit:cmd') return;
-  if (event.source !== _realParent) return;
+async function run(action, params) {
+  params = params || {};
+  if (Object.prototype.hasOwnProperty.call(params, '__capture')) {
+    const capture = params.__capture;
+    delete params.__capture;
+    if (capture) {
+      captureSource = 'external';
+      replaceArray(consoleBuffer, capture.console);
+      replaceArray(networkBuffer, capture.network);
+    } else {
+      captureSource = 'none';
+      consoleBuffer.length = 0;
+      networkBuffer.length = 0;
+    }
+  } else {
+    captureSource = 'hook';
+    refreshBuffers();
+  }
 
-  const { reqId, action, params = {} } = event.data;
   const handler = handlers[action];
-
   if (!handler) {
     // Filter internal-use actions from "Did you mean" suggestions.
-    const INTERNAL_ACTIONS = new Set(['probe_state', 'evaluate_chunk']);
+    const INTERNAL_ACTIONS = new Set(['probe_state']);
     const known = Object.keys(handlers).filter(k => !k.startsWith('_') && !INTERNAL_ACTIONS.has(k));
     const suggestions = fuzzyTopK(action, known, 3);
     const hint = suggestions.length ? `\n  Did you mean: ${suggestions.join(', ')}?` : '';
-    _realParent.postMessage({
-      type: 'cockpit:cmd-result',
-      reqId,
-      ok: false,
-      error: `Unknown action "${action}".${hint}\n  Run: cockpit browser --help-all`,
-    }, '*');
-    return;
+    throw new Error(`Unknown action "${action}".${hint}\n  Run: cockpit browser --help-all`);
   }
-
-  handler(params)
-    .then(data => _realParent.postMessage({ type: 'cockpit:cmd-result', reqId, ok: true, data }, '*'))
-    .catch(err => _realParent.postMessage({ type: 'cockpit:cmd-result', reqId, ok: false, error: err.message || String(err) }, '*'));
+  if (captureSource === 'none' && (
+    (action === 'assert' && (params.consoleNoErrors || params.network)) ||
+    (action === 'wait' && params.networkIdle)
+  )) {
+    requireCapture(`${action} ${params.network ? '--network' : params.networkIdle ? '--network-idle' : '--console-no-errors'}`);
+  }
+  return handler(params);
 }
 
 // Fuzzy ranking — surfaces "evluate" → "evaluate" while filtering unrelated
@@ -1361,17 +1428,5 @@ function bagCounts(s) {
   return m;
 }
 
-// ============================================================================
-// Exported initialization function
-// ============================================================================
-
-export function initAutomation(realParent, chromeApi) {
-  _realParent = realParent;
-  _chrome = chromeApi;
-
-  window.addEventListener('message', handleCommand);
-  initConsoleCapture();
-  initNetworkListener();
-
-  console.log(LOG_PREFIX, 'Automation layer activated');
-}
+globalThis.__cockpitCore = { run, version: 2 };
+})();

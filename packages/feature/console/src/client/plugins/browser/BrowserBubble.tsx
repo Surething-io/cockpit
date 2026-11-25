@@ -2,12 +2,13 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { toast } from '@cockpit/shared-ui';
+import { toast, useWebSocket } from '@cockpit/shared-ui';
 import { BUBBLE_CONTENT_HEIGHT } from '../../CommandBubble';
 import { useBrowserBridge } from '../../useBrowserBridge';
 import { ShortIdBadge } from '../../ShortIdBadge';
 import { modKey, toLocalPreviewUrl, toExternalBrowserAppUrl } from '@cockpit/shared-utils';
 import { unregisterBrowserBridge } from '../../effect/pluginDisconnect';
+import { openWebPage } from '../../openWebPage';
 
 // ============================================================================
 // Utility Functions
@@ -42,74 +43,13 @@ function isHttpUrl(url: string): boolean {
 }
 
 
-/** Append _cockpit=1 param to the URL so background webNavigation can track it and the DNR network layer can strip it */
-function addCockpitParam(url: string): string {
-  if (!url) return url;
-  try {
-    const urlObj = new URL(url);
-    urlObj.searchParams.set('_cockpit', '1');
-    return urlObj.toString();
-  } catch {
-    const sep = url.includes('?') ? '&' : '?';
-    return `${url}${sep}_cockpit=1`;
-  }
-}
-
-/** Remove the _cockpit param from a URL (for display purposes) */
-function stripCockpitParam(url: string): string {
-  if (!url) return url;
-  try {
-    const urlObj = new URL(url);
-    urlObj.searchParams.delete('_cockpit');
-    return urlObj.toString();
-  } catch {
-    return url.replace(/[?&]_cockpit=1/, '');
-  }
-}
-
-import { getCockpitBridge } from '@cockpit/feature-console';
-
 /**
- * Get the Chrome extension ID (read from window.__cockpitBridge broadcast by the content script).
+ * Frame name the OpenCockpit Bridge extension uses to find this bubble's
+ * iframe (and that gates its in-page hook). Must match chrome-extension/
+ * bubble-hook.js and background.js.
  */
-function getExtensionId(): string | null {
-  return getCockpitBridge()?.id ?? null;
-}
-
-/**
- * Call the extension background directly via externally_connectable
- * to pre-create the cookie injection rule. Returns true on success.
- *
- * Flow: BrowserBubble → chrome.runtime.sendMessage(extId) → background
- * No content script relay, no postMessage — 100% reliable.
- */
-async function prepareCookies(url: string): Promise<boolean> {
-  const extId = getExtensionId();
-  if (!extId) return false; // Extension not installed
-
-  return new Promise((resolve) => {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const chromeRuntime = (globalThis as any).chrome?.runtime;
-      if (!chromeRuntime?.sendMessage) { resolve(false); return; }
-
-      const timer = setTimeout(() => resolve(false), 2000); // 2s timeout fallback
-      chromeRuntime.sendMessage(extId, { type: 'prepare-iframe', url }, (response: { ok?: boolean } | undefined) => {
-        clearTimeout(timer);
-        resolve(response?.ok ?? false);
-      });
-    } catch {
-      resolve(false);
-    }
-  });
-}
-
-/** Check if the URL is localhost (no cookie pre-injection needed) */
-function isLocalUrl(url: string): boolean {
-  try {
-    const h = new URL(url).hostname;
-    return h === 'localhost' || h === '127.0.0.1';
-  } catch { return false; }
+function bubbleFrameName(id: string): string {
+  return `cockpit-bubble-${id}`;
 }
 
 // ============================================================================
@@ -183,6 +123,9 @@ export function BrowserBubble({
   const { t, i18n } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // A web-page bubble from before web pages moved to Chrome tabs: no iframe,
+  // no bridge — it only offers to open the page in Chrome.
+  const legacyWeb = isHttpUrl(url);
   const [currentUrl, setCurrentUrl] = useState(url);
   const [readyUrl, setReadyUrl] = useState<string | null>(null); // iframe src after cookies are ready
   const [isSleeping, setIsSleeping] = useState(initialSleeping ?? false);
@@ -224,10 +167,10 @@ export function BrowserBubble({
   // not re-run when `bridgeConnected` flips back to false.
   const autoConnectedRef = useRef(false);
   useEffect(() => {
-    if (!autoConnect || autoConnectedRef.current) return;
+    if (legacyWeb || !autoConnect || autoConnectedRef.current) return;
     autoConnectedRef.current = true;
     bridgeConnect();
-  }, [autoConnect, bridgeConnect]);
+  }, [legacyWeb, autoConnect, bridgeConnect]);
 
   // IntersectionObserver: detect whether the bubble is in the viewport
   // Don't start the sleep countdown when bridge is connected
@@ -287,15 +230,29 @@ export function BrowserBubble({
       setReadyUrl(toLocalPreviewUrl(url, baseCwd));
       return;
     }
-    const cockpitUrl = addCockpitParam(url);
-    if (isLocalUrl(url)) {
-      setReadyUrl(cockpitUrl);
-    } else {
-      prepareCookies(url).then(() => setReadyUrl(cockpitUrl));
-    }
+    setReadyUrl(url);
   }, [url, id, onWake, baseCwd]);
 
-  // Cookie pre-injection: connect directly to background via externally_connectable, then set iframe src after awaiting
+  // `cockpit browser <shortId> …` for a bubble that is not registered (never
+  // connected, or asleep): the server broadcasts `browser-wake`; the bubble
+  // that owns the id wakes up and registers itself, then the command runs.
+  // Refs keep the shared global-state subscription from churning.
+  const wakeForCliRef = useRef<() => void>(() => {});
+  wakeForCliRef.current = () => {
+    if (legacyWeb) return;
+    if (isSleeping) doWake();
+    bridgeConnect();
+  };
+  useWebSocket({
+    url: '/ws/global-state',
+    enabled: !!shortId,
+    onMessage: (raw) => {
+      const p = raw as { type?: string; shortId?: string };
+      if (p.type === 'browser-wake' && p.shortId === shortId) wakeForCliRef.current();
+    },
+  });
+
+  // Resolve the iframe src (local paths go through the /apps/local preview route)
   useEffect(() => {
     if (!url || isSleeping) { if (!url) setReadyUrl(null); return; }
 
@@ -308,20 +265,7 @@ export function BrowserBubble({
       return;
     }
 
-    const cockpitUrl = addCockpitParam(url);
-
-    // localhost doesn't need cookie pre-injection
-    if (isLocalUrl(url)) {
-      setReadyUrl(cockpitUrl);
-      return;
-    }
-
-    let cancelled = false;
-    prepareCookies(url).then(() => {
-      if (!cancelled) setReadyUrl(cockpitUrl);
-    });
-
-    return () => { cancelled = true; };
+    setReadyUrl(url);
   }, [url, isSleeping, baseCwd]);
 
   const handleIframeLoad = useCallback(() => {
@@ -390,7 +334,7 @@ export function BrowserBubble({
     };
   }, []);
 
-  // Listen for Chrome extension postMessage (link interception & navigation notifications)
+  // URL sync + new-tab requests posted by the extension's in-page hook
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
       if (!e.data || typeof e.data.type !== 'string') return;
@@ -403,9 +347,9 @@ export function BrowserBubble({
       const type = e.data.type as string;
 
       if (type === 'cockpit:new-tab' && e.data.url) {
-        onNewTab?.(stripCockpitParam(e.data.url), id);
+        onNewTab?.(e.data.url, id);
       } else if ((type === 'cockpit:navigate' || type === 'cockpit:loaded') && e.data.url) {
-        setCurrentUrl(stripCockpitParam(e.data.url));
+        setCurrentUrl(e.data.url);
       }
     };
     window.addEventListener('message', handleMessage);
@@ -500,7 +444,7 @@ export function BrowserBubble({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
               </svg>
             </span>
-            {shortId && (
+            {shortId && !legacyWeb && (
               <ShortIdBadge
                 shortId={shortId}
                 type="browser"
@@ -575,7 +519,7 @@ export function BrowserBubble({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
               </svg>
             </span>
-            {shortId && (
+            {shortId && !legacyWeb && (
               <ShortIdBadge
                 shortId={shortId}
                 type="browser"
@@ -667,7 +611,21 @@ export function BrowserBubble({
               </div>
             </div>
           ) : url ? (
-            loadError ? (
+            legacyWeb ? (
+              <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground p-6 h-full text-center">
+                <svg className="w-9 h-9 mb-1 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                <p className="text-sm text-foreground">{t('browser.movedToChrome')}</p>
+                <p className="text-xs break-all opacity-70">{url}</p>
+                <button
+                  onClick={(e) => { e.stopPropagation(); openWebPage(url, projectCwd ?? baseCwd); }}
+                  className="mt-1 px-3 py-1.5 text-xs bg-brand text-white rounded-md hover:bg-brand/90 transition-colors"
+                >
+                  {t('browser.openInChrome')}
+                </button>
+              </div>
+            ) : loadError ? (
               <div className="flex flex-col items-center justify-center text-muted-foreground p-6 h-full">
                 <svg className="w-10 h-10 mb-3 text-red-11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -704,6 +662,7 @@ export function BrowserBubble({
                       ? { width: '100%', height: '100%' }
                       : { position: 'absolute', top: 0, left: 0, width: '200%', height: '200%', transform: 'scale(0.5)', transformOrigin: 'top left' }
                     }
+                    name={bubbleFrameName(id)}
                     onLoad={handleIframeLoad}
                     onError={handleIframeError}
                     title={`Browser: ${host}`}

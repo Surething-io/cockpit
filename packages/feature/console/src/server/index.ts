@@ -10,6 +10,7 @@
 // state is owned by the corresponding `Layer.scoped` and the db/* routes consume
 // the PgService / MySQLService / RedisService / Neo4jService Tags directly.
 export * from './plugins/browser/BrowserBridge';
+export * from './plugins/browser/ExtensionBridge';
 // Bubble lifecycle driven from outside the UI (cockpit browser open/close) —
 // consumed by src/lib/httpApi.ts's /api/browser/{open,close} intercepts.
 export * from './plugins/browser/browserBubbleControl';

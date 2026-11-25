@@ -53,7 +53,7 @@ registerBubble({
 
   match(input: string) {
     const t = input.trim().toLowerCase();
-    if (t.startsWith('http://') || t.startsWith('https://')) return true;
+    // Web pages (http/https) open as Chrome tabs instead — see openWebPage.ts.
     // Local HTML file path → rendered in the bubble iframe via /apps/local;
     // local md/txt/json/csv/image/pdf path → rendered by the built-in file-viewer app
     // (same bubble, BrowserBubble routes it via toFileViewerUrl)

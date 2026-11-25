@@ -42,6 +42,7 @@ function printHelp(prefix = '<id>', status = null) {
 Usage: cockpit browser ${prefix} <action>`);
 
   if (status) {
+    if (status.note) console.log(`\nTarget: ${status.note}`);
     if (status.connected) {
       let line = `\nStatus: connected`;
       if (status.title) line += `\n  title: ${status.title}`;
@@ -81,15 +82,56 @@ re-snapshot OR use \`click --text\` / \`click --selector\` /
 
 ──────────────────────────────────────────────────────
 
-Bubbles (create / destroy — no <id> needed for open):
-  cockpit browser open <url> [--cwd PATH] [--wait-ms N]
-                              Open a console browser bubble in the project that
-                              owns --cwd (default: shell cwd), auto-register its
-                              bridge, and print the shortId to drive it with.
-                              Exit 2 if no Cockpit UI picked it up (bubble is
-                              persisted, but nothing is driving it yet).
+Targets (create / destroy — no <id> needed for open):
+  cockpit browser open <url> [--show]
+                              Web pages (http/https, localhost included) open as
+                              a real tab in your Chrome — in a "Cockpit" tab
+                              group, in the background unless --show — with the
+                              user's logins. A tab Cockpit opened is allowed.
+  cockpit browser open <path> [--cwd PATH] [--wait-ms N]
+                              A local HTML app or file (md/json/csv/image/pdf…)
+                              opens as a console bubble in the project that owns
+                              --cwd (default: shell cwd). Exit 2 if no Cockpit UI
+                              picked it up. Bubble ids work even when the bubble
+                              is asleep — it is woken automatically, as long as
+                              its project is open in a Cockpit window.
+  cockpit browser tabs        Every open Chrome tab with its id (url + title).
+                              Any of them can be driven by id, but the FIRST
+                              command on a tab the user has not allowed brings
+                              it to the front and waits for them to answer in
+                              the OpenCockpit toolbar popup (per tab, not per
+                              site). If it times out, ask the user to approve,
+                              then re-run.
   cockpit browser <id> close [--cwd PATH]
-                              Close the bubble and remove it from the console.
+                              Close the bubble / a tab Cockpit opened (never
+                              the user's own tabs).
+  cockpit browser <id> show   Bring a tab to the front (tabs only).
+  cockpit browser <id> viewport <device> [--landscape] [--reload]
+                              Emulate a device on a tab: iphone (alias mobile),
+                              android, ipad (alias tablet), or <W>x<H>
+                              [--mobile] [--dpr N]; --ua overrides the
+                              User-Agent. Clicks become taps on touch devices,
+                              screenshots show the emulated page. No device:
+                              print the current one. \`viewport reset\` undoes.
+  cockpit browser <id> emulate [--network offline|slow-3g|fast-3g|slow-4g]
+                              [--cpu N] [--block "*.png,*/ads/*"] [--media print]
+                              [--reduced-motion on]
+                              Test conditions on a tab; each flag takes "off"
+                              to undo one, \`emulate reset\` undoes all, no flags
+                              shows what is on. Like viewport, it stays (with
+                              Chrome's debugging bar) until reset.
+  cockpit browser <id> release
+                              Hand a tab back when you are done with it: its
+                              grant is dropped and the next command asks the
+                              user again. Do this for tabs the user allowed.
+
+  Tabs get real input (click / type / key / hover / scroll / drag go through
+  Chrome's input pipeline; pass --dom to use synthetic DOM events instead).
+  iframes, cross-origin ones included, are part of the snapshot: their refs
+  look like f7:e3#v1 and work with every command. In a background tab Chrome
+  cannot deliver real input into a cross-origin frame; DOM events are used
+  and the output says so (run \`show\` first for real input). While Cockpit acts on a tab,
+  Chrome shows "OpenCockpit Bridge started debugging this browser" — expected.
 
 Navigation:
   navigate <url>              Navigate to URL
@@ -104,14 +146,37 @@ Inspection:
                               --include-hidden-text      surface collapsed <summary>/container text
                               --max-depth N              limit walk depth (default 12)
   screenshot                  PNG saved to /tmp; path printed for Read tool
+  screenshot --full           Whole page, not just the viewport (tabs)
+  screenshot <ref>            Just one element (tabs)
 
 ${HELP_INTERACTION_BY_SELECTOR(prefix)}
 
-  type <ref> <text>           Type into ref (CDP key events; React-controlled may silently miss → use fill --selector)
+  type <ref> <text>           Type into ref. On tabs: real key presses per character (--insert: commit all at once)
   hover <ref>                 Hover element
   focus <ref>                 Focus element
-  scroll --direction D        Scroll page (up/down/left/right)
+  scroll <up|down|left|right> [<ref>] [--amount PX]
+                              Real wheel turn (a swipe on an emulated phone)
+                              over the page or over <ref>
   key <key>                   Press key (e.g. Enter, Ctrl+A)
+  click <ref> --hold MS       Long press (mouse, or finger on an emulated phone)
+  click <ref> --at X,Y        Click a point inside the element, from its top-left
+                              (px, or 50%,50%) — canvas, maps, charts. hover too.
+  --selector / --text match only VISIBLE elements (hidden twins are skipped;
+  --nth counts visible ones).
+  drag <ref> <to-ref|css>     Drag and drop (also --dx N --dy N for a relative move,
+                              e.g. a slider). Native HTML5 drag-and-drop and
+                              pointer-driven lists both work.
+  upload <ref> <file> [file…] Put local files into a file input — the
+                              <input type=file> (snapshot marks it "file", it may
+                              be hidden: --selector works too) or the button
+                              that opens the file chooser. No OS dialog appears.
+
+Dialogs (alert / confirm / prompt / "leave page?"):
+  A dialog pauses the page. The command that opened it says so; any other
+  command fails fast with the dialog's text until it is answered.
+  dialog                      Show the open dialog, if any
+  dialog accept [--text T]    OK (T answers a prompt)
+  dialog dismiss              Cancel
 
 ${HELP_WAIT}
 
@@ -134,7 +199,8 @@ DOM:
                               Tip: fetch() inherits the browser's auth session
                               Use --all-frames to run in all iframes
 
-Network:
+Network (on tabs, the first network / console / network_record call starts
+capture — it only sees activity from then on; reload to catch the page load):
   network [--status S]        List requests (--method --type --clear)
   network_record start        Record request bodies (--url --method --status)
   network_record stop         Stop recording
@@ -142,8 +208,11 @@ Network:
 
 Console & Debug:
   console [--level L]         Get console messages (--clear)
-  perf --metric M             Performance (timing|memory|resources)
-  theme --mode M              Switch theme (dark|light)
+  perf --metric M             Performance (timing|memory|resources|runtime)
+                              runtime: layout / style / script time, nodes, heap
+  coverage start|stop         How much of each stylesheet (and, where the browser
+                              allows it, script) was actually used
+  theme dark|light|reset      Emulate prefers-color-scheme (stays until reset)
   cookies                     Get cookies
   storage [--type T]          Get storage (local|session)
 
@@ -172,9 +241,9 @@ if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
 // Parse arguments
 let id, action;
 
-if (args[0] === 'list') {
+if (args[0] === 'list' || args[0] === 'tabs') {
   id = null;
-  action = 'list';
+  action = args[0];
 } else if (args[0] === 'open') {
   // `open` creates a bubble rather than addressing one, so the first token is
   // the action, not an id. (A shortId is also four lowercase letters, so `open`
@@ -230,7 +299,10 @@ function parseFlags(flagArgs) {
   return params;
 }
 
-const params = parseFlags(args.slice(action === 'list' || action === 'open' ? 1 : 2));
+// A snapshot ref; refs from inside an iframe carry the frame: f7:e3#v1.
+const REF_RE = /^(f\d+:)?e\d+#v\d+$/;
+
+const params = parseFlags(args.slice(action === 'list' || action === 'tabs' || action === 'open' ? 1 : 2));
 
 // Positional argument handling: some commands treat the first positional as a special value
 if (params._positional?.length) {
@@ -242,7 +314,7 @@ if (params._positional?.length) {
   // visible text so `click "Sign in"` Just Works.
   if (action === 'click') {
     if (!params.ref && !params.text && !params.selector) {
-      if (/^e\d+#v\d+$/.test(pos[0])) params.ref = pos[0];
+      if (REF_RE.test(pos[0])) params.ref = pos[0];
       else params.text = pos[0];
     }
   }
@@ -251,7 +323,7 @@ if (params._positional?.length) {
   // positional[1] is the value when ref-positional is used.
   if (action === 'fill') {
     if (!params.ref && !params.selector) {
-      if (/^e\d+#v\d+$/.test(pos[0])) {
+      if (REF_RE.test(pos[0])) {
         params.ref = pos[0];
         if (pos[1] && !params.value) params.value = pos[1];
       } else {
@@ -265,6 +337,28 @@ if (params._positional?.length) {
   }
   if (action === 'hover' && !params.ref) params.ref = pos[0];
   if (action === 'focus' && !params.ref) params.ref = pos[0];
+  if (action === 'key' && !params.key) params.key = pos[0];
+  if (action === 'viewport' && !params.device) params.device = pos[0];
+  if (action === 'dialog') {
+    if (!params.op && pos[0]) params.op = pos[0];
+    if (params.text === undefined && pos[1] !== undefined) params.text = pos[1];
+  }
+  if (action === 'coverage' && !params.op) params.op = pos[0];
+  if (action === 'emulate' && pos[0] === 'reset') params.op = 'reset';
+  if (action === 'theme' && !params.mode) params.mode = pos[0];
+  if (action === 'scroll' && !params.direction && /^(up|down|left|right)$/.test(pos[0])) params.direction = pos[0];
+  if (action === 'scroll' && !params.ref && REF_RE.test(pos.at(-1))) params.ref = pos.at(-1);
+  if (action === 'screenshot' && !params.ref && REF_RE.test(pos[0])) params.ref = pos[0];
+  if (action === 'drag') {
+    const rest = [...pos];
+    if (!params.ref && !params.selector && !params.text && rest.length) params.ref = rest.shift();
+    if (!params.to && rest.length) params.to = rest.shift();
+  }
+  if (action === 'upload') {
+    const rest = [...pos];
+    if (!params.ref && !params.selector && !params.text && REF_RE.test(rest[0])) params.ref = rest.shift();
+    params.files = [...(params.files ? [].concat(params.files) : []), ...rest];
+  }
   if (action === 'evaluate' && !params.js) params.js = pos[0];
   // --all-frames → allFrames（kebab-case → camelCase）
   if (action === 'evaluate' && params['all-frames']) { params.allFrames = true; delete params['all-frames']; }
@@ -278,6 +372,32 @@ if (params._positional?.length) {
   if (action === 'fetch' && !params.url) params.url = pos[0];
   if (action === 'health' && pos[0] === '--deep') params.deep = true;
   delete params._positional;
+}
+
+// viewport's switches take no value: `viewport --reload iphone` must not read
+// "iphone" as the value of --reload.
+if (action === 'viewport') {
+  for (const k of ['reload', 'landscape', 'mobile']) {
+    if (params[k] !== undefined && typeof params[k] !== 'boolean') {
+      if (!params.device) params.device = String(params[k]);
+      params[k] = true;
+    }
+  }
+}
+
+if (params['reduced-motion'] !== undefined) { params.reducedMotion = params['reduced-motion']; delete params['reduced-motion']; }
+if (action === 'upload') {
+  // Chrome reads the files itself: hand it absolute paths, and fail here on a typo.
+  const { resolve: resolvePath } = await import('path');
+  const { existsSync, statSync } = await import('fs');
+  params.files = (params.files || []).map((f) => resolvePath(String(f)));
+  if (!params.files.length) {
+    console.error('upload needs a target and files: cockpit browser <id> upload <ref> <file> [file…]  (or --selector CSS)');
+    process.exit(1);
+  }
+  for (const f of params.files) {
+    if (!existsSync(f) || !statSync(f).isFile()) { console.error(`No such file: ${f}`); process.exit(1); }
+  }
 }
 
 // kebab → camel for new Phase 2 flags.
@@ -469,20 +589,31 @@ async function run() {
   if (action === '_status') {
     let status = null;
     try {
-      const res = await fetch(`${baseUrl}/api/browser/list`, {
+      const post = (a) => fetch(`${baseUrl}/api/browser/${a}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: '{}',
         signal: AbortSignal.timeout(5000),
-      });
-      const data = await res.json();
-      const browser = data.ok && data.data?.find(b => b.shortId === id);
-      if (browser) {
+      }).then(r => r.json());
+      // `list` has bubbles + controlled tabs; `tabs` has every tab (incl. not yet allowed).
+      const [listed, tabs] = await Promise.all([post('list'), post('tabs')]);
+      const browser = (listed.ok && listed.data?.find(b => b.shortId === id))
+        || (tabs.ok && tabs.data?.find(b => b.shortId === id));
+      if (browser?.kind === 'tab') {
+        status = {
+          connected: browser.connected,
+          title: browser.title,
+          url: browser.url,
+          note: browser.origin === 'opened' || browser.allowed
+            ? 'tab — Cockpit may control it'
+            : 'tab — not allowed yet: the first command asks the user in Chrome',
+        };
+      } else if (browser) {
         if (browser.connected) {
           const info = await fetchBrowserInfo(browser.shortId);
-          status = { connected: true, title: info.title, url: info.url };
+          status = { connected: true, title: info.title, url: info.url, note: 'bubble' };
         } else {
-          status = { connected: false };
+          status = { connected: false, note: 'bubble — woken automatically by the next command' };
         }
       }
     } catch {
@@ -511,6 +642,13 @@ async function run() {
   const url = `${baseUrl}/api/browser/${action}`;
   const body = { id, params, timeout };
 
+  // F1.7 baseline: sample page state BEFORE the action, so a navigation that
+  // commits later than the observation window still shows up as a change.
+  let verifyBefore = null;
+  if (POST_VERIFY_ACTIONS.has(action) && !params.skipVerify) {
+    try { verifyBefore = await probeState(); } catch { /* verification is optional */ }
+  }
+
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -527,9 +665,9 @@ async function run() {
       process.exit(1);
     }
 
-    // Large results are auto-stashed by the extension side, which returns a
-    // chunked descriptor; we transparently pull the full content back here —
-    // callers never see the chunking.
+    // Bridge 1.x extensions stashed large evaluate results and returned a
+    // chunked descriptor; 2.x returns results whole. Keep resolving the
+    // descriptor so a not-yet-updated extension still works.
     const resolved = await autoResolveChunked(baseUrl, id, data.data, timeout);
 
     // Post-`type` verification — `type` via CDP dispatchKeyEvent silently no-ops
@@ -597,8 +735,8 @@ async function run() {
     }
 
     // F1.7 — post-verify silent failures for click / key / submit.
-    if (POST_VERIFY_ACTIONS.has(action)) {
-      try { await postVerify(action, params, resolved); } catch { /* never fail the command */ }
+    if (POST_VERIFY_ACTIONS.has(action) && !resolved?.dialogOpened && resolved?.input !== 'dom') {
+      try { await postVerify(action, params, verifyBefore); } catch { /* never fail the command */ }
     }
 
     // Format output
@@ -637,17 +775,15 @@ async function probeState() {
   return j.ok ? j.data : null;
 }
 
-async function postVerify(action, params, originalResolved) {
-  if (params.skipVerify) return;
+async function postVerify(action, params, before) {
+  if (params.skipVerify || !before) return;
   const windowMs = Number.isFinite(params.verifyMs) && params.verifyMs > 0
     ? params.verifyMs
     : POST_VERIFY_WINDOW_MS_DEFAULT;
-  let before;
-  try { before = await probeState(); } catch { return; }
-  if (!before) return;
   await new Promise(r => setTimeout(r, windowMs));
   let after;
   try { after = await probeState(); } catch { return; }
+  // No answer usually means the page is mid-navigation — that is a change.
   if (!after) return;
   const urlChanged = before.url !== after.url;
   const domChanged = before.domHash !== after.domHash || before.domLen !== after.domLen;
@@ -697,9 +833,25 @@ async function formatOutput(action, data) {
     return;
   }
 
+  if (data && typeof data === 'object' && data.dialogOpened) {
+    const d = data.dialogOpened;
+    console.log(`${action} done — the page opened ${d.type === 'alert' ? 'an' : 'a'} ${d.type} dialog: ${JSON.stringify(d.message)}`);
+    console.log(`  The page is paused until it is answered: ${cockBin} browser ${id} ${d.type === 'prompt' ? 'dialog accept --text "…"' : 'dialog accept'}   |   dialog dismiss`);
+    return;
+  }
+  if (data && typeof data === 'object' && data.input === 'dom' && data.note) console.error(data.note);
+
   // Special formatting
   switch (action) {
     case 'open':
+      if (data.kind === 'tab') {
+        console.log(`${data.shortId}  →  tab opened${data.browser ? ` in ${data.browser}` : ''}`);
+        console.log(`  url:     ${data.url}`);
+        console.log(`  next:    ${cockBin} browser ${data.shortId} snapshot`);
+        console.log(`  show:    ${cockBin} browser ${data.shortId} show`);
+        console.log(`  close:   ${cockBin} browser ${data.shortId} close`);
+        return;
+      }
       console.log(
         data.registered
           ? `${data.shortId}  →  registered and ready`
@@ -720,7 +872,74 @@ async function formatOutput(action, data) {
       }
       return;
 
+    case 'viewport': {
+      if (!data.emulated) {
+        console.log(data.reset === false ? `${id}: no viewport emulated` : `${id}: viewport back to the window size${data.reloaded ? ' (reloaded)' : ''}`);
+        return;
+      }
+      const a = data.actual;
+      console.log(`${id}: ${data.device}  ${data.width}x${data.height}${data.dpr ? ` @${data.dpr}x` : ''}${data.mobile ? '  mobile' : ''}${data.touch ? '  touch' : ''}`);
+      if (a) console.log(`  page sees: ${a.width}x${a.height} @${a.dpr}x${a.touch ? ', touch' : ''}`);
+      if (data.userAgent) console.log(`  user agent: ${data.userAgent}`);
+      if (data.userAgent && data.reloaded === false) {
+        console.log(`  Layout already follows. Pages that pick mobile markup from the User-Agent need a reload:\n    ${cockBin} browser ${id} reload`);
+      }
+      console.log(`  Stays on (Chrome's debugging bar too) until: ${cockBin} browser ${id} viewport reset`);
+      return;
+    }
+
+    case 'dialog':
+      if (!data.open && !data.handled) { console.log(`${id}: no dialog open`); return; }
+      if (data.handled) {
+        console.log(`${data.handled === 'accept' ? 'accepted' : 'dismissed'} ${data.type}: ${JSON.stringify(data.message)}${data.promptText != null ? `  (answered ${JSON.stringify(data.promptText)})` : ''}`);
+        return;
+      }
+      console.log(`${id}: ${data.type} dialog open: ${JSON.stringify(data.message)}${data.defaultPrompt ? `  (default ${JSON.stringify(data.defaultPrompt)})` : ''}`);
+      console.log(`  answer: ${cockBin} browser ${id} dialog ${data.type === 'prompt' ? 'accept --text "…"' : 'accept'}   |   dialog dismiss`);
+      return;
+
+    case 'upload':
+      if (data.dialogOpened) break;
+      console.log(`uploaded ${data.uploaded.join(', ')} → ${data.target} (${data.via === 'chooser' ? 'through the file chooser' : 'file input'})`);
+      return;
+
+    case 'drag':
+      if (data.dialogOpened) break;
+      console.log(`dragged ${data.dragged} → ${data.to}  (${data.mode}${data.mode === 'html5' ? ' drag-and-drop' : ' events'})`);
+      return;
+
+    case 'emulate': {
+      const on = Object.entries(data.on || {});
+      if (!on.length) { console.log(`${id}: no emulation on`); return; }
+      for (const [k, v] of on) console.log(`  ${k}: ${Array.isArray(v) ? v.join(', ') : v}`);
+      if (data.note) console.log(`  ${data.note}`);
+      console.log(`  Stays on (Chrome's debugging bar too) until: ${cockBin} browser ${id} emulate reset`);
+      return;
+    }
+
+    case 'coverage':
+      if (data.js || data.css) {
+        const kb = (n) => `${(n / 1024).toFixed(1)}KB`;
+        const row = (e) => `  ${String(e.unusedPct).padStart(3)}% unused  ${kb(e.total - e.used).padStart(9)} of ${kb(e.total).padStart(9)}  ${e.url.slice(0, 100)}`;
+        const tt = data.totals;
+        if (data.covered?.js === false) console.log('JS:  not available to extensions in this browser');
+        else { console.log(`JS:  ${kb(tt.jsUsed)} used of ${kb(tt.jsBytes)}`); data.js.forEach((e) => console.log(row(e))); }
+        console.log(`CSS: ${kb(tt.cssUsed)} used of ${kb(tt.cssBytes)}`);
+        data.css.forEach((e) => console.log(row(e)));
+        return;
+      }
+      console.log(data.running ? `coverage running${data.note ? ` — ${data.note}` : ''}` : (data.note || 'coverage not running'));
+      return;
+
+    case 'release':
+      console.log(data.released ? `released ${id} — the user will be asked again next time` : `${id} was not under Cockpit control`);
+      return;
+
     case 'close':
+      if (data.kind === 'tab') {
+        console.log(`closed tab ${data.shortId}`);
+        return;
+      }
       console.log(
         data.removed
           ? `closed ${data.shortId}`
@@ -741,13 +960,19 @@ async function formatOutput(action, data) {
       return;
 
     case 'health':
+      // `--deep` asks the page itself and has a different shape — print it as is.
+      if (params.deep) {
+        console.log(JSON.stringify(data, null, 2));
+        return;
+      }
       // Server-side bridge health snapshot.
       if (!data.found) {
         console.log(`browser "${id}" not registered (no bubble open?)`);
         process.exit(2);
       }
       console.log(
-        `extension: ${data.ws === 'open' ? 'alive (ws=open)' : 'unreachable (ws=' + data.ws + ')'}` +
+        `${data.kind || 'target'}: ${data.ws === 'open' ? 'registered' : 'disconnected'}` +
+        `   extension: ${data.extension === 'connected' ? 'connected' : 'NOT connected (install / restart the browser)'}` +
         `   pending: ${data.pendingCommands}` +
         (data.lastSuccessMs !== null
           ? `   last-success: ${formatMs(data.lastSuccessMs)} ago (${data.lastSuccessAction || '?'})`
@@ -830,10 +1055,26 @@ async function formatOutput(action, data) {
         const filePath = join(tmpdir(), `cockpit-screenshot-${id}-${Date.now()}.png`);
         writeFileSync(filePath, Buffer.from(base64, 'base64'));
         console.log(filePath);
+        if (data.note) console.error(data.note);
       } else {
         console.log(JSON.stringify(data, null, 2));
       }
       return;
+
+    case 'tabs':
+      if (Array.isArray(data)) {
+        if (!data.length) {
+          console.log('No tabs reported — is the OpenCockpit Bridge extension connected? (Settings → Browser extension)');
+          return;
+        }
+        for (const b of data) {
+          const state = b.origin === 'opened' ? 'opened ' : b.allowed ? 'allowed' : 'asks   ';
+          console.log(`${b.active ? '▸' : ' '} ${b.shortId}  ${state}  ${(b.title || '').slice(0, 70)}${b.debugging ? '  [debugging]' : ''}`);
+          console.log(`        ${b.url || ''}`);
+        }
+        return;
+      }
+      break;
 
     case 'list':
       if (Array.isArray(data) && data.length === 0) {
@@ -848,9 +1089,14 @@ async function formatOutput(action, data) {
           const b = data[i];
           const info = infos[i];
           const status = b.connected ? '●' : '○';
-          let line = `${status} ${b.shortId}  ${b.connected ? 'connected' : 'disconnected'}`;
-          if (info.title) line += `  title: ${info.title}`;
-          if (info.url) line += `\n    URL: ${info.url}`;
+          const kind = b.kind === 'tab'
+            ? (b.origin === 'opened' ? 'tab (opened)' : b.allowed ? 'tab (allowed)' : 'tab (asks first)')
+            : 'bubble';
+          let line = `${status} ${b.shortId}  ${kind}  ${b.connected ? 'connected' : 'disconnected'}`;
+          const title = info.title || b.title;
+          const url = info.url || b.url;
+          if (title) line += `  title: ${title}`;
+          if (url) line += `\n    URL: ${url}`;
           console.log(line);
         }
         return;
@@ -870,6 +1116,10 @@ async function formatOutput(action, data) {
       return;
 
     case 'console':
+      if (data && data.captureStarted) {
+        console.error(`note: ${data.note}`);
+        data = data.entries;
+      }
       if (Array.isArray(data)) {
         for (const m of data) {
           const ts = new Date(m.timestamp).toLocaleTimeString();
@@ -880,6 +1130,10 @@ async function formatOutput(action, data) {
       break;
 
     case 'network':
+      if (data && data.captureStarted) {
+        console.error(`note: ${data.note}`);
+        data = data.entries;
+      }
       if (Array.isArray(data)) {
         for (const r of data) {
           const status = r.status || '???';
@@ -898,6 +1152,7 @@ async function formatOutput(action, data) {
         if (data.recording === true && data.filters) {
           const filters = Object.entries(data.filters).map(([k, v]) => `${k}=${v}`).join(' ') || '(all)';
           console.log(`⏺ Recording started  filters: ${filters}  expires: ${data.expiresIn}`);
+          if (data.note) console.error(`note: ${data.note}`);
         } else if (data.recording === false && data.recordedCount !== undefined) {
           console.log(`⏹ Recording stopped  ${data.recordedCount} requests captured`);
         } else {

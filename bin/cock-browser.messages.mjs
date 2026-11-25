@@ -5,11 +5,10 @@
  * EXAMPLES below. Never inline business-specific selectors or API paths.
  *
  * Single source of truth — PR review greps for case-specific leakage:
- *   grep -E '<known case keywords>' bin/cock-browser.* chrome-extension/messages.js
+ *   grep -E '<known case keywords>' bin/cock-browser.* chrome-extension/page-core.js
  *
- * The extension side has its own copy (chrome-extension/messages.js); the
- * subset that the extension generates locally (e.g. STALE_REF_MSG) lives
- * there. Templates here are CLI-side only.
+ * The extension generates a few messages locally (stale ref, unknown action)
+ * in chrome-extension/page-core.js. Templates here are CLI-side only.
  */
 
 // ─────────────────────────────────────────────────────────

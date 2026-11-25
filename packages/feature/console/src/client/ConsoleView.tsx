@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback, memo } from 'react';
+import { isWebUrl, openWebPage } from './openWebPage';
 import { useTranslation } from 'react-i18next';
 import { ConsoleBubbleRow } from './ConsoleBubbleRow';
 import { EnvManager } from './EnvManager';
@@ -205,9 +206,10 @@ function ConsoleViewImpl({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote,
   }, []);
 
   // Stable wrapper so ConsoleBubbleRow's `extra` doesn't churn each render.
+  // A link that wants a new tab: web pages go to Chrome, local content stays a bubble.
   const addBrowserItem = useCallback(
-    (url: string, afterId: string) => addPluginItem('browser', url, afterId),
-    [addPluginItem],
+    (url: string, afterId: string) => (isWebUrl(url) ? void openWebPage(url, cwd) : addPluginItem('browser', url, afterId)),
+    [addPluginItem, cwd],
   );
 
   useEffect(() => {

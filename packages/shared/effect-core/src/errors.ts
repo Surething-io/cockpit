@@ -33,6 +33,7 @@ export class DBError extends Data.TaggedError("DBError")<{
 export type WSProto =
   | "terminal"
   | "browser"
+  | "browser-ext"
   | "watch"
   | "global-state"
   | "terminal-follow"

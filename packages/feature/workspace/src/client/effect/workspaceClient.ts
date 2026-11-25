@@ -87,6 +87,25 @@ export const loadExtensionVersion = (): Effect.Effect<
   AppError
 > => httpJson("/api/extension/version")
 
+/** A browser whose OpenCockpit Bridge extension is connected to this server. */
+export interface BridgeExtensionInfo {
+  id: string
+  browser: string | null
+  version: string | null
+  connectedAt: number
+}
+
+const postJson = <A>(url: string): Effect.Effect<A, AppError> =>
+  httpJson<A>(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+
+export const loadBridgeExtensions = (): Effect.Effect<BridgeExtensionInfo[], AppError> =>
+  postJson<{ ok: boolean; data?: BridgeExtensionInfo[] }>("/api/browser/extensions").pipe(
+    Effect.map((r) => r.data ?? [])
+  )
+
+export const reloadBridgeExtensions = (): Effect.Effect<{ ok: boolean }, AppError> =>
+  postJson("/api/browser/extension_reload")
+
 // ─────────────────────────────────────────────────────────
 // /api/note
 // ─────────────────────────────────────────────────────────

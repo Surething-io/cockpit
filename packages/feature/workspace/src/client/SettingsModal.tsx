@@ -5,14 +5,16 @@ import { useTranslation } from 'react-i18next';
 import { useTheme } from '@cockpit/shared-ui';
 import { toast } from '@cockpit/shared-ui';
 import { isMacClient } from '@cockpit/shared-utils';
-import { useCockpitBridge } from '@cockpit/feature-console';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
-import { Effect } from 'effect';
+import { Effect, Fiber, Schedule } from 'effect';
 import {
   loadSettings,
   saveSettings,
   loadCockpitVersion,
   loadExtensionVersion,
+  loadBridgeExtensions,
+  reloadBridgeExtensions,
+  type BridgeExtensionInfo,
 } from './effect/workspaceClient';
 
 interface SettingsModalProps {
@@ -23,7 +25,7 @@ interface SettingsModalProps {
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { t, i18n } = useTranslation();
   const { theme, setTheme } = useTheme();
-  const bridge = useCockpitBridge();
+  const [extensions, setExtensions] = useState<BridgeExtensionInfo[]>([]);
   const [extensionPath, setExtensionPath] = useState<string>('');
   const [appVersion, setAppVersion] = useState<string>('');
   // Versions of the agent CLIs bundled with this build. Diagnostic only — both ship inside
@@ -65,8 +67,24 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     );
   }, []);
 
-  const extensionStatus = bridge ? 'installed' as const : 'not-installed' as const;
-  const extensionVersion = bridge?.version ?? null;
+  const extensionStatus = extensions.length ? 'installed' as const : 'not-installed' as const;
+  const extensionVersion = extensions[0]?.version ?? null;
+  const extensionBrowsers = extensions.map((e) => e.browser).filter(Boolean).join(', ');
+
+  // Extension connections are reported by the server (the extension talks to
+  // it through the native host), so poll while the panel is open — that also
+  // picks up a fresh install without reopening Settings.
+  useEffect(() => {
+    if (!isOpen) return;
+    const fiber = BrowserRuntime.runFork(
+      loadBridgeExtensions().pipe(
+        Effect.tap((list) => Effect.sync(() => setExtensions(list))),
+        Effect.orElse(() => Effect.void),
+        Effect.repeat(Schedule.spaced('3 seconds')),
+      )
+    );
+    return () => { BrowserRuntime.runFork(Fiber.interrupt(fiber)); };
+  }, [isOpen]);
 
   // Fetch app version
   useEffect(() => {
@@ -210,7 +228,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   extensionStatus === 'installed' ? 'bg-green-500' : 'bg-slate-400'
                 }`} />
                 <span>
-                  {extensionStatus === 'installed' && `${t('settings.extensionInstalled')}${extensionVersion ? ` (v${extensionVersion})` : ''}`}
+                  {extensionStatus === 'installed' && `${t('settings.extensionInstalled')}${extensionVersion ? ` (v${extensionVersion})` : ''}${extensionBrowsers ? ` · ${extensionBrowsers}` : ''}`}
                   {extensionStatus === 'not-installed' && t('settings.extensionNotInstalled')}
                 </span>
               </div>
@@ -240,12 +258,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 {extensionStatus === 'installed' && (
                   <button
                     onClick={() => {
-                      if (bridge?.id && (window as unknown as { chrome?: { runtime?: { sendMessage?: (id: string, msg: unknown) => void } } }).chrome?.runtime?.sendMessage) {
-                        (window as unknown as { chrome: { runtime: { sendMessage: (id: string, msg: unknown) => void } } }).chrome.runtime.sendMessage(bridge.id, { type: 'reload' });
-                        toast(t('toast.pluginReloading'));
-                        // After reload, the content script re-injects window.__cockpitBridge
-                        // useCockpitBridge will auto-update via the cockpit-bridge-ready event
-                      }
+                      BrowserRuntime.runFork(reloadBridgeExtensions().pipe(Effect.orElse(() => Effect.void)));
+                      toast(t('toast.pluginReloading'));
                     }}
                     className="px-3 py-1.5 text-xs border border-border text-foreground rounded-md hover:bg-muted transition-colors"
                   >

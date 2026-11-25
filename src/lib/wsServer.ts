@@ -15,6 +15,8 @@ import { runGlobalStateHandler } from './effect/globalStateHandler';
 import { runFileWatchHandler } from './effect/fileWatchHandler';
 import { runTerminalFollowHandler } from './effect/terminalFollowHandler';
 import { runBrowserHandler } from './effect/browserHandler';
+import { runBrowserExtHandler } from './effect/browserExtHandler';
+import { timingSafeEqual } from 'crypto';
 import { runTerminalHandler } from './effect/terminalHandler';
 import { runBashHandler } from './effect/bashStreamHandler';
 import { runSessionStreamHandler } from './effect/sessionStreamHandler';
@@ -82,6 +84,21 @@ function isSameOriginWs(req: IncomingMessage): boolean {
   }
 }
 
+/**
+ * /ws/browser-ext is reached by the OpenCockpit Bridge native host
+ * (bin/bridge-host.mjs), a local process with no Origin header — so the origin
+ * gate alone would let any local process in. It must present the per-boot
+ * token server.mjs published in ~/.cockpit/bridge/instances/<port>.json
+ * (owner-only). A browser page sends an Origin and never knows the token.
+ */
+function hasBridgeToken(token: unknown, origin: string | undefined): boolean {
+  const expected = process.env.COCKPIT_BRIDGE_TOKEN;
+  if (!expected || typeof token !== 'string' || origin) return false;
+  const a = Buffer.from(token);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 const g_ws = globalThis as unknown as {
   __cockpitWss?: WebSocketServer;
 };
@@ -124,6 +141,12 @@ const wss: WebSocketServer = g_ws.__cockpitWss ?? (() => {
         query.projectCwd as string | undefined,
         query.tabId as string | undefined,
       );
+    } else if (pathname === '/ws/browser-ext') {
+      if (!hasBridgeToken(query.token, req.headers.origin)) {
+        try { ws.close(4401, 'bad bridge token'); } catch { /* ignore */ }
+      } else {
+        runBrowserExtHandler(ws);
+      }
     } else if (pathname === '/ws/terminal-follow') {
       runTerminalFollowHandler(ws, query.id as string);
     } else if (pathname === '/ws/session-stream') {
@@ -147,6 +170,7 @@ export function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer
     pathname === '/ws/terminal' ||
     pathname === '/ws/bash' ||
     pathname === '/ws/browser' ||
+    pathname === '/ws/browser-ext' ||
     pathname === '/ws/terminal-follow' ||
     pathname === '/ws/session-stream'
   ) {

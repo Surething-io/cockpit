@@ -6,8 +6,8 @@
  * Replaces a bare "Loading…" for what is often a multi-second and
  * occasionally multi-TEN-second wait (measured on a production server, with
  * no dev-mode compilation in the way: 2.0s @ 255 files, 8.0s @ 4.5k files,
- * 17.9s @ 7.7k files — and `MAX_FILES` is now 15000, so the ceiling is
- * higher still).
+ * 17.9s @ 7.7k files — and `INDEX_FILE_LIMIT` admits up to 100k files, so
+ * large repos wait far longer).
  *
  * Where the data comes from: `buildCodeIndex` emits progress frames, which
  * `src/lib/effect/fileWatchHandler.ts` forwards over `/ws/watch?cwd=`.

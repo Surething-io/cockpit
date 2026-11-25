@@ -84,7 +84,8 @@ describe('installNativeHost', () => {
     const manifest = JSON.parse(readFileSync(join(chrome.dir, `${HOST_NAME}.json`), 'utf8'));
     expect(manifest).toMatchObject({ name: HOST_NAME, type: 'stdio', path: res.launcher });
     expect(readFileSync(res.launcher, 'utf8')).toBe(launcherScript('darwin', '/opt/node', '/pkg/bin/bridge-host.mjs'));
-    expect(statSync(res.launcher).mode & 0o111).not.toBe(0);
+    // POSIX mode bits only exist off Windows (NTFS has ACLs; chmod is a no-op there).
+    if (process.platform !== 'win32') expect(statSync(res.launcher).mode & 0o111).not.toBe(0);
     expect(existsSync(join(dirs.find((d) => d.base.endsWith('Vivaldi')).dir))).toBe(false);
   });
 
@@ -116,7 +117,8 @@ describe('instance registry', () => {
   it('publishes an owner-only record and removes it on cleanup', () => {
     const cleanup = registerInstance({ port: 4567, token: 't0k', home: '/h', version: '1.0.0', dir });
     const path = join(dir, '4567.json');
-    expect(statSync(path).mode & 0o077).toBe(0);
+    // Owner-only via mode bits off Windows; there the profile dir's ACL is what protects it.
+    if (process.platform !== 'win32') expect(statSync(path).mode & 0o077).toBe(0);
     expect(listInstances(dir)).toMatchObject([{ id: '4567', port: 4567, token: 't0k', pid: process.pid }]);
     cleanup();
     expect(existsSync(path)).toBe(false);

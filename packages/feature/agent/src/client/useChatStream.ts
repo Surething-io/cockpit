@@ -53,6 +53,9 @@ import type { RunMessageUpdate, LiveHistoryRun, HistoryFailure, HistoryMessageUp
 // Types
 // ============================================
 
+/** Anthropic-shaped usage block, as carried by `assistant.message.usage` and `result.usage`. */
+type RawUsage = { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
+
 interface UseChatStreamOptions {
   sessionId: string | null;
   cwd?: string;
@@ -213,6 +216,10 @@ export function useChatStream(
   const curAsstIdRef = useRef<string | null>(null);
   const sawResultRef = useRef(false);
   const turnActiveRef = useRef(false);
+  // Usage of the latest main-thread API call this turn. `result.usage` sums every call in the
+  // turn (each tool round-trip resends the whole prompt), so it overstates the context size by
+  // roughly the number of tool calls; the last call's usage is what the next request resends.
+  const lastCallUsageRef = useRef<RawUsage | null>(null);
   const bgSeqRef = useRef(0);
   // Mid-run sends: `launchTurnIdRef` is the runId this tab launched the run with, so its seeded
   // `_human` event is told apart from a message injected later. `splitPendingRef` is set by such
@@ -548,6 +555,8 @@ export function useChatStream(
       // A retried request that succeeds straight into a tool call produces no text delta,
       // so the stream_event branch never clears the retry line; any model output means it recovered.
       setApiRetryInfo(prev => prev ? null : prev);
+      const callUsage = (event.message as { usage?: RawUsage } | undefined)?.usage;
+      if (callUsage) lastCallUsageRef.current = callUsage;
       const content = (event.message as { content?: unknown } | undefined)?.content;
       if (Array.isArray(content)) {
         for (const block of content as Array<{ text?: string; name?: string; input?: unknown }>) {
@@ -608,7 +617,10 @@ export function useChatStream(
       }
 
       // Capture token usage info
-      const usage = event.usage as { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number } | undefined;
+      // Prefer the last call's usage (context size); fall back to result.usage for engines whose
+      // assistant events carry none (codex and friends report a per-request figure there).
+      const usage = lastCallUsageRef.current ?? (event.usage as RawUsage | undefined);
+      lastCallUsageRef.current = null;
       const totalCostUsd = event.total_cost_usd as number | undefined;
 
       if (usage) {

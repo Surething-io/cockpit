@@ -1,11 +1,12 @@
-Use a Claude Code-style agent with any LLM — Claude, Codex, DeepSeek, GLM, Kimi or local Ollama. One engine per tab, no environment variables to edit.
+OpenCockpit supports 7 AI engines: Claude, Codex, Grok Build, DeepSeek, GLM, Kimi and local Ollama. How to sign in to each, its models, and what it can do.
 
-OpenCockpit talks to 6 AI engines out of the box. Each Agent tab picks one engine; you can mix and match across tabs without restarting — pick by what's running locally, what billing account you're on, or which model is best at the task in front of you.
+Each Agent tab picks one engine; you can mix and match across tabs without restarting — pick by what's running locally, what billing account you're on, or which model is best at the task in front of you.
 
 | Engine | How to sign in | When to use |
 |---|---|---|
 | [Claude](#claude) | Anthropic `claude` CLI login | Default. Best general-purpose model. |
 | [Codex](#codex) | `codex` CLI login | If you already have a Codex / GPT subscription. |
+| [Grok Build](#grok-build) | `grok login` (CLI ships with Cockpit) | If you already have a Grok subscription. |
 | [DeepSeek](#deepseek) | Paste API key in the per-tab DeepSeek picker | Strong reasoning at lower cost. |
 | [GLM](#glm) | Paste API key in the per-tab GLM picker | Zhipu's models, on a mainland or an international host. |
 | [Kimi](#kimi) | Paste API key in the per-tab Kimi picker | Long context, mostly used in China. |
@@ -13,21 +14,7 @@ OpenCockpit talks to 6 AI engines out of the box. Each Agent tab picks one engin
 
 > Everything runs locally.
 
-## Claude Code with GLM, Kimi, DeepSeek or Ollama
-
-The usual way to run Claude Code on another model is to override its environment — `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` in your shell — or to put a protocol gateway in front of it. That works, but the switch is global to the shell: one model at a time, and changing models means editing variables and restarting `claude`.
-
-OpenCockpit makes the engine a per-tab choice instead:
-
-|  | Env vars / gateway | OpenCockpit |
-|---|---|---|
-| Switching models | Edit env vars or gateway config, restart `claude` | Pick an engine in the tab header |
-| Several models side by side | One per shell | One per tab, in the same window |
-| Where the key lives | Shell profile or gateway config | Per engine, under `~/.cockpit/<engine>/credentials.json` |
-| What runs the conversation | Claude Code itself, full feature set | Claude tabs: the Claude Agent SDK. Codex tabs: the `codex` CLI. DeepSeek / GLM / Kimi / Ollama tabs: Cockpit's [Built-in Agent](#what-runs-the-api-key-engines) |
-| Session history, snapshots, forking | Whatever the CLI provides | The same for every engine |
-
-The trade-off is real: the Built-in Agent has seven tools and no MCP servers or subagents. If you need those on a non-Anthropic model, the environment-variable route still gives you them; OpenCockpit trades them for switching per tab without touching your shell.
+Coming from `ANTHROPIC_BASE_URL` overrides or a gateway in front of Claude Code? [Claude Code with GLM, Kimi and DeepSeek — No Env Vars](/en/blog/claude-code-with-glm-kimi-deepseek/) compares that route with picking an engine per tab, including what you give up.
 
 ## Overview
 
@@ -37,6 +24,7 @@ The trade-off is real: the Built-in Agent has seven tools and no MCP servers or 
 |---|---|---|---|
 | **Claude** | Log in once via the `claude` CLI | Default. Best general-purpose model. | Anthropic |
 | **Codex** | Log in once via the `codex` CLI | When you already have a Codex / GPT subscription. | OpenAI |
+| **Grok Build** | Run `grok login` once (the CLI ships with Cockpit) | When you already have a Grok subscription. | xAI |
 | **DeepSeek** | Paste an API key in the per-tab DeepSeek picker | Strong reasoning at lower cost. | DeepSeek |
 | **GLM** | Paste an API key in the per-tab GLM picker | Zhipu's models, served from a mainland **or** an international host. | Zhipu / BigModel (pay-as-you-go or Coding Plan) |
 | **Kimi** | Paste an API key in the per-tab Kimi picker | Long context, mostly used in China. | Moonshot (Kimi Code subscription) |
@@ -59,20 +47,20 @@ Cockpit's Session Browser (grid icon at the top of the sidebar) shows all of the
 
 ### What each engine can do
 
-|  | Claude | Codex | DeepSeek | GLM | Kimi | Ollama |
-|---|---|---|---|---|---|---|
-| Can read & edit your files | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ depends on model |
-| Accepts image attachments | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Streams replies as it thinks | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Runs offline | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Choose between model variants | Fixed (latest) | Fixed | Live list from DeepSeek's API | Live list from GLM's API | Live list from your Kimi plan | Any model you've pulled |
-| Shows running cost in the UI | ✅ | — | — | Quota, not cost — see [Check quota](#check-your-coding-plan-quota) | Quota, not cost — see [Check quota](#check-your-quota) | Free |
+|  | Claude | Codex | Grok Build | DeepSeek | GLM | Kimi | Ollama |
+|---|---|---|---|---|---|---|---|
+| Can read & edit your files | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ depends on model |
+| Accepts image attachments | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Streams replies as it thinks | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Runs offline | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Choose between model variants | Fixed (latest) | Fixed | Grok 4.7 / 4.6 / 4.5, plus a reasoning level | Live list from DeepSeek's API | Live list from GLM's API | Live list from your Kimi plan | Any model you've pulled |
+| Shows running cost in the UI | ✅ | — | — | — | Quota, not cost — see [Check quota](#check-your-coding-plan-quota) | Quota, not cost — see [Check quota](#check-your-quota) | Free |
 
 > Image support is engine-level. **Ollama** tabs **silently drop** image attachments (no error, but the AI doesn't see them). **DeepSeek**, **GLM** and **Kimi** run the Built-in Agent, which is text-only — see [What runs the API-key engines](#what-runs-the-api-key-engines).
 
 ### What runs the API-key engines
 
-**Claude** and **Codex** are driven by their vendor's own tooling — the Claude Agent SDK and the `codex` CLI. The three API-key engines (**DeepSeek**, **GLM**, **Kimi**) and **Ollama** all run **Cockpit's own Built-in Agent** against the provider's OpenAI-compatible endpoint. There is no per-tab mode switch: the engine you pick decides what runs.
+**Claude**, **Codex** and **Grok Build** are driven by their vendor's own tooling — the Claude Agent SDK, the `codex` CLI and the Grok Build CLI. The three API-key engines (**DeepSeek**, **GLM**, **Kimi**) and **Ollama** all run **Cockpit's own Built-in Agent** against the provider's OpenAI-compatible endpoint. There is no per-tab mode switch: the engine you pick decides what runs.
 
 What the Built-in Agent gives you: streaming replies, tool calls rendered inline, [snapshots](/en/docs/agent/snapshots/), forking, and per-project session files under `~/.cockpit/<engine>-sessions/`.
 
@@ -90,6 +78,7 @@ Per-engine sections below cover the specifics. Quick pointers:
 
 - **Claude** — run `claude` once on your terminal and follow its login prompt. Cockpit reuses your Claude login automatically.
 - **Codex** — install OpenAI's `codex` CLI and log in with it once. Cockpit reuses that login.
+- **Grok Build** — nothing to install: the Grok Build CLI ships with Cockpit. Run `grok login` once in a terminal.
 - **DeepSeek** — get a key from [platform.deepseek.com](https://platform.deepseek.com/), then **paste it in the DeepSeek picker in the Agent tab header** (not in the global Cockpit Settings). Pick a model in the same picker.
 - **GLM** — get a key from the [BigModel console](https://bigmodel.cn/apikey/platform), then **paste it in the GLM picker in the Agent tab header**. Pick a model in the same picker, and check the **Region** row while you're there — see [Choose a region](#choose-a-region).
 - **Kimi** — get a key from the [Kimi Code console](https://www.kimi.com/code/console), then **paste it in the Kimi picker in the Agent tab header**. Pick a model in the same picker.
@@ -173,6 +162,50 @@ Nothing to paste inside Cockpit — it reuses whatever `codex` is already config
 - **"`codex` not found" / nothing happens on send** — the `codex` CLI isn't on your PATH. Verify with `codex --version` in a terminal; if that fails, reinstall.
 - **Login expired** — re-run `codex` in a terminal and complete the login flow again. Cockpit doesn't manage the login itself.
 - **Outdated CLI** — OpenAI updates `codex` periodically. If something behaves oddly, upgrade.
+
+## Grok Build
+
+If you have a Grok subscription, you can run xAI's Grok Build agent inside Cockpit with that login. Cockpit drives the official [Grok Build CLI](https://x.ai/cli) over ACP, so the agent's own coding tools do the work.
+
+### Setup
+
+1. Nothing to install. Cockpit ships a pinned copy of the Grok Build CLI and installs it alongside itself.
+
+2. Log in once:
+
+```bash
+grok login
+```
+
+If `grok` isn't on your PATH, run `~/.grok/bin/grok login` instead.
+
+3. Open Cockpit, create a new Agent tab, pick **Grok** in the engine menu.
+
+Cockpit uses the cached subscription login even when `XAI_API_KEY` is set in your environment.
+
+### Pick a model
+
+The tab header has a fixed **Model** menu (Grok 4.7, the default; 4.6; 4.5) and a **Reasoning** menu (Low, Medium, High — the default — and Extra High). Both choices are saved per session.
+
+### What you get
+
+- **Image attachments**, sent straight to the CLI.
+- Streaming replies and inline tool results.
+- Tool use with full access — like Claude and Codex, Grok can read your files, run shell commands and edit code.
+- Session resume, forking and turn deletion, kept in sync with the CLI's own context.
+- Scheduled tasks and delegation work the same as on other engines.
+
+Cockpit keeps the display history under `~/.cockpit/grok/sessions`; the CLI's native context and your credentials stay in its own data directory.
+
+### What you don't get
+
+- **No running cost display.** Check usage in your xAI account.
+- **No live model list.** The menu is fixed to the three models above.
+
+### Common issues
+
+- **"Grok subscription authentication failed"** — the login is missing or expired. Run `grok login` (or `~/.grok/bin/grok login`) in a terminal, then send again.
+- **"This Grok CLI does not support image prompts"** — send text only, or update Cockpit to get a newer bundled CLI.
 
 ## DeepSeek
 

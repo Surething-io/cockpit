@@ -412,7 +412,11 @@ export const messages = {
       // the problem a searcher has, not the feature name; pages without an
       // entry fall back to "<sidebar label> · Documentation".
       seoTitles: {
-        engines: 'Use Claude Code with Any LLM: GLM, Kimi, DeepSeek, Ollama',
+        // Exception to the rule above: phrased as a reference title matching
+        // the page's H1. The problem-shaped title duplicated the intent of the
+        // claude-code-with-glm-kimi-deepseek post, and Google dropped this page
+        // from the index (crawled, not indexed) in favour of the post.
+        engines: 'AI Engines: Claude, Codex, Grok, DeepSeek, GLM, Kimi, Ollama',
         workflows: 'Chain Slash Commands into Multi-Step AI Workflows',
         skills: 'Turn Chats into Reusable Claude Code Skills (SKILL.md)',
         snapshots: 'Undo and Review Every AI Agent Change, Tool Call by Tool Call',
@@ -901,7 +905,7 @@ export const messages = {
       indexStart: '第一次使用？从「介绍」开始 →',
       // Search-facing <title> per page; see the en entry.
       seoTitles: {
-        engines: 'Claude Code 接任意大模型：GLM、Kimi、DeepSeek、Ollama',
+        engines: 'AI 引擎：Claude、Codex、Grok、DeepSeek、GLM、Kimi、Ollama',
         workflows: '把斜杠命令串成多步骤 AI 工作流',
         skills: '把对话沉淀成可复用的 Claude Code Skill（SKILL.md）',
         snapshots: '逐个工具调用回看、回滚 AI Agent 的每一处改动',

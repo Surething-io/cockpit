@@ -1,11 +1,12 @@
-用 Claude Code 式的 Agent 驱动任意大模型 —— Claude、Codex、DeepSeek、GLM、Kimi 或本地 Ollama。每个 tab 选一个引擎,不用改环境变量。
+OpenCockpit 支持 7 个 AI 引擎:Claude、Codex、Grok Build、DeepSeek、GLM、Kimi 和本地 Ollama。本页讲每个引擎怎么登录、有哪些模型可选、能做什么和不能做什么。
 
-OpenCockpit 开箱支持 6 个 AI 引擎。每个 Agent tab 选一个,可以跨 tab 混用,不用重启 —— 按本地是否有模型、账号在谁那、当前任务哪个最擅长来挑。
+每个 Agent tab 选一个引擎,可以跨 tab 混用,不用重启 —— 按本地是否有模型、账号在谁那、当前任务哪个最擅长来挑。
 
 | 引擎 | 登录方式 | 何时用 |
 |---|---|---|
 | [Claude](#claude) | Anthropic `claude` CLI 登录 | 默认。综合能力最强。 |
 | [Codex](#codex) | `codex` CLI 登录 | 已经有 Codex / GPT 订阅时。 |
+| [Grok Build](#grok-build) | `grok login`(CLI 随 Cockpit 安装) | 已经有 Grok 订阅时。 |
 | [DeepSeek](#deepseek) | 在 DeepSeek 选择器里粘 API key | 推理强、便宜。 |
 | [GLM](#glm) | 在 GLM 选择器里粘 API key | 智谱的模型,国内站和国际站都能走。 |
 | [Kimi](#kimi) | 在 Kimi 选择器里粘 API key | 长上下文,国内多用。 |
@@ -13,21 +14,7 @@ OpenCockpit 开箱支持 6 个 AI 引擎。每个 Agent tab 选一个,可以跨 
 
 > 一切都在本地完成。
 
-## Claude Code 接 GLM、Kimi、DeepSeek、Ollama
-
-让 Claude Code 换用其他模型,常见做法是在 shell 里覆盖它的环境变量 —— `ANTHROPIC_BASE_URL` 和 `ANTHROPIC_AUTH_TOKEN` —— 或者在前面架一层协议网关。这能用,但切换是整个 shell 级别的:同一时间只能用一个模型,换模型就得改变量、重启 `claude`。
-
-OpenCockpit 把引擎变成了每个 tab 自己的选择:
-
-|  | 环境变量 / 网关 | OpenCockpit |
-|---|---|---|
-| 切换模型 | 改环境变量或网关配置,重启 `claude` | 在 tab 顶部选引擎 |
-| 多个模型同时用 | 一个 shell 一个 | 一个 tab 一个,同一个窗口里 |
-| key 放在哪 | shell 配置文件或网关配置 | 按引擎分开,存在 `~/.cockpit/<engine>/credentials.json` |
-| 由谁来跑对话 | Claude Code 本身,功能完整 | Claude tab:Claude Agent SDK。Codex tab:`codex` CLI。DeepSeek / GLM / Kimi / Ollama tab:Cockpit 的[内置 Agent](#纯-key-引擎跑的是什么) |
-| 会话历史、快照、分叉 | 取决于 CLI 本身 | 所有引擎一样 |
-
-代价也要说清楚:内置 Agent 只有七个工具,没有 MCP server,也没有子代理。如果你需要在非 Anthropic 模型上用这些,环境变量的方式仍然能给你;OpenCockpit 用它们换来了按 tab 切换、不碰 shell。
+之前靠覆盖 `ANTHROPIC_BASE_URL` 或在 Claude Code 前面架网关来换模型?[Claude Code 接 GLM、Kimi、DeepSeek,不用改环境变量](/zh/blog/claude-code-with-glm-kimi-deepseek/) 对比了那种做法和按 tab 选引擎,也讲了要放弃什么。
 
 ## Overview
 
@@ -37,6 +24,7 @@ OpenCockpit 把引擎变成了每个 tab 自己的选择:
 |---|---|---|---|
 | **Claude** | 终端跑一次 `claude` CLI 登录 | 默认。最强通用模型。 | Anthropic |
 | **Codex** | 终端跑一次 `codex` CLI 登录 | 已有 Codex / GPT 订阅时。 | OpenAI |
+| **Grok Build** | 终端跑一次 `grok login`(CLI 随 Cockpit 安装) | 已有 Grok 订阅时。 | xAI |
 | **DeepSeek** | 在引擎头部的 DeepSeek 选择器里粘 API key | 推理强、价格低。 | DeepSeek |
 | **GLM** | 在引擎头部的 GLM 选择器里粘 API key | 智谱的模型,国内站**或**国际站两套接入点。 | 智谱 / BigModel(按量付费或 Coding Plan) |
 | **Kimi** | 在引擎头部的 Kimi 选择器里粘 API key | 长上下文,国内主用。 | 月之暗面(Kimi Code 订阅) |
@@ -59,20 +47,20 @@ Cockpit 的会话浏览器(侧栏顶部网格图标)能看到全部。
 
 ### 各引擎能做什么
 
-|  | Claude | Codex | DeepSeek | GLM | Kimi | Ollama |
-|---|---|---|---|---|---|---|
-| 能读 & 改你的文件 | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ 看模型 |
-| 接受图片附件 | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| 流式输出(边想边说) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 离线可用 | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| 多模型变体可选 | 固定(最新版) | 固定 | 从 DeepSeek 接口实时拉取 | 从 GLM 接口实时拉取 | 按你的 Kimi 套餐实时拉取 | 你拉过的任意模型 |
-| UI 里显示实时成本 | ✅ | — | — | 显示额度而非金额 —— 见[查询额度](#查询-coding-plan-额度) | 显示额度而非金额 —— 见[查询额度](#查询额度) | 免费 |
+|  | Claude | Codex | Grok Build | DeepSeek | GLM | Kimi | Ollama |
+|---|---|---|---|---|---|---|---|
+| 能读 & 改你的文件 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ 看模型 |
+| 接受图片附件 | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| 流式输出(边想边说) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 离线可用 | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| 多模型变体可选 | 固定(最新版) | 固定 | Grok 4.7 / 4.6 / 4.5,外加推理档位 | 从 DeepSeek 接口实时拉取 | 从 GLM 接口实时拉取 | 按你的 Kimi 套餐实时拉取 | 你拉过的任意模型 |
+| UI 里显示实时成本 | ✅ | — | — | — | 显示额度而非金额 —— 见[查询额度](#查询-coding-plan-额度) | 显示额度而非金额 —— 见[查询额度](#查询额度) | 免费 |
 
 > 图片支持是引擎级。**Ollama** 收到图片附件会**静默丢弃**(不报错,但 AI 看不到)。**DeepSeek**、**GLM**、**Kimi** 跑的是内置 Agent,只吃文本 —— 见[纯 Key 引擎跑的是什么](#纯-key-引擎跑的是什么)。
 
 ### 纯 Key 引擎跑的是什么
 
-**Claude** 和 **Codex** 由各自厂商的工具驱动 —— Claude Agent SDK 和 `codex` CLI。三个纯 API key 的引擎(**DeepSeek**、**GLM**、**Kimi**)以及 **Ollama**,跑的都是 **Cockpit 自己的内置 Agent**,打的是供应商的 OpenAI 兼容端点。**没有 per-tab 的模式开关**:你选哪个引擎,就决定了跑什么。
+**Claude**、**Codex** 和 **Grok Build** 由各自厂商的工具驱动 —— Claude Agent SDK、`codex` CLI 和 Grok Build CLI。三个纯 API key 的引擎(**DeepSeek**、**GLM**、**Kimi**)以及 **Ollama**,跑的都是 **Cockpit 自己的内置 Agent**,打的是供应商的 OpenAI 兼容端点。**没有 per-tab 的模式开关**:你选哪个引擎,就决定了跑什么。
 
 内置 Agent 给你的:流式回复、聊天里内联渲染的工具调用、[快照](/zh/docs/agent/snapshots/)、fork,以及落在 `~/.cockpit/<引擎>-sessions/` 下的按项目会话文件。
 
@@ -90,6 +78,7 @@ Cockpit 的会话浏览器(侧栏顶部网格图标)能看到全部。
 
 - **Claude** —— 在终端跑一次 `claude` 按提示登录。Cockpit 自动复用你的 Claude 登录态。
 - **Codex** —— 装 OpenAI 的 `codex` CLI 并用它登录一次。Cockpit 复用同一份登录态。
+- **Grok Build** —— 不用另装:Grok Build CLI 随 Cockpit 一起安装。在终端跑一次 `grok login` 即可。
 - **DeepSeek** —— 从 [platform.deepseek.com](https://platform.deepseek.com/) 拿 key,**在 Agent tab 头部的 DeepSeek 选择器里粘**(不是全局 Settings)。然后在同一个选择器里选模型。
 - **GLM** —— 从 [BigModel 控制台](https://bigmodel.cn/apikey/platform) 拿 key,**在 Agent tab 头部的 GLM 选择器里粘**。然后在同一个选择器里选模型,顺手确认一下 **Region(区域)**那一行 —— 见[选择区域](#选择区域)。
 - **Kimi** —— 从 [Kimi Code 控制台](https://www.kimi.com/code/console) 拿 key,**在 Agent tab 头部的 Kimi 选择器里粘**。然后在同一个选择器里选模型。
@@ -173,6 +162,50 @@ Cockpit 里不用粘任何东西 —— Cockpit 复用你机器上 `codex` 已�
 - **"找不到 `codex`" / 发消息没反应** —— `codex` CLI 不在 PATH 里。在终端跑 `codex --version` 验证;不行的话重装。
 - **登录过期** —— 在终端重跑一次 `codex` 走登录流程。Cockpit 不管登录本身。
 - **CLI 版本旧了** —— OpenAI 定期更新 `codex`。行为怪怪的话升级一下。
+
+## Grok Build
+
+有 Grok 订阅的话,可以用同一个登录在 Cockpit 里跑 xAI 的 Grok Build agent。Cockpit 通过 ACP 驱动官方的 [Grok Build CLI](https://x.ai/cli),干活的是它自带的编码工具。
+
+### 接入
+
+1. 不用另装。Cockpit 自带一份固定版本的 Grok Build CLI,安装 Cockpit 时一起装好。
+
+2. 登录一次:
+
+```bash
+grok login
+```
+
+如果 PATH 里找不到 `grok`,改跑 `~/.grok/bin/grok login`。
+
+3. 打开 Cockpit,新建 Agent tab,在引擎菜单里选 **Grok**。
+
+即使环境里设置了 `XAI_API_KEY`,Cockpit 用的也是缓存的订阅登录。
+
+### 选模型
+
+tab 头部有固定的 **Model** 菜单(Grok 4.7,默认;4.6;4.5)和 **Reasoning** 菜单(Low、Medium、High —— 默认 —— 和 Extra High)。两项选择都按会话保存。
+
+### 你能用到什么
+
+- **图片附件**,直接交给 CLI。
+- 流式回复,工具结果内联显示。
+- 完整权限的工具调用 —— 和 Claude、Codex 一样,Grok 能读文件、跑 shell 命令、改代码。
+- 会话恢复、分叉和删除轮次,和 CLI 自己的上下文保持同步。
+- 定时任务和委派跟其他引擎一样能用。
+
+Cockpit 把显示用的历史存在 `~/.cockpit/grok/sessions`;CLI 的原生上下文和你的凭据留在它自己的数据目录里。
+
+### 你拿不到什么
+
+- **没有实时成本显示。** 用量去 xAI 账户里看。
+- **没有实时模型列表。** 菜单固定为上面三个模型。
+
+### 常见问题
+
+- **"Grok subscription authentication failed"** —— 登录缺失或过期。在终端跑 `grok login`(或 `~/.grok/bin/grok login`),再发一次。
+- **"This Grok CLI does not support image prompts"** —— 只发文字,或者升级 Cockpit 换上更新的内置 CLI。
 
 ## DeepSeek
 

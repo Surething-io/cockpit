@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findPullRequestUrl, matchesPullRequestQuery, parsePullRequestQuery, pullRequestTitleOf } from './pullRequests';
+import { findPullRequestUrl, isPullRequestLookupCommand, matchesPullRequestQuery, parsePullRequestQuery, pullRequestTitleOf } from './pullRequests';
 
 describe('pullRequestTitleOf', () => {
   it('reads the quoted and bare title forms', () => {
@@ -36,5 +36,16 @@ describe('PR queries', () => {
   it('treats free text as no PR query', () => {
     expect(parsePullRequestQuery('slack')).toBeNull();
     expect(parsePullRequestQuery('')).toBeNull();
+  });
+});
+
+describe('isPullRequestLookupCommand', () => {
+  it('accepts commands that name the branch PR and rejects open listings', () => {
+    expect(isPullRequestLookupCommand('gh pr view --json url')).toBe(true);
+    expect(isPullRequestLookupCommand('gh pr list --head feat/x --json url')).toBe(true);
+    expect(isPullRequestLookupCommand('gh pr list -H feat/x')).toBe(true);
+    expect(isPullRequestLookupCommand('gh pr create --fill')).toBe(true);
+    expect(isPullRequestLookupCommand('gh pr list --json url')).toBe(false);
+    expect(isPullRequestLookupCommand('gh pr list --state open; git log --head')).toBe(false);
   });
 });

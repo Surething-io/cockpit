@@ -8,9 +8,18 @@
  * already open for the branch — both are the branch's PR, so both count. PR
  * links that only appear in prose (a pasted review link, a PR listing) are not
  * recorded: the board lists what sessions created, not everything they mention.
+ *
+ * One fallback: when the create call's output carries no URL (the call timed
+ * out and moved to the background, say, while the PR was in fact opened), the
+ * session's next `gh pr view` / `gh pr list --head` / `gh pr create` output
+ * that prints a PR URL resolves it — that is how an agent confirms the PR it
+ * just made. It stays scoped to the turn that issued the create.
  */
 
 const CREATE_COMMAND = /\bgh\s+pr\s+create\b/;
+const VIEW_COMMAND = /\bgh\s+pr\s+view\b/;
+// Only a head-filtered listing names the branch's own PR; a bare `gh pr list` lists everyone's.
+const LIST_HEAD_COMMAND = /\bgh\s+pr\s+list\b[^\n;&|]*\s(?:--head|-H)(?:=|\s)/;
 
 // `/pull/new/<branch>` (git push's hint) has no number, so it never matches.
 const PR_URL = /https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/pull\/(\d+)/;
@@ -26,6 +35,11 @@ export interface PullRequestRef {
 
 export function isPullRequestCreateCommand(command: string): boolean {
   return CREATE_COMMAND.test(command);
+}
+
+/** A command whose output names the branch's PR: the follow-up that resolves a URL-less create. */
+export function isPullRequestLookupCommand(command: string): boolean {
+  return CREATE_COMMAND.test(command) || VIEW_COMMAND.test(command) || LIST_HEAD_COMMAND.test(command);
 }
 
 /** First PR URL in `text`, canonicalised. */

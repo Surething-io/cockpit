@@ -58,7 +58,7 @@ import { extractCodexUserContent } from "../server/api/session/codexTools"
 import { getOwn, setOwn } from "../server/transcriptViews"
 import { codexPromptText, projectCodexUserMessage } from "../shared/codexPrompt"
 import { injectionKind, queuedPromptAsUserEntry } from "../shared/transcriptTurns"
-import { findPullRequestUrl, isPullRequestCreateCommand, pullRequestTitleOf } from "../shared/pullRequests"
+import { findPullRequestUrl, isPullRequestCreateCommand, isPullRequestLookupCommand, pullRequestTitleOf } from "../shared/pullRequests"
 import { writeAtomically } from "@cockpit/effect-runtime/server/fs"
 
 // ─────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ import { writeAtomically } from "@cockpit/effect-runtime/server/fs"
 // ─────────────────────────────────────────────────────────
 
 /** Bump when the folded shape or a fold rule changes: every shard rebuilds once. */
-export const TRANSCRIPT_INDEX_VERSION = 12
+export const TRANSCRIPT_INDEX_VERSION = 13
 const READ_CONCURRENCY = 4
 const ANCHOR_BYTES = 64
 const CHUNK_BYTES = 1024 * 1024
@@ -97,8 +97,15 @@ interface Entry {
    * claude: `gh pr create` tool calls still waiting for their tool_result, by
    * tool_use id. Call and result sit on different lines, possibly on different
    * sides of an incremental read, so the pairing has to be folded state.
+   * `lookup` marks a follow-up `gh pr view|list --head` call issued while a
+   * create is unresolved.
    */
-  pendingPrCreates: Record<string, { title?: string }>
+  pendingPrCreates: Record<string, { title?: string; lookup?: true }>
+  /**
+   * A `gh pr create` whose output printed no PR URL (timed out, moved to the
+   * background), waiting for a lookup in the same turn to name the PR.
+   */
+  unresolvedPrCreate: { title?: string; createdAt?: string } | null
   stats: TranscriptStats
   /** Lines no decoder accepted (malformed or of no interest to any view). */
   skippedLines: number
@@ -116,7 +123,7 @@ export const emptyStats = (): TranscriptStats => ({
 })
 
 /** Fold target for one file: everything but the file identity fields. */
-export type FoldState = Pick<Entry, "aiTitle" | "summary" | "cwd" | "userTurns" | "corpus" | "pullRequests" | "pendingPrCreates" | "stats">
+export type FoldState = Pick<Entry, "aiTitle" | "summary" | "cwd" | "userTurns" | "corpus" | "pullRequests" | "pendingPrCreates" | "unresolvedPrCreate" | "stats">
 
 export const emptyFoldState = (): FoldState => ({
   aiTitle: "",
@@ -126,6 +133,7 @@ export const emptyFoldState = (): FoldState => ({
   corpus: [],
   pullRequests: [],
   pendingPrCreates: {},
+  unresolvedPrCreate: null,
   stats: emptyStats(),
 })
 
@@ -206,10 +214,14 @@ export interface TranscriptRecord {
   readonly corpusText?: string
   /** claude: `gh pr create` tool calls this assistant line issued. */
   readonly prCreateCalls?: ReadonlyArray<{ readonly id: string; readonly title?: string }>
+  /** claude: `gh pr view|list --head` tool call ids this assistant line issued. */
+  readonly prLookupCalls?: ReadonlyArray<string>
   /** claude: tool results this user line carries, as plain text, by tool_use id. */
   readonly toolResults?: ReadonlyArray<{ readonly id: string; readonly text: string }>
   /** codex: a finished `gh pr create` command with its output (one line holds both). */
   readonly prCreateResult?: { readonly output: string; readonly title?: string; readonly timestamp?: string }
+  /** codex: a finished `gh pr view|list --head` command's output. */
+  readonly prLookupResult?: { readonly output: string }
 }
 
 /** Claude-format decoder (claude CLI + the built-in engine stores). */
@@ -264,12 +276,15 @@ export const decodeClaudeLine = (line: string): TranscriptRecord | null => {
 
   const corpusText = userTurn && !userTurn.isMeta ? userTurn.blocks.join("\n") : assistantText
   let prCreateCalls: Array<{ id: string; title?: string }> | undefined
+  let prLookupCalls: string[] | undefined
   let toolResults: Array<{ id: string; text: string }> | undefined
   for (const b of blocks) {
     if (type === "assistant" && b.type === "tool_use") {
       const id = str(b.id)
       const command = isRecord(b.input) ? str(b.input.command) : undefined
-      if (id && command && isPullRequestCreateCommand(command)) (prCreateCalls ??= []).push({ id, title: pullRequestTitleOf(command) })
+      if (!id || !command) continue
+      if (isPullRequestCreateCommand(command)) (prCreateCalls ??= []).push({ id, title: pullRequestTitleOf(command) })
+      else if (isPullRequestLookupCommand(command)) (prLookupCalls ??= []).push(id)
     } else if (type === "user" && b.type === "tool_result") {
       const id = str(b.tool_use_id)
       const text = typeof b.content === "string"
@@ -289,6 +304,7 @@ export const decodeClaudeLine = (line: string): TranscriptRecord | null => {
     assistant,
     corpusText: corpusText.trim() ? corpusText : undefined,
     prCreateCalls,
+    prLookupCalls,
     toolResults,
   }
 }
@@ -310,8 +326,10 @@ export const decodeCodexLine = (line: string): TranscriptRecord | null => {
     const item = payload.item
     const command = Array.isArray(item.command) ? item.command.filter((c): c is string => typeof c === "string").join(" ") : str(item.command) ?? ""
     const output = str(item.aggregated_output) ?? ""
-    if (!isPullRequestCreateCommand(command) || !output) return null
-    return { type: "tool", prCreateResult: { output, title: pullRequestTitleOf(command), timestamp: str(d.timestamp) || undefined } }
+    if (isPullRequestCreateCommand(command)) {
+      return { type: "tool", prCreateResult: { output, title: pullRequestTitleOf(command), timestamp: str(d.timestamp) || undefined } }
+    }
+    return isPullRequestLookupCommand(command) && output ? { type: "tool", prLookupResult: { output } } : null
   }
   if (d.type !== "response_item") return null
   if (payload.type !== "message" || !Array.isArray(payload.content)) return null
@@ -429,22 +447,42 @@ export const applyRecord = (state: FoldState, format: TranscriptFormat, r: Trans
     if (r.summary) state.summary = r.summary
   }
   if (r.userTurn) state.userTurns.push(r.userTurn)
+  // A new human prompt ends the turn a URL-less create could still be resolved in.
+  if (r.userTurn && !r.userTurn.isMeta) state.unresolvedPrCreate = null
   if (r.corpusText) state.corpus.push({ role: r.type === "assistant" ? "assistant" : "user", text: r.corpusText })
   for (const call of r.prCreateCalls ?? []) setOwn(state.pendingPrCreates, call.id, call.title ? { title: call.title } : {})
+  if (state.unresolvedPrCreate) for (const id of r.prLookupCalls ?? []) setOwn(state.pendingPrCreates, id, { lookup: true })
   for (const result of r.toolResults ?? []) {
     const call = getOwn(state.pendingPrCreates, result.id)
     if (!call) continue
     delete state.pendingPrCreates[result.id]
-    addPullRequest(state, result.text, call.title, r.timestamp)
+    if (call.lookup) resolvePullRequestCreate(state, result.text)
+    else settlePullRequestCreate(state, result.text, call.title, r.timestamp)
   }
-  if (r.prCreateResult) addPullRequest(state, r.prCreateResult.output, r.prCreateResult.title, r.prCreateResult.timestamp)
+  if (r.prCreateResult) settlePullRequestCreate(state, r.prCreateResult.output, r.prCreateResult.title, r.prCreateResult.timestamp)
+  if (r.prLookupResult) resolvePullRequestCreate(state, r.prLookupResult.output)
 }
 
-/** Record the PR a create command printed; the first sighting of a URL wins. */
-const addPullRequest = (state: FoldState, output: string, title: string | undefined, createdAt: string | undefined): void => {
+/** A create's own output: record its PR, or park it until a lookup names one. */
+const settlePullRequestCreate = (state: FoldState, output: string, title: string | undefined, createdAt: string | undefined): void => {
+  state.unresolvedPrCreate = addPullRequest(state, output, title, createdAt)
+    ? null
+    : { ...(title ? { title } : {}), ...(createdAt ? { createdAt } : {}) }
+}
+
+/** A lookup's output: the PR an unresolved create opened, if it printed one. */
+const resolvePullRequestCreate = (state: FoldState, output: string): void => {
+  const pending = state.unresolvedPrCreate
+  if (pending && addPullRequest(state, output, pending.title, pending.createdAt)) state.unresolvedPrCreate = null
+}
+
+/** Record the PR URL `output` printed; the first sighting of a URL wins. False when it printed none. */
+const addPullRequest = (state: FoldState, output: string, title: string | undefined, createdAt: string | undefined): boolean => {
   const ref = findPullRequestUrl(output)
-  if (!ref || state.pullRequests.some((pr) => pr.url === ref.url)) return
+  if (!ref) return false
+  if (state.pullRequests.some((pr) => pr.url === ref.url)) return true
   state.pullRequests.push({ ...ref, ...(title ? { title } : {}), ...(createdAt ? { createdAt } : {}) })
+  return true
 }
 
 const DECODERS: Record<TranscriptFormat, (line: string) => TranscriptRecord | null> = {

@@ -2,7 +2,7 @@
  * auth.ts — shared-token access gate (opt-in via `cockpit --token <value>`).
  *
  * Consumed by server.mjs (plain boot): the request / upgrade / share gate. Kept
- * stdlib-only (node:crypto) and NOT Effect-wrapped so it imports cleanly into
+ * stdlib-only and NOT Effect-wrapped so it imports cleanly into
  * the plain server boot. (Outside the EFFECT.md enforced globs — src/app/api/**
  * + src/lib/effect/** — so plain code is fine here.)
  *
@@ -11,6 +11,7 @@
  *     when off, everything is open (backward compatible).
  *   - When on, LOCAL requests are exempt; every non-local request must present
  *     the token (cookie / Authorization: Bearer / ?token=).
+ *   - Five consecutive wrong tokens block the client IP for ten minutes.
  *
  * "Local" = the TCP peer is loopback AND the request carries no forwarding
  * header. socket.remoteAddress can't be spoofed by a client; the forwarding-
@@ -21,11 +22,15 @@
  * that is indistinguishable from genuine localhost and cannot be told apart.
  */
 import { timingSafeEqual } from 'crypto';
+import { BlockList, isIP, SocketAddress } from 'node:net';
 import { hostname as osHostname } from 'os';
 
 export const COOKIE_NAME = 'cockpit_token';
 const QUERY_KEY = 'token';
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
+const MAX_TOKEN_FAILURES = 5;
+const BLOCK_DURATION_SECONDS = 10 * 60;
+const MAX_TRACKED_ADDRESSES = 16_384;
 
 export function tokenEnabled(): boolean {
   return Boolean(process.env.COCKPIT_TOKEN);
@@ -58,7 +63,11 @@ function parseCookies(header: string | undefined): Record<string, string> {
     if (i < 0) continue;
     const k = part.slice(0, i).trim();
     if (!k) continue;
-    out[k] = decodeURIComponent(part.slice(i + 1).trim());
+    try {
+      out[k] = decodeURIComponent(part.slice(i + 1).trim());
+    } catch {
+      out[k] = '';
+    }
   }
   return out;
 }
@@ -103,6 +112,8 @@ export interface AccessInput {
   authHeader: string | undefined;
   /** Presence of any forwarding header → relayed by a proxy/tunnel. */
   forwarded: string | undefined;
+  /** X-Forwarded-For as received from the TCP peer. */
+  forwardedFor?: string;
   isWs: boolean;
   isHttps: boolean;
 }
@@ -110,41 +121,105 @@ export interface AccessInput {
 export type AccessDecision =
   | { action: 'pass' }
   | { action: 'redirect'; location: string; setCookie: string }
+  | { action: 'blocked'; retryAfterSeconds: number }
   | { action: 'deny' };
 
-export function checkAccess(input: AccessInput): AccessDecision {
-  // Token mode off → fully open (backward compatible).
-  if (!tokenEnabled()) return { action: 'pass' };
-
-  // Local callers (CLI / /cg curls / self-probe / browser on the host) are
-  // exempt: genuine loopback peer with no forwarding header.
-  if (!input.forwarded && isLoopbackAddr(input.remoteAddr)) {
-    return { action: 'pass' };
+function parseTrustedProxies(config: string): BlockList {
+  const proxies = new BlockList();
+  for (const entry of config.split(',').map((value) => value.trim()).filter(Boolean)) {
+    const [address, prefix, extra] = entry.split('/');
+    const version = isIP(address);
+    const family = version === 6 ? 'ipv6' : 'ipv4';
+    const maxPrefix = version === 6 ? 128 : 32;
+    if (!version || address.includes('%') || extra !== undefined ||
+        (prefix !== undefined && (!/^\d{1,3}$/.test(prefix) || Number(prefix) > maxPrefix))) {
+      throw new Error(`Invalid COCKPIT_TRUSTED_PROXIES entry "${entry}"; expected an IP address or CIDR range`);
+    }
+    if (prefix === undefined) proxies.addAddress(address, family);
+    else proxies.addSubnet(address, Number(prefix), family);
   }
+  return proxies;
+}
 
-  const want = configuredToken();
-
-  const cookieTok = parseCookies(input.cookieHeader)[COOKIE_NAME];
-  if (cookieTok && safeEqual(cookieTok, want)) return { action: 'pass' };
-
-  const auth = input.authHeader;
-  const bearer =
-    auth && auth.startsWith('Bearer ') ? auth.slice(7).trim() : undefined;
-  if (bearer && safeEqual(bearer, want)) return { action: 'pass' };
-
-  const queryTok = tokenFromQuery(input.url);
-  if (queryTok && safeEqual(queryTok, want)) {
-    // WS can't carry a redirect — just accept the query token.
-    if (input.isWs) return { action: 'pass' };
-    // First visit via ?token= → set the cookie and bounce to a clean URL.
-    return {
-      action: 'redirect',
-      location: stripTokenParam(input.url),
-      setCookie: makeCookie(want, input.isHttps),
-    };
+function normalizeAddress(address: string | undefined): string | undefined {
+  if (!address) return undefined;
+  const version = isIP(address);
+  if (version === 4) return address;
+  if (version === 6) {
+    return new SocketAddress({ address, family: 'ipv6' }).address.replace(/^::ffff:(?=\d+\.)/, '');
   }
+  return undefined;
+}
 
-  return { action: 'deny' };
+function clientAddress(input: AccessInput, proxies: BlockList): string | undefined {
+  const peer = normalizeAddress(input.remoteAddr);
+  if (!peer) return undefined;
+  const isTrusted = (address: string) => proxies.check(address, address.includes(':') ? 'ipv6' : 'ipv4');
+  if (!isLoopbackAddr(peer) && !isTrusted(peer)) return peer;
+
+  // Loopback is implicitly trusted only as the TCP peer. Every other trusted
+  // hop must be configured, and an invalid entry ends the verified chain.
+  const chain = input.forwardedFor?.split(',') ?? [];
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const address = normalizeAddress(chain[i].trim());
+    if (!address || !isTrusted(address)) return address;
+  }
+  return undefined;
+}
+
+export function createAccessGate(trustedProxyConfig = ''): (input: AccessInput) => AccessDecision {
+  const proxies = parseTrustedProxies(trustedProxyConfig);
+  const attempts = new Map<string, { failures: number; blockedUntil?: number }>();
+
+  return (input) => {
+    const want = configuredToken();
+    if (!want || (!input.forwarded && isLoopbackAddr(input.remoteAddr))) {
+      return { action: 'pass' };
+    }
+
+    const address = clientAddress(input, proxies);
+    let attempt = address ? attempts.get(address) : undefined;
+    const now = Date.now();
+    if (address && attempt?.blockedUntil !== undefined) {
+      if (attempt.blockedUntil > now) {
+        return { action: 'blocked', retryAfterSeconds: Math.ceil((attempt.blockedUntil - now) / 1_000) };
+      }
+      attempts.delete(address);
+      attempt = undefined;
+    }
+
+    const cookie = parseCookies(input.cookieHeader)[COOKIE_NAME];
+    const auth = input.authHeader;
+    const bearer = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : undefined;
+    const headerMatches = (cookie && safeEqual(cookie, want)) || (bearer && safeEqual(bearer, want));
+    const query = tokenFromQuery(input.url);
+    if (headerMatches || (query && safeEqual(query, want))) {
+      if (address) attempts.delete(address);
+      if (headerMatches || input.isWs) return { action: 'pass' };
+      return {
+        action: 'redirect',
+        location: stripTokenParam(input.url),
+        setCookie: makeCookie(want, input.isHttps),
+      };
+    }
+
+    // An anonymous visit is normal on the first load. It does not change a streak.
+    if (address && (cookie !== undefined || bearer !== undefined || query !== undefined)) {
+      const failures = (attempt?.failures ?? 0) + 1;
+      const blockedUntil = failures >= MAX_TOKEN_FAILURES ? now + BLOCK_DURATION_SECONDS * 1_000 : undefined;
+      attempts.delete(address);
+      if (attempts.size >= MAX_TRACKED_ADDRESSES) {
+        const oldest = attempts.keys().next().value;
+        if (oldest !== undefined) attempts.delete(oldest);
+      }
+      attempts.set(address, { failures, blockedUntil });
+      if (blockedUntil !== undefined) {
+        return { action: 'blocked', retryAfterSeconds: BLOCK_DURATION_SECONDS };
+      }
+    }
+
+    return { action: 'deny' };
+  };
 }
 
 // ============================================================================

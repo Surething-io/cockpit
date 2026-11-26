@@ -113,6 +113,7 @@ Equivalent to `npm install -g @surething/cockpit@latest`. See [`cockpit update`]
 | `PORT` | Fallback when `COCKPIT_PORT` is unset. |
 | `COCKPIT_HOST` | Bind host. Default `127.0.0.1` (local only); set `0.0.0.0` to expose on the LAN / in a cloud sandbox. |
 | `COCKPIT_TOKEN` | Shared access token (same as `--token`). When set, remote HTTP/WS requests must present it (cookie / `Authorization: Bearer` / `?token=`); loopback requests stay exempt. Unset = no auth (fully open). See [below](#shared-token-access-gate). |
+| `COCKPIT_TRUSTED_PROXIES` | Comma-separated IPv4 or IPv6 addresses or CIDR ranges of trusted reverse proxies, for example `10.0.0.5,2001:db8:100::/48`. A proxy connected over loopback is recognized automatically. |
 | `COCKPIT_NO_OPEN` | Don't auto-open the browser on start (same as `--no-open`). |
 | `COCKPIT_LOG_LEVEL` | Server log level. |
 | `COCKPIT_FORCE` | Bypass the single-instance guard (see below). |
@@ -150,7 +151,10 @@ With a token set:
   - an `Authorization: Bearer <value>` **header** (handy for API / WebSocket clients); or
   - a `?token=<value>` **query param** — on first visit the server sets the cookie and redirects to a clean URL, so the secret doesn't linger in the address bar or history.
 - Tokens are compared in constant time; a wrong or missing token is denied.
+- Five consecutive incorrect tokens from the same client IP block it for ten minutes. HTTP and WebSocket share the counter.
 - Leave `--token` / `COCKPIT_TOKEN` **unset** to keep the old fully-open behaviour (backward compatible).
+
+Cockpit uses the TCP peer's address for direct connections. For a proxy on loopback or in `COCKPIT_TRUSTED_PROXIES`, it reads `X-Forwarded-For` from right to left until it reaches the first address outside the configured list. Limit the list to proxies you control or trust. Each trusted proxy must overwrite the header with a verified client address or append the address of the peer that connected to it. If the chain yields no usable client address, token authentication still applies and Cockpit records no IP failure.
 
 Pair it with `COCKPIT_HOST=0.0.0.0` when sharing over the network:
 

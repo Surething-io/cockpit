@@ -226,6 +226,15 @@ cockpit stop
 `start` accepts the same flags as `cockpit` (`--port`, `--token`). Output goes
 to `~/.cockpit/logs/server.log`.
 
+With token authentication enabled, five consecutive incorrect tokens block the
+client IP for ten minutes. Cockpit detects a same-host reverse proxy over
+loopback automatically. For remote proxies or longer proxy chains, set
+`COCKPIT_TRUSTED_PROXIES` to a comma-separated list of their IPv4 or IPv6
+addresses or CIDR ranges, for example `10.0.0.5,2001:db8:100::/48`.
+Each trusted proxy should set `X-Forwarded-For` to the address it has verified
+or append its connecting peer's address. Cockpit walks the chain from right
+to left and uses the first address outside the trusted proxy list.
+
 `restart` asks the running server to replace itself, so the port and token it
 was started with are preserved — you do not need to repeat them.
 

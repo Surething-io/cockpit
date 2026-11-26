@@ -115,6 +115,7 @@ cockpit update
 | `PORT` | `COCKPIT_PORT` 未设时的兜底。 |
 | `COCKPIT_HOST` | 绑定 host。默认 `127.0.0.1`(仅本机);设 `0.0.0.0` 可在局域网 / 云沙盒暴露。 |
 | `COCKPIT_TOKEN` | 共享访问令牌(同 `--token`)。设置后,远程 HTTP/WS 请求必须携带它(cookie / `Authorization: Bearer` / `?token=`);本机 loopback 请求豁免。未设 = 不鉴权(完全开放)。详见[下文](#共享令牌访问网关)。 |
+| `COCKPIT_TRUSTED_PROXIES` | 可信反向代理的 IPv4、IPv6 地址或 CIDR 网段，用逗号分隔，例如 `10.0.0.5,2001:db8:100::/48`。直接通过回环地址连接的代理会自动识别。 |
 | `COCKPIT_NO_OPEN` | 启动后不自动开浏览器(同 `--no-open`)。 |
 | `COCKPIT_LOG_LEVEL` | 服务日志级别。 |
 | `COCKPIT_FORCE` | 跳过单实例保护(见下)。 |
@@ -152,7 +153,10 @@ cockpit --token 你的密钥        # 或:COCKPIT_TOKEN=你的密钥 cockpit
   - `Authorization: Bearer <值>` **请求头**(方便 API / WebSocket 客户端);或
   - `?token=<值>` **查询参数** —— 首次访问时服务会写入 cookie 并重定向到干净 URL,让密钥不残留在地址栏 / 历史里。
 - 令牌用常数时间比较;错误或缺失一律拒绝。
+- 同一客户端 IP 连续输错 5 次会被封禁 10 分钟。HTTP 和 WebSocket 共用计数。
 - 不设 `--token` / `COCKPIT_TOKEN` 即保持旧的完全开放行为(向后兼容)。
+
+直连时，Cockpit 使用 TCP 对端地址。经回环地址或 `COCKPIT_TRUSTED_PROXIES` 中的代理接入时，Cockpit 从右向左读取 `X-Forwarded-For`，取第一个不在可信列表中的地址。列表只填写你管理或信任的代理。每层可信代理都必须用已验证的客户端地址覆盖该请求头，或在末尾追加它看到的连接来源。代理链无法提供有效的客户端地址时，Cockpit 仍验证令牌，此次失败不计入 IP 封禁。
 
 在网络上共享时与 `COCKPIT_HOST=0.0.0.0` 搭配:
 

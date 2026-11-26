@@ -302,9 +302,10 @@ app.prepare().then(async () => {
   // where renaming a file that some process holds open fails outright.
   rotateIfLarge(join(cockpitHome, 'logs', 'cockpit.log'));
   const upgradeHandler = app.getUpgradeHandler();
+  const auth = await import(dev ? './src/lib/auth.ts' : './dist/auth.mjs');
+  const checkAccess = auth.createAccessGate(process.env.COCKPIT_TRUSTED_PROXIES);
   // v2 P8: HTTP intercepts (handleTerminalApi / handleBrowserApi) moved to src/lib/httpApi.ts
   const { handleUpgrade, broadcastToGlobalState } = await import(dev ? './src/lib/wsServer.ts' : './dist/wsServer.mjs');
-  const auth = await import(dev ? './src/lib/auth.ts' : './dist/auth.mjs');
   const httpApi = await import(dev ? './src/lib/httpApi.ts' : './dist/httpApi.mjs');
   const { handleBrowserApi, handleTerminalApi, handleConnectionApi } = httpApi;
   flushRunningSync = httpApi.flushAllRunningSync || null;
@@ -336,6 +337,7 @@ app.prepare().then(async () => {
     remoteAddr: req.socket?.remoteAddress,
     cookieHeader: req.headers?.cookie,
     authHeader: req.headers?.authorization,
+    forwardedFor: req.headers?.['x-forwarded-for'],
     forwarded:
       req.headers?.['x-forwarded-for'] ||
       req.headers?.['x-real-ip'] ||
@@ -348,7 +350,7 @@ app.prepare().then(async () => {
   // Apply the gate to an HTTP request. Returns true if it wrote a response
   // (blocked / redirected) and the caller should stop.
   const applyHttpGate = (req, res) => {
-    const decision = auth.checkAccess(gateInput(req, false));
+    const decision = checkAccess(gateInput(req, false));
     if (decision.action === 'redirect') {
       res.writeHead(302, { Location: decision.location, 'Set-Cookie': decision.setCookie });
       res.end();
@@ -357,6 +359,14 @@ app.prepare().then(async () => {
     if (decision.action === 'deny') {
       res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('401 Unauthorized - append ?token=<token> to the URL to authenticate\n');
+      return true;
+    }
+    if (decision.action === 'blocked') {
+      res.writeHead(429, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Retry-After': String(decision.retryAfterSeconds),
+      });
+      res.end('429 Too Many Requests - too many incorrect tokens. Try again later.\n');
       return true;
     }
     return false;
@@ -508,7 +518,14 @@ app.prepare().then(async () => {
       return;
     }
     // Cookie / ?token ride the same-origin upgrade → gate WS too.
-    if (auth.checkAccess(gateInput(req, true)).action !== 'pass') {
+    const decision = checkAccess(gateInput(req, true));
+    if (decision.action === 'blocked') {
+      socket.end(
+        `HTTP/1.1 429 Too Many Requests\r\nRetry-After: ${decision.retryAfterSeconds}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
+      );
+      return;
+    }
+    if (decision.action !== 'pass') {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;

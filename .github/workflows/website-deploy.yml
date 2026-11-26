@@ -70,6 +70,12 @@ jobs:
           echo "name=$branch" >> "$GITHUB_OUTPUT"
           echo "Deploying branch: $branch"
 
+      # IndexNow baseline: the sitemap that is live right now, before this
+      # deploy replaces it. scripts/indexnow.mjs diffs it against the new build.
+      - name: Save live sitemap for IndexNow
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: curl -fsS https://opencockpit.dev/sitemap.xml -o "$RUNNER_TEMP/sitemap-before.xml" || echo "Live sitemap unavailable; IndexNow will skip"
+
       - name: Deploy to Cloudflare Pages
         id: deploy
         uses: cloudflare/wrangler-action@v4
@@ -92,6 +98,12 @@ jobs:
             --project-name=cockpit-website
             --branch=${{ steps.branch.outputs.name }}
             --commit-message=${{ github.sha }}
+
+      # Production only: tell Bing & co. which pages changed. The script
+      # never fails the job; problems surface as warnings.
+      - name: Submit changed URLs to IndexNow
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: node scripts/indexnow.mjs --previous "$RUNNER_TEMP/sitemap-before.xml"
 
       - name: Summary
         env:

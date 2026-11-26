@@ -89,6 +89,7 @@
     "scripts/copy-tree-sitter-wasms.mjs",
     "scripts/copy-pdfjs-worker.mjs",
     "scripts/agentBinaries.mjs",
+    "desktop-checksums.json",
     "LICENSE",
     "README.md"
   ],
@@ -102,6 +103,8 @@
     "build:server": "tsup --config tsup.server.ts",
     "setup": "npm run build && npm run build:server && npm link",
     "setup-dev": "node bin/setup-dev.mjs",
+    "desktop:build": "npm install --prefix desktop --no-audit --no-fund && node desktop/scripts/build.mjs",
+    "install:local": "node scripts/install-local.mjs",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",

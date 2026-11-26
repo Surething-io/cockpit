@@ -235,7 +235,8 @@ export function TabManagerTopBar({
     : null;
   return (
     <div className="border-b border-border bg-card shrink-0">
-      <div className="flex items-center justify-between px-4 py-2 relative">
+      {/* app-titlebar-pad: room for the desktop app's Windows window controls (globals.css) */}
+      <div className="flex items-center justify-between px-4 py-2 relative app-titlebar-pad">
         {/* Left: Logo + project path + Git branch */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">

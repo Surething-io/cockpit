@@ -74,3 +74,9 @@ e2b/.vercel
 # on-screen content from the author's own machine. Anyone running the skill
 # regenerates what they need.
 .impeccable/
+
+# desktop app (desktop/): dependencies, build output, and the checksum record
+# the publish workflow generates for the npm package
+/desktop/node_modules
+/desktop/dist
+/desktop-checksums.json

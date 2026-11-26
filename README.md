@@ -260,6 +260,43 @@ If it is **not running**, `cockpit update` simply installs.
 Once the new server is up, any browser tab left open from the old version shows
 a "reload" prompt — its cached assets belong to the previous build.
 
+### Desktop app (macOS / Windows)
+
+The OpenCockpit desktop app is a dedicated window onto the same server — think
+of it as a browser that only opens Cockpit. It does not bundle a server: it
+uses your npm install, starts it with `cockpit start` when it is not running,
+and installs the npm package for you if it is missing (Node.js ≥ 22.19 required).
+Closing the window leaves the server running in the background; browser tabs on
+the same server keep working alongside it.
+
+```bash
+cockpit app install      # installs the app matching your cockpit version
+```
+
+This puts `OpenCockpit.app` in `~/Applications` (macOS) or the app in
+`%LOCALAPPDATA%\Programs\OpenCockpit` with a Start-menu entry (Windows). The
+app keeps up with your cockpit: when cockpit is newer it offers the matching
+update (*Download Update* in the app menu), downloads it in the background
+while you work, and switches over when you restart or quit it. Turn on
+*Download Updates Automatically* in the same menu to skip the prompt.
+`cockpit app update` and `cockpit app uninstall` do the same by hand.
+
+The builds are **not code-signed**. `cockpit app install` verifies each
+download against a SHA-256 published inside the npm package, and the files it
+writes carry no "downloaded from the internet" mark, so the app opens normally.
+If you download a `.dmg` (macOS) or `.zip` (Windows) from
+[GitHub Releases](https://github.com/Surething-io/cockpit/releases) instead
+(checksums in `SHA256SUMS`), the OS asks once:
+
+- **macOS**: open the app, dismiss the warning, then go to *System Settings →
+  Privacy & Security* and click **Open Anyway** — or run
+  `xattr -dr com.apple.quarantine /Applications/OpenCockpit.app`.
+- **Windows**: unzip it anywhere and run `OpenCockpit.exe`; in the SmartScreen
+  dialog click **More info → Run anyway**.
+
+To build it yourself: `npm run desktop:build` in a source checkout (output in
+`desktop/dist/`).
+
 ### Windows
 
 Windows support is **experimental** — it is exercised by CI but has far less

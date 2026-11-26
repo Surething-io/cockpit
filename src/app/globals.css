@@ -1663,3 +1663,31 @@ mark.chat-search-current { background: var(--highlight-current); color: inherit;
 .xterm-renderer .xterm-screen {
   background-color: transparent !important;
 }
+
+/* OpenCockpit desktop app (classes set by public/boot.js). The window has no
+   title bar; its controls are drawn over the page in a 48px band
+   (desktop/src/main.mjs). Unlayered on purpose, so these win over utilities.
+   - Both: the sidebar reserves a strip that drags the window. Electron ignores
+     drag regions inside iframes, so it cannot live in the project top bar.
+   - macOS: traffic lights sit over that strip, top-left; a collapsed sidebar
+     widens enough to hold all three buttons.
+   - Windows: minimise/maximise/close sit top-right, over the project top bar
+     (inside an iframe), which keeps them clear with extra right padding. */
+.app-titlebar-strip {
+  display: none;
+}
+.desktop-app-mac .app-titlebar-strip,
+.desktop-app-win .app-titlebar-strip {
+  display: block;
+  height: 48px;
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+.desktop-app-mac .app-sidebar-collapsed {
+  width: 76px;
+}
+/* Three 46px caption buttons at 100% scaling, plus the bar's own 1rem. */
+.desktop-app-win-frame .app-titlebar-pad {
+  padding-right: calc(138px + 1rem);
+}

@@ -17,7 +17,7 @@ You are the release captain for Cockpit (`@surething/cockpit`). Your job is to r
 - **npm package**: `@surething/cockpit` (public, scoped, provenance-enabled)
 - **Website**: `opencockpit.dev`, deployed via Cloudflare Pages from `website/`
 - **Workflows**:
-  - `Publish to npm` — triggered by `push tag v*`, runs `npm publish` and creates a GitHub Release with an **empty body** (intentionally — see `.github/workflows/publish.yml`). Step 6 of this skill is the one that fills the body.
+  - `Publish to npm` — triggered by `push tag v*`. First builds the desktop app (macOS + Windows jobs), then creates the GitHub Release with the app archives attached and an **empty body** (intentionally — see `.github/workflows/publish.yml`), and only then runs `npm publish` with `desktop-checksums.json` inside the package. Step 6 of this skill is the one that fills the body. `workflow_dispatch` is a dry run that builds the app and publishes nothing.
   - `Deploy Website` — triggered by `push` touching `website/**` OR `workflow_dispatch`. Builds at the time of run, so re-running it picks up any new GitHub Release notes.
 - **Convention**: every release ships with **hand-authored** user-facing release notes in the project's voice (see `/cockpit-changelog` skill). Auto-generated `--generate-notes` content (in particular the `**Full Changelog**: …compare/…` tail) is **not** part of the convention — that's why the workflow no longer uses `--generate-notes`.
 
@@ -313,6 +313,8 @@ gh run watch <id> --repo Surething-io/cockpit --exit-status
 If it fails:
 - **Transient infra**: `@vscode/ripgrep` 403 (GitHub releases rate limit), `npm ci` ECONNRESET, GH API 504 — `gh run rerun <id>` is fine.
 - **Real failure** in npm publish or build: stop, report, do not retry blindly. Possible recovery is `npm publish` manually (see `.github/RELEASING.md` "Manual Publishing"), but only after diagnosing.
+  - A manual `npm publish` ships **without** `desktop-checksums.json` (only the workflow generates it), so `cockpit app install` refuses that version. Prefer fixing and re-running the workflow — the Release step uploads over an existing Release, so a rerun after a failed `npm publish` is safe.
+  - A desktop build failure blocks the whole release by design (app and npm versions are pinned together).
 
 ### Step 5 — Verify npm published
 
@@ -322,6 +324,14 @@ npm view @surething/cockpit bin
 ```
 
 Expected: `version` matches new tag, `dist-tags.latest` matches, `bin` includes `cockpit`.
+
+Also confirm the desktop app shipped:
+
+```bash
+gh release view v1.0.x --repo Surething-io/cockpit --json assets --jq '.assets[].name'
+```
+
+Expected: `OpenCockpit-<version>-mac-arm64.zip`, `-mac-x64.zip`, `-win-x64.zip`, the macOS `.dmg` files, and `SHA256SUMS`.
 
 ### Step 6 — Replace the auto-generated release body with hand-authored notes
 

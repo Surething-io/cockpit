@@ -248,6 +248,33 @@ cockpit update
 
 新服务起来后，此前一直开着的浏览器标签页会出现"刷新"提示 —— 它持有的是旧版本的静态资源。
 
+### 桌面 App（macOS / Windows）
+
+OpenCockpit 桌面 App 是连到同一个服务的专用窗口 —— 可以理解为一个只打开 Cockpit 的
+浏览器。它不内置服务：用的就是你 npm 装的那份，没运行时用 `cockpit start` 拉起，没安装
+时可以帮你装好 npm 包（需要 Node.js ≥ 22.19）。关掉窗口服务继续在后台运行；同一个服务
+上的浏览器标签页也可以同时开着。
+
+```bash
+cockpit app install      # 安装与当前 cockpit 版本一致的 App
+```
+
+macOS 会装到 `~/Applications/OpenCockpit.app`，Windows 装到
+`%LOCALAPPDATA%\Programs\OpenCockpit` 并在开始菜单建快捷方式。你的 cockpit 版本更新
+后，App 会提示对应的更新（App 菜单里的「下载更新」），在后台下载、不影响使用，重启或退出时切换到新版。
+在同一个菜单里勾选「自动下载更新」可以省去确认。也可以手动执行 `cockpit app update` / `cockpit app uninstall`。
+
+App **没有做代码签名**。`cockpit app install` 会用 npm 包里发布的 SHA-256 校验下载内容，
+写下的文件也不带"来自网络"的标记，所以能直接打开。如果改从
+[GitHub Releases](https://github.com/Surething-io/cockpit/releases) 下载 `.dmg`（macOS）或 `.zip`（Windows）
+（校验和见 `SHA256SUMS`），系统会拦一次：
+
+- **macOS**：先打开一次并关掉警告，再到「系统设置 → 隐私与安全性」点**仍要打开**；或执行
+  `xattr -dr com.apple.quarantine /Applications/OpenCockpit.app`。
+- **Windows**：解压到任意位置后运行 `OpenCockpit.exe`，在 SmartScreen 弹窗里点**更多信息 → 仍要运行**。
+
+想自己编译：在源码目录执行 `npm run desktop:build`（产物在 `desktop/dist/`）。
+
 ### Windows
 
 Windows 支持为**实验性** —— CI 会覆盖，但实际使用量远少于 macOS 和 Linux。Cockpit

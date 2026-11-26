@@ -41,6 +41,7 @@ Commands:
   codegraph <subcmd> [...]       Query the project code graph (search/risk/affected/...)
   connection list [--cwd …]      List all bubbles (term + browser) with user-set titles
   update                         Update to latest version
+  app install|update|uninstall   Manage the desktop app (macOS / Windows)
 
 Options:
   --port <port>                  Set server port (default: 3457); works with start too
@@ -137,6 +138,13 @@ if (process.argv[2] === 'connection') {
   await flushAndExit(0);
 }
 
+if (process.argv[2] === 'app') {
+  // Desktop app matching this package's version — see cock-app.mjs.
+  const { runApp } = await import('./cock-app.mjs');
+  const code = await runApp(process.argv.slice(3));
+  await flushAndExit(code);
+}
+
 if (process.argv[2] === 'update') {
   // Two mechanisms, picked by whether a server is live — see cock-service.mjs.
   const svc = await import('./cock-service.mjs');
@@ -174,7 +182,7 @@ if (SERVICE_COMMANDS.has(process.argv[2])) {
   await flushAndExit(code);
 }
 
-const knownCommands = new Set(['browser', 'terminal', 'update', 'help', 'codegraph', 'connection']);
+const knownCommands = new Set(['browser', 'terminal', 'update', 'help', 'codegraph', 'connection', 'app']);
 const arg = process.argv[2];
 let projectDir = null;
 

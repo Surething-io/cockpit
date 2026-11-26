@@ -25,6 +25,12 @@ const eslintConfig = defineConfig([
     // Standalone marketing site with its own toolchain
     "website/**",
   ]),
+  // Desktop app CommonJS files: Electron's sandboxed preload and
+  // electron-builder hooks must be CommonJS, so require() is the only option.
+  {
+    files: ["desktop/**/*.cjs"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
   // ============================================================
   // 2-layer dependency rule: feature-* → shared-*
   // ============================================================

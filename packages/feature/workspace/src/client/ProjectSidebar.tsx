@@ -418,9 +418,12 @@ export function ProjectSidebar({
   return (
     <div
       className={`h-full bg-card border-r border-border flex flex-col transition-all duration-200 ${
-        collapsed ? 'w-12' : 'w-56'
+        collapsed ? 'w-12 app-sidebar-collapsed' : 'w-56'
       }`}
     >
+      {/* Desktop app only: a handle to drag the title-bar-less window by, and on
+          macOS the room its traffic lights sit in. Hidden in browsers — see globals.css. */}
+      <div className="app-titlebar-strip" aria-hidden="true" />
       {/* Open project button + collapse button */}
       <div className="group p-2 border-b border-border relative">
         <button

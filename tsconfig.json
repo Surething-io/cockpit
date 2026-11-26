@@ -46,6 +46,7 @@
     "dist",
     "chrome-extension",
     "bin",
+    "desktop",
     "website"
   ]
 }

@@ -1,0 +1,19 @@
+{
+  "name": "cockpit-desktop",
+  "productName": "OpenCockpit",
+  "private": true,
+  "version": "0.0.0",
+  "description": "OpenCockpit desktop app — a dedicated browser window for the npm-installed cockpit server.",
+  "author": "Robert",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "build": "node scripts/build.mjs"
+  },
+  "devDependencies": {
+    "electron": "45.5.0",
+    "electron-builder": "26.18.0"
+  }
+}

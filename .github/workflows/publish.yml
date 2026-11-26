@@ -4,9 +4,62 @@ on:
   push:
     tags:
       - "v*"
+  # Dry run: builds the desktop app on every platform and stops. Nothing is
+  # released or published; the artifacts are kept on the run for inspection.
+  workflow_dispatch:
 
 jobs:
+  # The desktop app's version is pinned to the npm package's (see
+  # desktop/scripts/build.mjs), so every release builds it.
+  desktop:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: macos-latest
+            args: --mac --arm64 --x64
+          - os: windows-latest
+            args: --win --x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      # Electron zips (~110 MB per arch) and electron-builder's toolsets
+      # (dmgbuild, 7zip, icons). Default locations of @electron/get and
+      # electron-builder on each OS; the lockfile pins the Electron version, so
+      # its hash keys the cache, and the OS-only prefix still reuses the
+      # toolsets after an Electron bump.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('desktop/package-lock.json') }}
+          restore-keys: |
+            electron-${{ runner.os }}-
+
+      - run: npm ci --prefix desktop --no-audit --no-fund
+
+      - run: node desktop/scripts/build.mjs ${{ matrix.args }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            desktop/dist/OpenCockpit-*.zip
+            desktop/dist/OpenCockpit-*.dmg
+          if-no-files-found: error
+
   publish:
+    needs: desktop
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -29,19 +82,55 @@ jobs:
 
       - run: npm run build
 
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: desktop-artifacts
+          merge-multiple: true
+
+      # desktop-checksums.json goes into the npm package: it is what
+      # `cockpit app install` verifies the downloaded zip against. Also writes
+      # desktop-artifacts/SHA256SUMS for people downloading by hand.
+      - run: node desktop/scripts/checksums.mjs desktop-artifacts
+
+      - name: Show what would ship (dry run)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          cat desktop-checksums.json
+          npm pack --dry-run --ignore-scripts 2>&1 | grep -E "desktop-checksums|bin/cock-app" || { echo "desktop files missing from the npm package"; exit 1; }
+
+      # The Release (with the app archives) must exist BEFORE npm publish: the
+      # moment the package is live, `cockpit app install` downloads from it.
+      #
+      # The body is left EMPTY. The `cockpit-release` skill's Step 6 fills it
+      # in with hand-authored notes via `gh release edit --notes-file`. We
+      # deliberately do NOT use `--generate-notes` — its output appends a
+      # `**Full Changelog**: .../compare/...` tail that violates the
+      # project's hand-written-only release-notes convention.
+      #
+      # Re-runnable: if a previous attempt created the Release and then failed
+      # at npm publish, upload over it instead of failing on "already exists".
+      - name: Create GitHub Release with desktop app (empty body — filled by cockpit-release skill)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" desktop-artifacts/* --clobber
+          else
+            gh release create "$TAG" --notes "" desktop-artifacts/*
+          fi
+
       - run: npm publish --access public --provenance
+        if: github.event_name == 'push'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.COCKPIT_NPM_TOKEN }}
 
-      # Create the GitHub Release with an EMPTY body. The
-      # `cockpit-release` skill's Step 6 fills it in with hand-authored
-      # notes via `gh release edit --notes-file`. We deliberately do
-      # NOT use `--generate-notes` — its output appends a
-      # `**Full Changelog**: .../compare/...` tail that violates the
-      # project's hand-written-only release-notes convention. Empty
-      # body forces the human-in-the-loop step instead of leaving
-      # "good enough" auto-text on opencockpit.dev/changelog.
-      - name: Create GitHub Release (empty body — filled by cockpit-release skill)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create ${{ github.ref_name }} --notes ""
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          name: desktop-release-preview
+          path: |
+            desktop-artifacts/SHA256SUMS
+            desktop-checksums.json

@@ -2,11 +2,13 @@ import type { MetadataRoute } from 'next'
 
 const ICON_SIZES = [72, 96, 128, 144, 152, 192, 384, 512]
 
-export default function manifest(): MetadataRoute.Manifest {
+export const dynamic = 'force-static'
+
+export function GET(): Response {
   const isDev = process.env.COCKPIT_ENV === 'dev'
   const iconPath = isDev ? '/icons/dev' : '/icons'
 
-  return {
+  const manifest: MetadataRoute.Manifest = {
     name: isDev ? 'OpenCockpit (Dev)' : 'OpenCockpit',
     short_name: isDev ? 'Cockpit Dev' : 'Cockpit',
     description: 'OpenCockpit is a local-first AI development hub with chat agents, a file explorer, terminals, and browser bubbles in one swipeable workspace. One seat. One AI.',
@@ -33,4 +35,8 @@ export default function manifest(): MetadataRoute.Manifest {
       purpose: 'maskable any' as 'any',
     })),
   }
+
+  return Response.json(manifest, {
+    headers: { 'Content-Type': 'application/manifest+json' },
+  })
 }

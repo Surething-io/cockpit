@@ -37,8 +37,6 @@ const lora = Lora({
 export const metadata: Metadata = {
   title: "OpenCockpit",
   description: "OpenCockpit is a local-first AI development hub with chat agents, a file explorer, terminals, and browser bubbles in one swipeable workspace. One seat. One AI.",
-  // Manifest is served by app/manifest.ts at /manifest.webmanifest and linked
-  // automatically by Next — don't point at a stale /manifest.json (404).
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -87,6 +85,8 @@ export default async function RootLayout({
   return (
     <html lang={language === "zh" ? "zh-CN" : "en"} suppressHydrationWarning className="overflow-hidden">
       <head>
+        {/* The manifest is behind the same login gate as the app. */}
+        <link rel="manifest" href="/manifest.webmanifest" crossOrigin="use-credentials" />
         {/*
          * Stamp the build this HTML was served from. After an upgrade the
          * server restarts with a new BUILD_ID, but an already-open tab keeps

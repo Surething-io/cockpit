@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, posix } from 'path';
 import { compareVersions, findTools, pathOf, portOf, readServerRecord, whichIn } from './cockpitCli.mjs';
 
 describe('pathOf', () => {
@@ -15,17 +15,24 @@ describe('pathOf', () => {
 describe('whichIn / findTools', () => {
   it('returns the first hit in PATH order', () => {
     const present = new Set(['/b/node', '/c/node']);
-    expect(whichIn(['node'], '/a:/b:/c', { sep: ':', exists: (p) => present.has(p) })).toBe('/b/node');
+    expect(whichIn(['node'], '/a:/b:/c', { sep: ':', joinPath: posix.join, exists: (p) => present.has(p) })).toBe('/b/node');
   });
 
   it('uses Windows shim names and the ; separator on win32', () => {
-    const present = new Set([join('C:\\npm', 'cockpit.cmd'), join('C:\\node', 'node.exe'), join('C:\\node', 'npm.cmd')]);
+    const present = new Set(['C:\\npm\\cockpit.cmd', 'C:\\node\\node.exe', 'C:\\node\\npm.cmd']);
     const tools = findTools({ Path: 'C:\\node;C:\\npm' }, 'win32', (p) => present.has(p));
     expect(tools).toEqual({
-      node: join('C:\\node', 'node.exe'),
-      npm: join('C:\\node', 'npm.cmd'),
-      cockpit: join('C:\\npm', 'cockpit.cmd'),
+      node: 'C:\\node\\node.exe',
+      npm: 'C:\\node\\npm.cmd',
+      cockpit: 'C:\\npm\\cockpit.cmd',
     });
+  });
+
+  it('builds POSIX paths on darwin whatever the host is', () => {
+    const present = new Set(['/opt/homebrew/bin/cockpit']);
+    expect(findTools({ PATH: '/usr/bin:/opt/homebrew/bin' }, 'darwin', (p) => present.has(p)).cockpit).toBe(
+      '/opt/homebrew/bin/cockpit',
+    );
   });
 
   it('reports missing tools as null', () => {

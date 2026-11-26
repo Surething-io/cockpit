@@ -10,7 +10,7 @@
 import { spawn } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { homedir } from 'os';
-import { delimiter, join, resolve } from 'path';
+import { delimiter, join, posix, resolve, win32 } from 'path';
 
 export const NPM_PACKAGE = '@surething/cockpit';
 // Keep in sync with package.json#engines.node of the npm package.
@@ -24,11 +24,11 @@ export function pathOf(env) {
 }
 
 /** First `names` entry found on `pathValue`, as an absolute path, or null. */
-export function whichIn(names, pathValue, { sep = delimiter, exists = existsSync } = {}) {
+export function whichIn(names, pathValue, { sep = delimiter, joinPath = join, exists = existsSync } = {}) {
   for (const dir of (pathValue || '').split(sep)) {
     if (!dir) continue;
     for (const name of names) {
-      const candidate = join(dir, name);
+      const candidate = joinPath(dir, name);
       if (exists(candidate)) return candidate;
     }
   }
@@ -38,7 +38,8 @@ export function whichIn(names, pathValue, { sep = delimiter, exists = existsSync
 /** Locate node, npm and cockpit on the user's PATH. */
 export function findTools(env, platform = process.platform, exists = existsSync) {
   const win = platform === 'win32';
-  const opts = { sep: win ? ';' : ':', exists };
+  // Separator and join follow the target platform, not the host one.
+  const opts = { sep: win ? ';' : ':', joinPath: win ? win32.join : posix.join, exists };
   const path = pathOf(env);
   return {
     node: whichIn(win ? ['node.exe'] : ['node'], path, opts),

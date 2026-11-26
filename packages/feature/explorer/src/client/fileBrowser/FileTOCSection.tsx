@@ -167,7 +167,9 @@ export function FileTOCSection({
             return (
               <Tooltip
                 key={fn.qualifiedName}
-                content={`${fn.qualifiedName} · L${fn.startLine}`}
+                // The declaration line, as an editor would show it; the
+                // jump below still targets the block start (doc included).
+                content={`${fn.qualifiedName} · L${fn.declLine}`}
               >
                 <button
                   onClick={() => onSelect(fn.qualifiedName, fn.startLine)}

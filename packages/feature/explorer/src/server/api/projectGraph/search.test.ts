@@ -41,6 +41,7 @@ beforeAll(async () => {
   await write('src2/other.ts', 'export function runConductor() {}');
   await write('src/__tests__/other.ts', 'export function runConductorTest() {}');
   await write('src/tests/helper.ts', 'export function runConductorTestHelper() {}');
+  await write('docs/documented.ts', '/**\n * Documented.\n */\nexport function documentedFn() {}\n');
   server = createServer(async (req, res) => {
     const response = await GET(new Request(new URL(req.url!, 'http://localhost')));
     res.writeHead(response.status, Object.fromEntries(response.headers));
@@ -120,6 +121,12 @@ describe('search across the complete index', () => {
     expect(literal.stdout).toContain('literal\tsrc/runConductor.ts:1\trunConductor\n');
     expect((await run(['literalEvent', '--include-literals'])).stdout).toBe('literal\tsrc/runConductor.ts:3\tliteral.event\n');
     await expect(run(['runConductor', '--path'])).rejects.toMatchObject({ code: 2, stderr: expect.stringContaining('requires a value') });
+  });
+
+  it('reports the declaration line separately from a doc-comment-widened range', async () => {
+    const body = await (await request({ q: 'documentedFn' })).json();
+    expect(body.symbols[0].target).toMatchObject({ startLine: 1, endLine: 4, declLine: 4 });
+    expect((await run(['documentedFn'])).stdout).toBe('sym \tdocs/documented.ts:4\tfunction\tdocumentedFn\n');
   });
 });
 

@@ -31,8 +31,15 @@ export interface FunctionNode {
   name: string;
   /** `function | class | method`. */
   kind: SymbolKind;
+  /** First line of the symbol's range, INCLUDING the doc comment glued
+   *  above a top-level declaration and any Python decorators. Use with
+   *  `endLine` to read source. */
   startLine: number;
   endLine: number;
+  /** Line of the declaration itself (`export function foo(`). Equals
+   *  `startLine` when there is no leading doc comment. Use this when
+   *  citing a symbol as `file:line`. */
+  declLine: number;
   /** Parameter names for callables (function | method). Surfaced in
    *  the chip header as `name(p1, p2, …)` so reviewers can read a
    *  function's shape without scrolling into the body. Names only —

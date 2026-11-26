@@ -181,6 +181,7 @@ function chunkMarkdown(filePath: string, text: string): FunctionNode[] {
         kind: "unknown",
         startLine: 1,
         endLine: Math.max(1, lines.length),
+        declLine: 1,
       },
     ]
   }
@@ -193,6 +194,7 @@ function chunkMarkdown(filePath: string, text: string): FunctionNode[] {
       kind: "unknown",
       startLine: 1,
       endLine: headings[0].line - 1,
+      declLine: 1,
     })
   }
   for (let i = 0; i < headings.length; i++) {
@@ -206,6 +208,7 @@ function chunkMarkdown(filePath: string, text: string): FunctionNode[] {
       kind: "unknown",
       startLine: h.line,
       endLine: Math.max(h.line, endLine),
+      declLine: h.line,
     })
   }
   return blocks

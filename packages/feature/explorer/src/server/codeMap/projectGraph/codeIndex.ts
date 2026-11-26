@@ -117,6 +117,8 @@ export interface IndexedSymbol extends SymbolAddr {
   kind: SymbolKind;
   startLine: number;
   endLine: number;
+  /** Declaration line; see `FunctionNode.declLine`. */
+  declLine: number;
   /** Parameter names for callables — propagated through to FunctionNode
    *  so the chip header can render `(req, res, next)`. See
    *  `ExtractedSymbol.params` for semantics; we just pass it through. */
@@ -298,6 +300,7 @@ function flattenSymbols(filePath: string, syms: ExtractedSymbol[]): IndexedSymbo
         kind: s.kind,
         startLine: s.startLine,
         endLine: s.endLine,
+        declLine: s.declLine,
         params: s.params,
       });
       walk(s.children);
@@ -1352,6 +1355,7 @@ function toFunctionNode(s: IndexedSymbol): FunctionNode {
     kind: s.kind,
     startLine: s.startLine,
     endLine: s.endLine,
+    declLine: s.declLine,
     params: s.params,
   };
 }
@@ -1759,7 +1763,7 @@ export function searchIndex(
       // Synthetic blocks exist only to cover source lines in the chip view.
       if (s.kind === 'unknown') continue;
       const rank = searchRank(s.name, qRaw, q);
-      if (rank >= 0) symbolMatches.add({ rank, filePath: f.path, qname: s.qualifiedName, line: s.startLine, value: s });
+      if (rank >= 0) symbolMatches.add({ rank, filePath: f.path, qname: s.qualifiedName, line: s.declLine, value: s });
     }
     if (!opts.includeLiterals) continue;
     for (const lit of f.literals) {

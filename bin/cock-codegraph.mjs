@@ -223,7 +223,7 @@ async function cmdSearch() {
   }
   for (const s of syms) {
     const t = s.target;
-    stdout.write(`sym \t${t.filePath}:${t.startLine}\t${t.kind}\t${t.qualifiedName}\n`);
+    stdout.write(`sym \t${t.filePath}:${t.declLine ?? t.startLine}\t${t.kind}\t${t.qualifiedName}\n`);
   }
   for (const hit of literals) stdout.write(`literal\t${hit.filePath}:${hit.line}\t${hit.value}\n`);
   await writeOutput();
@@ -304,7 +304,7 @@ async function runCallSide(kind) {
   for (const item of list) {
     const node = item.caller || item.callee;
     const lines = (item.callLines || []).join(',');
-    stdout.write(`${node.filePath}:${node.startLine}\t${node.qualifiedName}\t[${lines}]\n`);
+    stdout.write(`${node.filePath}:${node.declLine ?? node.startLine}\t${node.qualifiedName}\t[${lines}]\n`);
   }
   await writeOutput();
   exit(0);
@@ -335,7 +335,7 @@ async function cmdImpact() {
   if (nodes.length === 0) exit(1);
   for (const n of nodes) {
     const s = n.symbol;
-    stdout.write(`d=${n.depth}\t${s.filePath}:${s.startLine}\t${s.qualifiedName}\n`);
+    stdout.write(`d=${n.depth}\t${s.filePath}:${s.declLine ?? s.startLine}\t${s.qualifiedName}\n`);
   }
   await writeOutput();
   exit(0);
@@ -427,7 +427,7 @@ async function cmdRelated() {
   if (results.length === 0) exit(1);
   for (const r of results) {
     const rels = (r.relations || []).map((x) => x.type).join(',');
-    stdout.write(`${r.score.toFixed(2)}\t${r.filePath}:${r.startLine}\t${r.qualifiedName}\t<${rels}>\n`);
+    stdout.write(`${r.score.toFixed(2)}\t${r.filePath}:${r.declLine ?? r.startLine}\t${r.qualifiedName}\t<${rels}>\n`);
   }
   await writeOutput();
   exit(0);
@@ -637,6 +637,8 @@ Flags:
 
 Ranking: raw exact name, normalized exact, normalized prefix, then substring.
 All eligible candidates are scanned; only the best limit per category is retained.
+Point coordinates (<file>:<line>) are the declaration line. Ranges
+(<startLine>-<endLine>) also cover the doc comment glued above a declaration.
 Ties are stable by file path, qualified name, then line. Tests are included by default.
 
 Output (plain, TAB-separated):
@@ -644,7 +646,7 @@ Output (plain, TAB-separated):
   file <TAB> <file>
   literal <TAB> <file>:<line> <TAB> <value>
 
-JSON keys: files[].target, symbols[].target.{filePath,startLine,endLine,kind,qualifiedName}
+JSON keys: files[].target, symbols[].target.{filePath,startLine,endLine,declLine,kind,qualifiedName}
 
 Exit: 0=hits, 1=no hits, 2=usage, 3=server unreachable
 
@@ -699,7 +701,7 @@ Flags:
   --json           Emit raw JSON {qname, target, callers: [...]}
 
 Output (plain, TAB-separated):
-  <file>:<startLine> <TAB> <callerQname> <TAB> [<callLine1>,<callLine2>,...]
+  <file>:<declLine> <TAB> <callerQname> <TAB> [<callLine1>,<callLine2>,...]
 
 Stderr:
   # ambiguousIn: <files…>   Pass --file to pick the right target
@@ -719,7 +721,7 @@ Purpose:  What <qname> calls directly (1-hop outgoing). Mirror of
 Flags: same as 'callers'
 
 Output (plain, TAB-separated):
-  <file>:<startLine> <TAB> <calleeQname> <TAB> [<callLine1>,<callLine2>,...]
+  <file>:<declLine> <TAB> <calleeQname> <TAB> [<callLine1>,<callLine2>,...]
 
 Exit: 0=callees found, 1=none, 2=usage/ambiguous target, 3=server
 
@@ -739,7 +741,7 @@ Flags:
   --json           Raw JSON {qname, target, nodes: [...], truncated, ambiguousIn?}
 
 Output (plain, TAB-separated):
-  d=<depth> <TAB> <file>:<startLine> <TAB> <qname>
+  d=<depth> <TAB> <file>:<declLine> <TAB> <qname>
 
 Stderr:
   # impact truncated at server cap (500). Narrow the query or lower --depth.
@@ -807,7 +809,7 @@ Flags:
   --json           Raw JSON {target, results, ambiguousIn?, coedit, degraded}
 
 Output (plain, TAB-separated, score descending):
-  <score> <TAB> <file>:<startLine> <TAB> <qname> <TAB> <<rel1>,<rel2>,...>
+  <score> <TAB> <file>:<declLine> <TAB> <qname> <TAB> <<rel1>,<rel2>,...>
   relations: caller | callee | frequent-coedit
 
 Stderr:

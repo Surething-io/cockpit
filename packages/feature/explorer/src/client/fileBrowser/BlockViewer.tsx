@@ -2093,6 +2093,7 @@ export function BlockViewer({
         kind: 'unknown',
         startLine: 1,
         endLine: lineCount,
+        declLine: 1,
       },
     ];
   }

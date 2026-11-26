@@ -54,8 +54,18 @@ export interface ExtractedSymbol {
   /** Bare name without parent path, e.g. `render`. */
   name: string;
   kind: SymbolKind;
-  /** 1-based, inclusive — line where the symbol starts in this snapshot. */
+  /** 1-based, inclusive — line where the symbol starts in this snapshot.
+   *  For top-level symbols this includes the doc comment glued above the
+   *  declaration (see `absorbLeadingComments`), so it is the right offset
+   *  for reading the symbol, not for citing where it is declared. */
   startLine: number;
+  /** 1-based line of the declaration itself — the line a reader cites.
+   *  Equals `startLine` unless the range was widened above the
+   *  declaration (a glued doc comment via `absorbLeadingComments`,
+   *  Python decorators, Lean attributes). Required so every producer
+   *  has to decide it; `declLine.invariant.test.ts` checks the result
+   *  through every /cg endpoint. */
+  declLine: number;
   /** 1-based, inclusive — line where the symbol ends. */
   endLine: number;
   /** Hash of the symbol's normalized text. Used to detect modification. */

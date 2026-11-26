@@ -63,6 +63,20 @@ function nameOf(node: Node): string {
   return '<anonymous>';
 }
 
+/** 0-based row of the declaration proper, past any leading `decorator`
+ *  children and the comments interleaved with them. A bare TS
+ *  `@sealed class Foo {}` keeps its decorators (and a comment written
+ *  between `@sealed` and `class`) INSIDE the `class_declaration` node, so
+ *  the node's own start is the `@sealed` line, not the `class` line a
+ *  reader would cite. */
+function declarationRow(node: Node): number {
+  for (let i = 0; i < node.childCount; i++) {
+    const c = node.child(i);
+    if (c && c.type !== 'decorator' && c.type !== 'comment') return c.startPosition.row;
+  }
+  return node.startPosition.row;
+}
+
 function makeSymbol(
   node: Node,
   name: string,
@@ -78,6 +92,7 @@ function makeSymbol(
     // tree-sitter rows are 0-based; we expose 1-based for UI alignment.
     startLine: node.startPosition.row + 1,
     endLine: node.endPosition.row + 1,
+    declLine: declarationRow(node) + 1,
     contentHash: hashText(normalizeForHash(node.text)),
     children,
     params,
@@ -429,6 +444,7 @@ function extractFromNode(
       // produce a single symbol here, but iterate for safety.
       return innerSymbols.map((s) => ({
         ...s,
+        // `declLine` stays on the inner `def` / `class` line.
         startLine: node.startPosition.row + 1,
         // Re-hash from the decorated text so contentHash captures the
         // decorator change too. The simplest form: hash the outer node.
@@ -624,6 +640,7 @@ function extractPythonAssignment(
     kind: 'const',
     startLine: outer.startPosition.row + 1,
     endLine: outer.endPosition.row + 1,
+    declLine: outer.startPosition.row + 1,
     contentHash: hashText(normalizeForHash(outer.text)),
     children: [],
   };
@@ -801,6 +818,9 @@ function extractLeanTopLevel(rootNode: Node): ExtractedSymbol[] {
       kind: LEAN_DECL_KINDS[inner.type],
       startLine: child.startPosition.row + 1,
       endLine: contentEndLine(child),
+      // The `theorem` / `def` keyword line, past any `@[simp]` attributes
+      // the wrapper's range starts on.
+      declLine: inner.startPosition.row + 1,
       contentHash: hashText(normalizeForHash(child.text)),
       children: [],
     });
@@ -850,25 +870,52 @@ function extractImportHeader(rootNode: Node): ExtractedSymbol | null {
     kind: 'unknown',
     startLine: firstLine,
     endLine: lastLine,
+    declLine: firstLine,
     contentHash: hashText(normalizeForHash(text)),
     children: [],
   };
 }
 
+/** Nodes that document or annotate the item BELOW them: comments
+ * (`comment` in TS/JS/Go/Python/Lean, Rust's `line_comment` /
+ * `block_comment`) and Rust outer attributes. Rust inner doc comments and
+ * inner attributes are excluded — they belong to the enclosing module. */
+function isLeadingTrivia(node: Node): boolean {
+  if (node.type === 'attribute_item') return true;
+  if (!node.type.endsWith('comment')) return false;
+  for (let i = 0; i < node.namedChildCount; i++) {
+    if (node.namedChild(i)?.type === 'inner_doc_comment_marker') return false;
+  }
+  return true;
+}
+
 /**
  * Extend each top-level symbol's `startLine` upward over the doc comment
- * block glued to it, so the comment renders inside the symbol's card
- * instead of becoming its own `code` filler block.
+ * block — and the decorators / attributes — glued to it, so they render
+ * inside the symbol's card instead of becoming their own `code` filler
+ * block.
  *
  * Why this exists: every extractor derives a symbol's range from its
  * DECLARATION node, and tree-sitter keeps leading comments as separate
  * root-level siblings. So `/** … *\/` above `export const Foo` was left
  * uncovered and `computeFillerBlocks` scooped it up — the chip view
  * showed a nameless `code · 5 lines` card followed by the symbol it
- * documents, splitting one unit of reading across two cards.
+ * documents, splitting one unit of reading across two cards. The same
+ * split happens for:
+ *   - Rust outer attributes (`#[derive(Debug)]`): root-level
+ *     `attribute_item` siblings that usually sit BETWEEN the `///` doc
+ *     comment and the item, so they also have to be part of the chain or
+ *     the doc comment above them is cut off too.
+ *   - TS `@Component(...) export class Foo`: the decorators hang off the
+ *     `export_statement` wrapper while the symbol is ranged from the inner
+ *     `class_declaration`.
  *
- * Adjacency rule: absorb ONLY a run of comment nodes that touches the
- * symbol with no blank line anywhere in the chain (`comment.endLine ===
+ * NOT absorbed: Rust inner doc comments (`//!`, `/*! *\/`) and inner
+ * attributes (`#![allow(...)]`). Both describe the enclosing module, not
+ * the item that happens to follow them.
+ *
+ * Adjacency rule: absorb ONLY a run of such nodes that touches the
+ * symbol with no blank line anywhere in the chain (`node.endLine ===
  * start - 1`, repeatedly). A comment separated by a blank line is a
  * section marker about the region, not documentation of the next symbol,
  * and stays its own filler block. The walk also stops at any line
@@ -883,24 +930,47 @@ function extractImportHeader(rootNode: Node): ExtractedSymbol | null {
  * field to hang an invalidation off. Range is a view concern; the hash
  * keeps meaning "the code changed".
  *
- * Mutates in place, and is idempotent: after the first pass the comment
+ * `declLine` is left untouched: consumers that cite a symbol's position
+ * (the /cg endpoints, search hits) must point at the declaration, not at
+ * the first line of its JSDoc.
+ *
+ * Mutates in place, and is idempotent: after the first pass the absorbed
  * lines are inside the symbol, so the `endLine === start - 1` probe
- * finds the comment node again but its lines now lie within the symbol
- * itself — guarded by the covered check below.
+ * finds the node again but its lines now lie within the symbol itself —
+ * guarded by the covered check below.
  */
 export function absorbLeadingComments(
   rootNode: Node,
   symbols: readonly ExtractedSymbol[],
 ): void {
-  // Root-level comment nodes, indexed by the line they END on — that is
+  // Decorated TS exports first: pull the symbol up to its wrapper so the
+  // decorators are inside it, and the comment walk below then continues
+  // from the wrapper's first line.
+  for (let i = 0; i < rootNode.namedChildCount; i++) {
+    const c = rootNode.namedChild(i);
+    if (c?.type !== 'export_statement') continue;
+    const decl = c.childForFieldName('declaration');
+    if (!decl || decl.startPosition.row === c.startPosition.row) continue;
+    const declStart = decl.startPosition.row + 1;
+    for (const s of symbols) {
+      if (s.kind !== 'unknown' && s.startLine === declStart) s.startLine = c.startPosition.row + 1;
+    }
+  }
+
+  // Root-level leading nodes, indexed by the line they END on — that is
   // the only lookup direction the upward walk needs.
   const commentByEndLine = new Map<number, Node>();
   for (let i = 0; i < rootNode.namedChildCount; i++) {
     const c = rootNode.namedChild(i);
-    // Covers `comment` (TS/JS/Go/Python) and Rust's
-    // `line_comment` / `block_comment` / `doc_comment`.
-    if (!c || !c.type.endsWith('comment')) continue;
-    commentByEndLine.set(c.endPosition.row + 1, c);
+    if (!c || !isLeadingTrivia(c)) continue;
+    // tree-sitter-rust's `///` doc comments own their trailing newline,
+    // so they end at column 0 of the NEXT row — the very line the
+    // documented item starts on. Count that as ending on the row above,
+    // or the adjacency probe below never matches a Rust doc comment.
+    const endRow = c.endPosition.column === 0 && c.endPosition.row > c.startPosition.row
+      ? c.endPosition.row - 1
+      : c.endPosition.row;
+    commentByEndLine.set(endRow + 1, c);
   }
   if (commentByEndLine.size === 0) return;
 
@@ -932,6 +1002,8 @@ export function absorbLeadingComments(
     }
     if (start === s.startLine) continue;
     for (let i = start; i < s.startLine; i++) covered.add(i);
+    // Only the range moves: `declLine` was fixed by the extractor (for a
+    // decorated Python definition it already sits on the `def`).
     s.startLine = start;
   }
 }
@@ -996,6 +1068,7 @@ export function computeFillerBlocks(
       kind: 'unknown',
       startLine: start,
       endLine: end,
+      declLine: start,
       contentHash: hashText(normalizeForHash(text)),
       children: [],
     });

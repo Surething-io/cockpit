@@ -81,6 +81,7 @@ function makeSymbol(
     kind,
     startLine: node.startPosition.row + 1,
     endLine: node.endPosition.row + 1,
+    declLine: node.startPosition.row + 1,
     contentHash: hashText(normalizeForHash(node.text)),
     children,
     params,
@@ -272,6 +273,7 @@ function extractRustImportHeader(rootNode: Node): ExtractedSymbol | null {
     kind: 'unknown',
     startLine: firstLine,
     endLine: lastLine,
+    declLine: firstLine,
     contentHash: hashText(normalizeForHash(text)),
     children: [],
   };

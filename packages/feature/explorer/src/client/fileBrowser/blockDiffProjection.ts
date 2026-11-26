@@ -10,7 +10,8 @@
  *   - This module owns the parser / line-diff / qname-classification
  *     plumbing.
  *
- * Block-pairing strategy — TWO paths feed `changedQnames`:
+ * Block-pairing strategy — THREE paths feed `changedQnames` (the third,
+ * absorbed leading lines, is described at `qnamesWithChangedLeadingLines`):
  *
  *   1. STABLE-QNAME path (qname + contentHash matching). Real symbols
  *      (`function` / `class` / `method` / …) and stable synthetics
@@ -138,6 +139,37 @@ function qnamesOverlappingAddedLines(
   return out;
 }
 
+/**
+ * Stable blocks whose ABSORBED leading lines — `[startLine, declLine)`:
+ * the doc comment, TS decorators or Rust attributes `absorbLeadingComments`
+ * pulled into the range — contain a changed line.
+ *
+ * Needed because those lines are deliberately outside `contentHash` (it
+ * keys symbol history on the code alone), so hash pairing reports a
+ * decorator- or JSDoc-only edit as "unchanged", and the lines no longer
+ * form a `__code_*__` filler the line-overlap path could catch. Call once
+ * per side: after-side blocks against added lines, before-side blocks
+ * against removed lines (a deleted decorator adds nothing on the after
+ * side). The body below `declLine` stays the hash's responsibility.
+ */
+function qnamesWithChangedLeadingLines(
+  blocks: readonly ExtractedSymbol[],
+  changedLines: ReadonlySet<number>,
+): string[] {
+  if (changedLines.size === 0) return [];
+  const out: string[] = [];
+  for (const s of blocks) {
+    if (!isStableForDiff(s)) continue;
+    for (let ln = s.startLine; ln < s.declLine; ln++) {
+      if (changedLines.has(ln)) {
+        out.push(s.qualifiedName);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 /** Pair before / after blocks by qualifiedName and classify each pair. */
 function diffBlocks(
   oldBlocks: readonly ExtractedSymbol[],
@@ -230,6 +262,9 @@ export async function buildImpactProjection(
   // Line-level diff first — it's language-agnostic so we always get it,
   // even when the grammar lookup below comes up empty.
   const addedLines = new Set<number>();
+  // Old-side line numbers; only used to catch edits that delete an
+  // absorbed leading line (see `qnamesWithChangedLeadingLines`).
+  const removedLines = new Set<number>();
   if (oldContent !== newContent) {
     const diffLines = computeLineDiff(
       isNew ? '' : oldContent,
@@ -238,6 +273,8 @@ export async function buildImpactProjection(
     for (const dl of diffLines) {
       if (dl.type === 'added' && dl.newLineNum !== undefined) {
         addedLines.add(dl.newLineNum);
+      } else if (dl.type === 'removed' && dl.oldLineNum !== undefined) {
+        removedLines.add(dl.oldLineNum);
       }
     }
   }
@@ -280,6 +317,17 @@ export async function buildImpactProjection(
   // panel render empty even though `addedLines` knew about the change.
   for (const qname of qnamesOverlappingAddedLines(newAll, addedLines)) {
     changedQnames.add(qname);
+  }
+
+  // Path 3 — edits confined to a stable block's absorbed leading lines.
+  // A before-side hit only counts if the block still exists after: a
+  // deleted block has no row to render.
+  for (const qname of qnamesWithChangedLeadingLines(newAll, addedLines)) {
+    changedQnames.add(qname);
+  }
+  const newQnames = new Set(newAll.map((s) => s.qualifiedName));
+  for (const qname of qnamesWithChangedLeadingLines(oldAll, removedLines)) {
+    if (newQnames.has(qname)) changedQnames.add(qname);
   }
 
   return { changedQnames, addedLines };

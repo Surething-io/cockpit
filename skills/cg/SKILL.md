@@ -78,7 +78,13 @@ curl -fsS "{{BASE_URL}}/api/projectGraph/coedit?cwd=$PWD&filePath=<REL_PATH>"
 
 Every endpoint speaks ONE node shape (call it NODE):
 
-`{ filePath, qualifiedName, name, kind, startLine, endLine, params?[] }`
+`{ filePath, qualifiedName, name, kind, startLine, endLine, declLine, params?[] }`
+
+`startLine` / `endLine` span the whole symbol INCLUDING the doc comment glued above
+a top-level declaration and any Python decorators, so `startLine` can sit several
+lines above the `function` / `def` / `class` keyword. `declLine` is the declaration line itself (equal to `startLine`
+when there is no doc comment). Read with `startLine`..`endLine`; cite a symbol as
+`filePath:declLine`.
 
 `params` is OPTIONAL: absent for non-callables (class / interface / type / enum /
 const) and for languages without a tree-sitter grammar. `params: []` is different —
@@ -198,7 +204,8 @@ to each history row. Reuse it rather than calling `/coedit` again.
   recognition is heuristic; returned tests do not prove behavioral coverage.
 - Coedit history can contain pre-rename or non-code paths. These remain in
   `coedit[]` even when no indexed symbol is available to navigate to them.
-- Read source using `startLine` / `endLine`; endpoints return coordinates.
+- Read source using `startLine` / `endLine`; cite locations as `filePath:declLine`
+  (`startLine` includes leading doc comments / decorators and will not match the declaration).
 - `context` and `risk` have been removed. Use `search` + `related` to explore,
   and `impact` / `affected` / `coedit` to inspect change evidence.
 

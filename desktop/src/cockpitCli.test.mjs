@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, posix } from 'path';
-import { compareVersions, findTools, pathOf, portOf, readServerRecord, whichIn } from './cockpitCli.mjs';
+import { compareVersions, findTools, pathOf, portOf, readServerRecord, shellUpdateFor, whichIn } from './cockpitCli.mjs';
 
 describe('pathOf', () => {
   it('reads PATH whatever its case', () => {
@@ -37,6 +37,24 @@ describe('whichIn / findTools', () => {
 
   it('reports missing tools as null', () => {
     expect(findTools({ PATH: '/nowhere' }, 'darwin', () => false)).toEqual({ node: null, npm: null, cockpit: null });
+  });
+});
+
+describe('shellUpdateFor', () => {
+  it('offers an update only when the installed cockpit carries a different shell', () => {
+    expect(shellUpdateFor('aaa', { version: '1.2.0', shellHash: 'aaa' })).toBeNull();
+    expect(shellUpdateFor('aaa', { version: '1.2.0', shellHash: 'bbb' })).toBe('1.2.0');
+  });
+
+  it('replaces a local or unfingerprinted build once a release records one', () => {
+    expect(shellUpdateFor('aaa-dirty', { version: '1.2.0', shellHash: 'aaa' })).toBe('1.2.0');
+    expect(shellUpdateFor(null, { version: '1.2.0', shellHash: 'aaa' })).toBe('1.2.0');
+  });
+
+  it('never triggers from a package without a fingerprint', () => {
+    expect(shellUpdateFor('aaa', { version: '1.2.0', shellHash: null })).toBeNull();
+    expect(shellUpdateFor('aaa', null)).toBeNull();
+    expect(shellUpdateFor('aaa', { shellHash: 'bbb' })).toBeNull();
   });
 });
 

@@ -10,6 +10,7 @@ import {
   defaultTarget,
   expectedChecksum,
   applyStaged,
+  appStatus,
   installApp,
   localArchive,
   parseArgs,
@@ -32,6 +33,7 @@ describe('parseArgs', () => {
       from: null,
       stage: false,
       apply: false,
+      json: false,
       help: false,
     });
     expect(parseArgs(['update', '--stage']).stage).toBe(true);
@@ -83,6 +85,27 @@ describe('expectedChecksum', () => {
     expect(() => expectedChecksum({ version: '1.2.0', files: { [asset]: 'abc' } }, '1.2.0', asset)).toThrow(
       /No checksum/,
     );
+  });
+});
+
+describe('appStatus', () => {
+  let root;
+  afterEach(() => root && rmSync(root, { recursive: true, force: true }));
+  const make = (checksums) => {
+    root = mkdtempSync(join(tmpdir(), 'cock-app-status-'));
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ version: '1.2.0' }));
+    if (checksums) writeFileSync(join(root, 'desktop-checksums.json'), JSON.stringify(checksums));
+    return root;
+  };
+
+  it('reports the shell fingerprint recorded for this version', () => {
+    expect(appStatus(make({ version: '1.2.0', shellHash: 'abc', files: {} }))).toEqual({ version: '1.2.0', shellHash: 'abc' });
+  });
+
+  it('reports none for a source checkout, an older record, or a stale file', () => {
+    expect(appStatus(make(null))).toEqual({ version: '1.2.0', shellHash: null });
+    expect(appStatus(make({ version: '1.2.0', files: {} }))).toEqual({ version: '1.2.0', shellHash: null });
+    expect(appStatus(make({ version: '1.1.0', shellHash: 'abc', files: {} }))).toEqual({ version: '1.2.0', shellHash: null });
   });
 });
 

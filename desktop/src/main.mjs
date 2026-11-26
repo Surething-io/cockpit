@@ -29,6 +29,7 @@ import {
   portOf,
   probeHealth,
   runTool,
+  shellUpdateFor,
 } from './cockpitCli.mjs';
 import { createStrings } from './strings.mjs';
 
@@ -215,12 +216,14 @@ async function serverCommand(command) {
 // ─────────────────────────────────────────────────────────
 // Desktop app self-update (via `cockpit app update`)
 //
-// The app's version is pinned to the npm package, so "an update exists" means
-// "the server reports a newer version than ours". Checking costs nothing (one
-// local request), so it runs every few minutes; downloading ~100 MB is the
-// user's call. By default an available update is only announced (notification
-// + "Download Update" in the menu); "Download Updates Automatically" in the
-// menu, off by default, lets it fetch in the background instead.
+// The app is a thin shell that rarely changes, so "an update exists" means
+// "the installed cockpit carries a different shell than this build" (see
+// availableShellUpdate), not "cockpit is newer". Checking costs nothing (one
+// local request, plus `cockpit app status` once per cockpit version), so it
+// runs every few minutes; downloading ~100 MB is the user's call. By default
+// an available update is only announced (notification + "Download Update" in
+// the menu); "Download Updates Automatically" in the menu, off by default,
+// lets it fetch in the background instead.
 //
 // Downloading stages the update beside the app (`--stage`: download, verify,
 // unpack) while the user keeps working. Once staged, the menu offers "Restart
@@ -272,11 +275,20 @@ function stagedUpdateDir() {
   return join(dirname(installedAppPath()), '.opencockpit-update');
 }
 
-/** Version of a complete staged update newer than us, or null. */
+/** Version of a complete staged update other than the running app, or null. */
 function readStagedVersion() {
   try {
     const { version } = JSON.parse(readFileSync(join(stagedUpdateDir(), 'staged.json'), 'utf8'));
-    return compareVersions(version, app.getVersion()) === 1 ? version : null;
+    return version && version !== app.getVersion() ? version : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Fingerprint of this build's shell, stamped in by desktop/scripts/build.mjs. */
+function ownShellHash() {
+  try {
+    return JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')).shellHash ?? null;
   } catch {
     return null;
   }
@@ -308,11 +320,29 @@ function lastLine(output) {
   );
 }
 
-/** The server's version when it is newer than ours, else null. */
-async function newerServerVersion() {
+// `cockpit app status` only needs asking again once cockpit itself changed,
+// which the server's version (one local request) tells us for free.
+let shellCheck = { serverVersion: null, version: null };
+
+/**
+ * Whether the installed cockpit carries a different desktop shell than this
+ * build: returns the version to update to, or null. Most cockpit releases
+ * leave the shell unchanged, and then there is nothing to download.
+ */
+async function availableShellUpdate({ fresh = false } = {}) {
   const health = serverOrigin ? await probeHealth(Number(new URL(serverOrigin).port)) : null;
   if (!health) return { reachable: false, version: null };
-  return { reachable: true, version: compareVersions(health.version, app.getVersion()) === 1 ? health.version : null };
+  if (!fresh && shellCheck.serverVersion === health.version) return { reachable: true, version: shellCheck.version };
+  const res = await runTool(tools.cockpit, ['app', 'status', '--json'], { env: userEnv.env, timeoutMs: 15_000 });
+  let pkg = null;
+  try {
+    pkg = JSON.parse(lastLine(res.output));
+  } catch {
+    // An older cockpit without `app status`: it records no fingerprint either.
+  }
+  const version = res.code === 0 ? shellUpdateFor(ownShellHash(), pkg) : null;
+  shellCheck = { serverVersion: health.version, version };
+  return { reachable: true, version };
 }
 
 /**
@@ -322,7 +352,7 @@ async function newerServerVersion() {
 async function checkForAppUpdate() {
   if (!app.isPackaged || !tools.cockpit) return;
   if (update.status === 'downloading' || update.status === 'ready') return;
-  const { version } = await newerServerVersion();
+  const { version } = await availableShellUpdate();
   if (!version) return;
 
   if (readPrefs().autoDownloadUpdates) {
@@ -345,7 +375,7 @@ async function checkForAppUpdateManually() {
   }
   if (update.status === 'ready') return promptRestartToUpdate();
   if (update.status === 'downloading') return;
-  const { reachable, version } = await newerServerVersion();
+  const { reachable, version } = await availableShellUpdate({ fresh: true });
   if (!reachable) {
     dialog.showMessageBox({ message: t('updateNeedsServer') });
     return;

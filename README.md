@@ -275,9 +275,10 @@ cockpit app install      # installs the app matching your cockpit version
 
 This puts `OpenCockpit.app` in `~/Applications` (macOS) or the app in
 `%LOCALAPPDATA%\Programs\OpenCockpit` with a Start-menu entry (Windows). The
-app keeps up with your cockpit: when cockpit is newer it offers the matching
-update (*Download Update* in the app menu), downloads it in the background
-while you work, and switches over when you restart or quit it. Turn on
+app is a thin shell that rarely changes: updating cockpit (`cockpit update`, or
+the version pill) does not require a new app. When a cockpit release does
+change the app, the app menu offers *Download Update*, downloads it in the
+background while you work, and switches over when you restart or quit it. Turn on
 *Download Updates Automatically* in the same menu to skip the prompt.
 `cockpit app update` and `cockpit app uninstall` do the same by hand.
 

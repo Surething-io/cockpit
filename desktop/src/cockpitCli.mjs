@@ -153,3 +153,18 @@ export async function probeHealth(port, timeoutMs = 1500) {
     return null;
   }
 }
+
+/**
+ * Version of a desktop app update worth downloading, or null.
+ *
+ * The app is a thin shell; most cockpit releases leave it untouched. So the
+ * decision is not "is cockpit newer than the app" but "does the cockpit
+ * installed now carry a different shell" — `pkg` is `cockpit app status
+ * --json`, whose shellHash is the Git tree of desktop/ its app was built from.
+ * A package that records no fingerprint (a source checkout, an older release)
+ * never triggers an update.
+ */
+export function shellUpdateFor(ownShellHash, pkg) {
+  if (!pkg || typeof pkg.shellHash !== 'string' || !pkg.shellHash || typeof pkg.version !== 'string') return null;
+  return pkg.shellHash === ownShellHash ? null : pkg.version;
+}

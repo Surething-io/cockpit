@@ -38,6 +38,7 @@ Commands:
   install                 Install the desktop app matching this cockpit version
   update                  Replace an installed desktop app with this version
   uninstall               Remove the desktop app (your data in ~/.cockpit stays)
+  status [--json]         The app version and shell fingerprint this cockpit carries
 
 Options:
   --target <path>         Where the app lives (default: ${process.platform === 'win32' ? '%LOCALAPPDATA%\\Programs\\OpenCockpit' : '~/Applications/OpenCockpit.app'})
@@ -54,7 +55,7 @@ Options:
 
 /** Parse `[command] [--target p] [--wait-pid n] [--relaunch]`. */
 export function parseArgs(argv) {
-  const out = { command: null, target: null, waitPid: null, relaunch: false, from: null, stage: false, apply: false, help: false };
+  const out = { command: null, target: null, waitPid: null, relaunch: false, from: null, stage: false, apply: false, json: false, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--target') out.target = argv[++i] ?? null;
@@ -63,6 +64,7 @@ export function parseArgs(argv) {
     else if (a === '--from') out.from = argv[++i] ?? null;
     else if (a === '--stage') out.stage = true;
     else if (a === '--apply') out.apply = true;
+    else if (a === '--json') out.json = true;
     else if (a === '-h' || a === '--help' || a === 'help') out.help = true;
     else if (!a.startsWith('-') && !out.command) out.command = a;
     else throw new Error(`unknown argument: ${a}`);
@@ -147,6 +149,20 @@ export function localArchive(from, asset) {
     throw new Error(`No ${basename(file)} at ${dirname(file)}. Build it with \`npm run desktop:build\` first.`);
   }
   return file;
+}
+
+/**
+ * What this cockpit install carries for the desktop app: its version and the
+ * shell fingerprint the matching build has (null when the package records
+ * none — a source checkout or a release older than the fingerprint). The
+ * running app compares that fingerprint with its own to decide whether an
+ * update is worth downloading; most cockpit releases leave the shell as is.
+ */
+export function appStatus(root = PROJECT_ROOT) {
+  const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
+  const checksums = readChecksums(root);
+  const shellHash = checksums?.version === version && typeof checksums.shellHash === 'string' ? checksums.shellHash : null;
+  return { version, shellHash };
 }
 
 function readChecksums(root) {
@@ -482,6 +498,12 @@ export async function runApp(argv) {
         requireExisting: opts.command === 'update',
       });
       if (opts.relaunch) launch(process.platform, dest);
+      return 0;
+    }
+    if (opts.command === 'status') {
+      const status = appStatus();
+      if (opts.json) console.log(JSON.stringify(status));
+      else console.log(`cockpit ${status.version}  desktop shell ${status.shellHash ?? '(not recorded)'}`);
       return 0;
     }
     if (opts.command === 'uninstall') {

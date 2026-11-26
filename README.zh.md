@@ -260,8 +260,8 @@ cockpit app install      # 安装与当前 cockpit 版本一致的 App
 ```
 
 macOS 会装到 `~/Applications/OpenCockpit.app`，Windows 装到
-`%LOCALAPPDATA%\Programs\OpenCockpit` 并在开始菜单建快捷方式。你的 cockpit 版本更新
-后，App 会提示对应的更新（App 菜单里的「下载更新」），在后台下载、不影响使用，重启或退出时切换到新版。
+`%LOCALAPPDATA%\Programs\OpenCockpit` 并在开始菜单建快捷方式。
+App 只是一个很少变动的壳：更新 cockpit（`cockpit update` 或点版本号）不需要更新 App。只有某次 cockpit 版本改动了 App 本身时，App 菜单才会出现「下载更新」，在后台下载、不影响使用，重启或退出时切换到新版。
 在同一个菜单里勾选「自动下载更新」可以省去确认。也可以手动执行 `cockpit app update` / `cockpit app uninstall`。
 
 App **没有做代码签名**。`cockpit app install` 会用 npm 包里发布的 SHA-256 校验下载内容，

@@ -72,7 +72,7 @@ export function parseArgs(argv) {
 
 /**
  * The release archive for a platform. Names must match `artifactName` in
- * desktop/electron-builder.yml. Windows on ARM runs the x64 build emulated.
+ * desktop/electron-builder.config.cjs. Windows on ARM runs the x64 build emulated.
  */
 export function assetFor(platform, arch, version) {
   if (platform === 'darwin') {

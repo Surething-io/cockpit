@@ -18,7 +18,7 @@ const builder = join(DESKTOP, 'node_modules', '.bin', isWindows ? 'electron-buil
 console.log(`Building OpenCockpit desktop ${version}`);
 const result = spawnSync(
   builder,
-  ['--config', 'electron-builder.yml', `-c.extraMetadata.version=${version}`, '--publish', 'never', ...process.argv.slice(2)],
+  ['--config', 'electron-builder.config.cjs', `-c.extraMetadata.version=${version}`, '--publish', 'never', ...process.argv.slice(2)],
   // .cmd shims need a shell on Windows; every argument above is shell-safe.
   { cwd: DESKTOP, stdio: 'inherit', shell: isWindows },
 );

@@ -297,7 +297,7 @@ export const POST = handler((req) =>
       );
     }
 
-    // Resolve session file across 6 engines (claude/deepseek/codex/kimi/glm/ollama)
+    // Resolve session file across 7 engines (claude/codex/grok/deepseek/kimi/glm/ollama)
     const resolved = yield* Effect.tryPromise({
       try: () => resolveSessionPath(cwd, sessionId),
       catch: (cause) => cause instanceof FSError ? cause : new AppError({ message: 'Cannot resolve session storage', cause }),

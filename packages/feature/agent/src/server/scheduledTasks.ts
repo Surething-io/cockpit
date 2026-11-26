@@ -188,8 +188,8 @@ async function rebindTaskSession(task: ScheduledTask, key: string): Promise<bool
 }
 
 /**
- * Single execution path for ALL engines (claude / ollama / codex / kimi /
- * deepseek / glm). Since #10 ws-converge every engine's /api/chat[/<engine>] route only STARTS a
+ * Single execution path for ALL engines (claude / codex / grok / ollama /
+ * kimi / deepseek / glm). Since #10 ws-converge every engine's /api/chat[/<engine>] route only STARTS a
  * detached run and returns its runKey as JSON (no SSE to drain); the route owns session
  * persistence, 'loading'/'unread' global state, the run registry and the 409 concurrent-run
  * guard. We POST to start the run, then poll the registry until it leaves "running".

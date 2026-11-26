@@ -1,7 +1,7 @@
 {
   "name": "@surething/cockpit",
   "version": "1.1.5",
-  "description": "OpenCockpit — the open Claude Code GUI for any LLM (Claude, Codex, DeepSeek, GLM, Kimi, Ollama). Cockpit IDE: parallel projects, terminal, browser & DB bubbles, code review. Self-host, local-first, MIT.",
+  "description": "OpenCockpit — the open Claude Code GUI for any LLM (Claude, Codex, Grok, DeepSeek, GLM, Kimi, Ollama). Cockpit IDE: parallel projects, terminal, browser & DB bubbles, code review. Self-host, local-first, MIT.",
   "author": "Robert",
   "license": "MIT",
   "repository": {

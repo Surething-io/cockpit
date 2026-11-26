@@ -26,7 +26,7 @@
 
 ---
 
-> **OpenCockpit 是开源的 Claude Code 图形界面，接任意大模型** —— 贴合研发全流程的 IDE 式工作台。多项目 Claude 会话开箱即用；想用 **Codex、DeepSeek、GLM、Kimi 或本地 Ollama**？直接新开一个 tab 并排跑，不用改环境变量。内置终端、Chrome 自动化、PostgreSQL / MySQL / Redis 气泡、代码评审与 Skills —— 全部本地。Web client-server 架构：**自托管到共享开发机，全队一起飞。**
+> **OpenCockpit 是开源的 Claude Code 图形界面，接任意大模型** —— 贴合研发全流程的 IDE 式工作台。多项目 Claude 会话开箱即用；想用 **Codex、Grok Build、DeepSeek、GLM、Kimi 或本地 Ollama**？直接新开一个 tab 并排跑，不用改环境变量。内置终端、Chrome 自动化、PostgreSQL / MySQL / Redis 气泡、代码评审与 Skills —— 全部本地。Web client-server 架构：**自托管到共享开发机，全队一起飞。**
 
 https://github.com/user-attachments/assets/18f1a5dc-64f3-4ff6-b9fc-9cd08181fbb8
 
@@ -42,7 +42,7 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 
 | 裸用 Claude Code 的痛 | Cockpit 的解法 |
 |---|---|
-| 只能用一个模型 | **6 个引擎按 tab 并排**：Claude（默认）、Codex、DeepSeek、GLM、Kimi、本地 Ollama —— 每个 tab 独立会话 |
+| 只能用一个模型 | **7 个引擎按 tab 并排**：Claude（默认）、Codex、Grok Build、DeepSeek、GLM、Kimi、本地 Ollama —— 每个 tab 独立会话 |
 | 一次只能开一个会话，3+ 项目就乱 | **多项目标签页**、并发 Agent 会话、红点收件箱、桌面通知 |
 | 图片附件麻烦 | 拖拽 / 粘贴图片直接进对话 |
 | "我昨天调的那个 bug 在哪？" | Cmd+K 跨项目会话浏览，会话固定 / 分叉；`/ss` 一句话找回任意历史会话 |
@@ -63,7 +63,7 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 | 定位 | **贴合研发全流程的 IDE 式工作台** | Agent 会话伴侣 | Claude Code 会话管理器 |
 | 架构 | ✅ **Web client-server** —— 部署到共享开发机，全队一起飞，各占各的项目 / worktree | 单机桌面应用 | 单机桌面应用 |
 | 开源 | ✅ MIT | ❌ 闭源 | ✅ AGPL-3.0 |
-| 引擎 | ✅ **Claude + Codex / DeepSeek / GLM / Kimi / Ollama**（BYOK） | 仅 Claude | 仅 Claude |
+| 引擎 | ✅ **Claude + Codex / Grok Build / DeepSeek / GLM / Kimi / Ollama**（BYOK） | 仅 Claude | 仅 Claude |
 | 多项目并行会话 | ✅ | ✅ | ✅ |
 | Agent 可驱动浏览器 & 数据库（Chrome / Postgres / MySQL / Redis） | ✅ 智能气泡 | ❌ 仅只读预览面板 | ❌ |
 | 全离线 / 内网隔离 | ✅ 走 Ollama | ❌ | ❌ |
@@ -85,6 +85,7 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 
 - **Claude** *(默认)* —— 完整官方 Agent SDK；`claude` CLI 已配置即零额外设置
 - **Codex** —— 直接读 `~/.codex` 配置，聊天 / Shell / 气泡都一样
+- **Grok Build** —— 内置固定版本的 Grok CLI，通过 ACP 使用你的订阅登录和它原生的编码工具。在新建会话菜单里选 **Grok**；模型和推理档位是固定列表（Grok 4.7、4.6、4.5；Low 到 Extra High），按会话保存。命令和改动以完整权限执行，与 Claude / Codex 一致。支持会话恢复、流式输出、工具结果和后台任务续跑。独立任务使用隔离的原生上下文；前缀 / 单轮分叉和删除轮次会同时同步原生历史和显示历史。已被原生压缩替换掉的轮次不允许精确编辑，以免保留本应排除的内容。
 - **DeepSeek** —— 粘 DeepSeek Key，模型选择器实时列出可用模型（默认 `deepseek-v4-pro`），还能一键**查询余额**
 - **GLM** *(智谱 / BigModel)* —— 粘 BigModel Key，模型选择器实时列出可用模型（默认 `glm-5.2`），还能一键**查询 Coding Plan 额度**；一个 Key 两套接入点，用 **Region** 在 `open.bigmodel.cn` 和 `api.z.ai` 之间切
 - **Kimi** *(Moonshot)* —— 粘 Kimi Code Key，模型选择器实时列出可用模型（`kimi-for-coding`、`k3` …），还能一键**查询额度**；不再需要 `kimi` CLI
@@ -192,6 +193,7 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 ### 可选，按引擎
 
 - **Codex** —— 执行一次 `codex login` 即可生成 `~/.codex` 配置
+- **Grok Build** —— [官方 Grok Build CLI](https://x.ai/cli) 随 Cockpit 一起安装。执行一次 `grok login` 登录。如果 PATH 里找不到，用 `~/.grok/bin/grok login`（或在本仓库里用 `npx --no-install grok login`）。不需要另外全局安装 CLI。Cockpit 启动内置的二进制时会关闭自动更新，并使用缓存的订阅登录，即使宿主环境里设置了 `XAI_API_KEY` 也一样。显示历史存放在 `$COCKPIT_HOME/grok/sessions`（默认 `~/.cockpit/grok/sessions`）；原生上下文和凭据留在 CLI 自己的数据目录里。
 - **DeepSeek** —— 到 [api-docs.deepseek.com](https://api-docs.deepseek.com/) 申请 API Key，在引擎选择器里粘贴
 - **GLM（智谱 / BigModel）** —— 到 [bigmodel.cn/apikey/platform](https://bigmodel.cn/apikey/platform) 申请 API Key（形如 `<id>.<secret>`），粘进聊天头部模型选择器的 **API Key** 输入框。同一个 Key 在两套接入点都能用，所以 **Region**（`open.bigmodel.cn` / `api.z.ai`）只是路由：默认跟着界面语言走，也能在选择器里手动覆盖。
 - **Kimi (Moonshot)** —— 到 [kimi.com/code/console](https://www.kimi.com/code/console) 申请 **Kimi Code** API Key（`sk-kimi-…`），粘进聊天头部模型选择器的 **API Key** 输入框。*（`platform.moonshot.cn` 的开放平台 Key 是另一个产品，在这里用不了。）* 不再需要 `kimi` CLI。

@@ -495,19 +495,22 @@ function webPreferences() {
   };
 }
 
-const TITLE_BAR_HEIGHT = 48;
-const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+// The window keeps its native title bar; its light/dark look follows cockpit's
+// own theme setting (System / Light / Dark) through nativeTheme.themeSource,
+// which takes exactly those three values. The page reports the setting (see
+// public/boot.js); the last one is remembered so the next launch — launcher
+// page and window background included — starts in the right shade.
+const THEME_SOURCES = new Set(['system', 'light', 'dark']);
 
-/** Windows overlay colours matching launcher.css for the OS theme. */
-function launcherTitleBarColors() {
-  return nativeTheme.shouldUseDarkColors
-    ? { color: '#0b0d10', symbolColor: '#e6e9ee' }
-    : { color: '#f6f7f9', symbolColor: '#1d2127' };
+function applyThemeSource(source) {
+  if (!THEME_SOURCES.has(source) || nativeTheme.themeSource === source) return;
+  nativeTheme.themeSource = source;
+  writePrefs({ themeSource: source });
 }
 
-function setTitleBarColors(win, { color, symbolColor }) {
-  if (process.platform !== 'win32' || win.isDestroyed()) return;
-  win.setTitleBarOverlay({ color, symbolColor, height: TITLE_BAR_HEIGHT });
+function windowBackground() {
+  // launcher.css --bg, so the window never flashes the other shade.
+  return nativeTheme.shouldUseDarkColors ? '#0b0d10' : '#f6f7f9';
 }
 
 function createWindow() {
@@ -517,28 +520,11 @@ function createWindow() {
     minWidth: 720,
     minHeight: 480,
     title: 'OpenCockpit',
-    backgroundColor: '#0b0d10',
-    // No title bar: the window controls are drawn over the page, in a 48px
-    // band that lines up with the project top bar. The web UI makes room for
-    // them (public/boot.js + the .app-titlebar-* rules in globals.css):
-    //   - macOS: traffic lights top-left, over a strip in the sidebar; y
-    //     centres the 14px buttons in it.
-    //   - Windows: minimise/maximise/close top-right, over the project top bar,
-    //     which pads its right edge. The overlay is painted by the OS, so its
-    //     colours follow the page theme through setTitleBarColors below.
-    ...(process.platform === 'darwin'
-      ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 16, y: 17 } }
-      : process.platform === 'win32'
-        ? { titleBarStyle: 'hidden', titleBarOverlay: { ...launcherTitleBarColors(), height: TITLE_BAR_HEIGHT } }
-        : {}),
+    backgroundColor: windowBackground(),
     show: false,
     webPreferences: webPreferences(),
   });
   win.once('ready-to-show', () => win.show());
-  // The launcher has its own colours; cockpit pages report theirs (see installIpc).
-  win.webContents.on('did-finish-load', () => {
-    if (win.webContents.getURL().startsWith('file:')) setTitleBarColors(win, launcherTitleBarColors());
-  });
 
   // A server that went away mid-session: show the launcher instead of
   // Chromium's error page, so "Start" is one click away.
@@ -602,15 +588,13 @@ function fromLauncher(event) {
 }
 
 function installIpc() {
-  // Windows title-bar overlay colours, reported by the cockpit page whenever
-  // its theme changes. Only the top frame of the cockpit origin may set them,
-  // and only to two plain hex colours: nothing else crosses this channel.
-  ipcMain.on('desktop:title-bar-colors', (event, colors) => {
+  // Cockpit's theme setting, reported by the page whenever it changes. Only the
+  // top frame of the cockpit origin may send it, and only one of three words:
+  // nothing else crosses this channel.
+  ipcMain.on('desktop:theme', (event, source) => {
     const frame = event.senderFrame;
     if (!frame || frame.parent !== null || !serverOrigin || originOf(frame.url) !== serverOrigin) return;
-    if (!HEX_COLOR.test(colors?.color ?? '') || !HEX_COLOR.test(colors?.symbolColor ?? '')) return;
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (win) setTitleBarColors(win, { color: colors.color, symbolColor: colors.symbolColor });
+    applyThemeSource(source);
   });
   ipcMain.handle('launcher:get-state', (event) => (fromLauncher(event) ? launcherState : null));
   ipcMain.handle('launcher:strings', (event) => (fromLauncher(event) ? t.all() : null));
@@ -711,6 +695,8 @@ function buildMenu() {
 app.userAgentFallback = `${app.userAgentFallback} CockpitDesktop/${app.getVersion()}`;
 
 app.whenReady().then(() => {
+  const savedTheme = readPrefs().themeSource;
+  if (THEME_SOURCES.has(savedTheme)) nativeTheme.themeSource = savedTheme;
   installPermissionPolicy();
   installIpc();
   buildMenu();

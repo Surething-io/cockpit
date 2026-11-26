@@ -90,13 +90,15 @@ COCKPIT_PORT=4000 cockpit
 - [`cockpit browser`](#cockpit-browser) —— 全部 action 列表（snapshot、click、type、upload、dialog、viewport、network 等）
 - [`cockpit terminal`](#cockpit-terminal) —— list / output / wait(只读)
 
+另外，[`cockpit app`](#cockpit-app) 用来安装和更新 macOS、Windows 上的桌面 App。
+
 ### 升级
 
 ```bash
 cockpit update
 ```
 
-等同于 `npm install -g @surething/cockpit@latest`。升级时保留什么见 [`cockpit update`](#cockpit-update)。
+等同于 `npm install -g @surething/cockpit@latest`。升级时保留什么见 [`cockpit update`](#cockpit-update)。桌面 App 不需要跟着一起更新，见 [`cockpit app`](#cockpit-app)。
 
 ### 退出码
 
@@ -164,7 +166,7 @@ cockpit --token 你的密钥        # 或:COCKPIT_TOKEN=你的密钥 cockpit
 COCKPIT_HOST=0.0.0.0 cockpit --token 你的密钥
 ```
 
-如果要在 Linux 服务器上常驻运行或通过公网域名访问，见 [服务端部署](/zh/docs/reference/server-deployment/) 的 systemd、HTTPS 和手机连接步骤。
+如果要在 Linux 服务器上常驻运行或通过公网域名访问，见 [服务端部署](/zh/docs/get-started/server-deployment/) 的 systemd、HTTPS 和手机连接步骤。
 
 #### Host 与 Origin 校验
 
@@ -692,6 +694,29 @@ cockpit connection list --all --json | jq
 - [`cockpit terminal`](#cockpit-terminal) —— 用 id 驱动一个终端气泡。
 - [`cockpit browser`](#cockpit-browser) —— 用 id 驱动一个浏览器气泡。
 
+## cockpit app
+
+`cockpit app` 负责安装和维护 macOS、Windows 上的[桌面 App](/zh/docs/get-started/desktop-app/)，它是本机 Cockpit 的一个窗口。这条命令不需要服务在运行。
+
+```bash
+cockpit app install              # 安装与当前 cockpit 版本对应的 App
+cockpit app update               # 用当前版本的构建替换已安装的 App
+cockpit app uninstall            # 删除 App，~/.cockpit 不受影响
+cockpit app status --json        # 当前 cockpit 的版本和桌面壳指纹
+```
+
+| 选项 | 适用于 | 含义 |
+|---|---|---|
+| `--target <路径>` | install / update / uninstall | App 的位置。默认 macOS 是 `~/Applications/OpenCockpit.app`，Windows 是 `%LOCALAPPDATA%\Programs\OpenCockpit`（另建开始菜单快捷方式）。 |
+| `--from <zip\|目录>` | install / update | 安装本地构建（比如 `npm run desktop:build` 之后的 `desktop/dist`），不下载。 |
+| `--json` | status | 输出机器可读的 JSON。 |
+
+`install` 和 `update` 会从 GitHub Release 下载与当前 cockpit 版本完全对应的 App 包，并用 npm 包里附带的 SHA-256 校验，对不上就什么都不装。App 没有代码签名，但用这种方式写下的文件不带"来自网络"的标记，所以打开时不会弹 Gatekeeper / SmartScreen 提示。源码目录里没有校验和，`install` 会拒绝；请用 `--from` 安装自己的构建。
+
+App 只是一个很少变动的壳，大多数 cockpit 版本都不需要更新 App。`status` 输出这个版本构建时用的壳指纹，运行中的 App 拿它和自己的比较，决定要不要提示更新。`--stage`、`--apply`、`--wait-pid`、`--relaunch` 是给 App 后台更新用的，平时不需要手动使用。
+
+Linux 没有桌面 App，可以把网页装成 [PWA](/zh/docs/get-started/quickstart/#或者装成网页应用pwa)。
+
 ## cockpit update
 
 `cockpit update` 把 Cockpit 升级到最新发布版。
@@ -724,7 +749,7 @@ npm install -g @surething/cockpit@latest
 
 ### 升级后
 
-重启任何运行中的 `cockpit` 进程拿新版本。如果 Cockpit 在浏览器 tab 里开着，重启后刷新页面。
+重启任何运行中的 `cockpit` 进程拿新版本。如果 Cockpit 在浏览器 tab 里开着，重启后刷新页面。桌面 App 会自己重连，只有新版本改动了 App 本身时才会提示更新 App。
 
 确认：
 

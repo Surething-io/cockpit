@@ -37,13 +37,13 @@ export const messages = {
       // this line carries "what is this": the first sentence repeats the page
       // <title>'s positioning ("Open Claude Code GUI for any LLM") so searchers
       // see the phrase they clicked, the second keeps the concrete proof.
-      lead: 'The open Claude Code GUI for any LLM. Run Claude, Codex, DeepSeek, GLM, Kimi, or local Ollama side by side — with your code, terminal, browser, and databases in one IDE-like workbench.',
-      installNote: 'Runs on your machine. Opens in your browser.',
+      lead: 'The open Claude Code GUI for any LLM. Run Claude, Codex, Grok, DeepSeek, GLM, Kimi, or local Ollama side by side — with your code, terminal, browser, and databases in one IDE-like workbench.',
+      installNote: 'Runs on your machine. Use it in a browser or the desktop app.',
       // Prerequisite + licence, rendered directly under the install command.
       // This is the highest-doubt moment on the page: without this line a
       // visitor with no Node meets `command not found`, and the strongest
       // argument for the product (you can read every line) was footer-only.
-      trustNode: 'Requires Node 20+',
+      trustNode: 'Requires Node 22.19+',
       trustLicense: 'MIT licensed',
       tryLink: 'Try the online demo',
       heroImageAlt: 'OpenCockpit workspace with multiple coding agents, project navigation, and slash commands',
@@ -65,12 +65,13 @@ export const messages = {
       },
       engines: {
         headline: 'Bring the agent you already pay for',
-        desc: 'Claude works out of the box through the official Agent SDK. Codex, DeepSeek, GLM, Kimi and local Ollama each open in their own tab, with their own session history and their own key.',
+        desc: 'Claude works out of the box through the official Agent SDK. Codex, Grok, DeepSeek, GLM, Kimi and local Ollama each open in their own tab, with their own session history and their own key.',
         // Single source of truth for the chip row. Previously hardcoded in
         // SimpleStory.tsx — the only content on the page outside messages.ts.
         items: [
           { name: 'Claude', icon: 'claude' },
           { name: 'Codex', icon: 'codex' },
+          { name: 'Grok', icon: 'grok' },
           { name: 'DeepSeek', icon: 'deepseek' },
           { name: 'GLM', icon: 'glm' },
           { name: 'Kimi', icon: 'kimi' },
@@ -78,17 +79,27 @@ export const messages = {
         ],
       },
       local: {
-        headline: 'Install OpenCockpit as an app',
-        desc: 'OpenCockpit runs in the browser and installs like a native app — its own window, its own dock icon, no browser chrome in the way.',
-        steps: [
-          // The command is repeated inline below this step rather than referred
-          // to as "the command above": on a 390px viewport that phrase pointed
-          // at something 1,143px off-screen.
-          'Run this command. OpenCockpit starts and opens in your browser.',
-          // Named per browser family. "Click the install icon in the address
-          // bar" is Chrome/Edge only — it is false on Safari and on iOS.
-          'In Chrome or Edge, click the install icon in the address bar. In Safari, choose Share, then Add to Dock (Add to Home Screen on iPhone).',
-          'Launch it from your dock, desktop, or home screen, like any other app.',
+        headline: 'Use it in its own window',
+        desc: 'A native app on macOS and Windows. Anywhere else, install the page as a web app.',
+        // Shown above the two options. The hero command sits 1,143px above this
+        // section on a 390px viewport, so it is repeated here rather than
+        // referred to as "the command above".
+        prereq: 'Not installed yet? Run:',
+        options: [
+          {
+            title: 'Desktop app',
+            platforms: 'macOS · Windows',
+            command: 'cockpit app install',
+            lines: ['Then open it from the Dock or Start menu.'],
+          },
+          {
+            title: 'Web app',
+            platforms: 'Linux · phones · any browser',
+            command: '',
+            // Named per browser family: the address-bar install icon is
+            // Chrome/Edge only, and does not exist on Safari or iOS.
+            lines: ['Chrome / Edge: the install icon in the address bar', 'Safari: Share → Add to Dock (Home Screen on iPhone)'],
+          },
         ],
       },
     },
@@ -338,7 +349,7 @@ export const messages = {
         },
         {
           dim: 'Native desktop app',
-          us: '❌ Local web app (needs Node ≥ 20)',
+          us: '✅ macOS & Windows, a window onto your local server (Node ≥ 22.19)',
           official: '✅',
           opcode: '✅ Tauri',
         },
@@ -422,6 +433,9 @@ export const messages = {
         snapshots: 'Review and Undo Every AI Agent Change, Per Tool Call',
         htmlApps: 'HTML Apps That Run Bash: No CORS, No Server',
         terminalBubble: 'Web Terminal for AI Coding Sessions',
+        desktopApp: 'Desktop App for AI Coding Agents on macOS and Windows',
+        // Not "Self-Host …": that phrasing belongs to the self-host-claude-code-gui-for-your-team post.
+        serverDeployment: 'Linux Server Setup: systemd, HTTPS and Phone Access',
       },
       readOnGithub: 'Read on GitHub',
       comingSoon: 'Coming soon',
@@ -449,6 +463,7 @@ export const messages = {
           // Get Started
           introduction: 'Introduction',
           quickstart: 'Quickstart',
+          desktopApp: 'Desktop App',
 
           // Agent panel (chat)
           messageInput: 'Message Input',
@@ -497,6 +512,7 @@ export const messages = {
       readMore: 'Read more →',
       backToBlog: '← Back to blog',
       publishedOn: 'Published',
+      updatedOn: 'Updated',
       empty: 'No posts yet.',
     },
   },
@@ -539,12 +555,12 @@ export const messages = {
       // first sentence repeats the page <title>'s positioning so searchers see
       // the phrase they clicked, the second keeps the concrete proof — six
       // engines plus the surfaces they drive.
-      lead: '开源的 Claude Code 图形界面，接任意大模型。Claude、Codex、DeepSeek、GLM、Kimi、本地 Ollama 并排跑，代码、终端、浏览器、数据库都在一个 IDE 式工作台里。',
-      installNote: '启动本地 web 服务，通过浏览器访问运行。',
+      lead: '开源的 Claude Code 图形界面，接任意大模型。Claude、Codex、Grok、DeepSeek、GLM、Kimi、本地 Ollama 并排跑，代码、终端、浏览器、数据库都在一个 IDE 式工作台里。',
+      installNote: '在你自己的电脑上运行，用浏览器或桌面 App 打开。',
       // 前置条件 + 许可证，紧跟在安装命令下方。这是全页疑虑最重的一刻：
       // 没有这行，未装 Node 的访客第一次接触产品就是 command not found；
       // 而「每一行都能读」这个最强论据此前只出现在页脚。
-      trustNode: '需要 Node 20+',
+      trustNode: '需要 Node 22.19+',
       trustLicense: 'MIT 开源',
       tryLink: '先体验在线 Demo',
       heroImageAlt: 'OpenCockpit 工作台：多个编程 Agent、项目导航、斜杠命令',
@@ -561,13 +577,14 @@ export const messages = {
         failed: '请手动复制',
       },
       engines: {
-        headline: '用你已经订阅的账号使用 Agent',
-        desc: 'Claude 走官方 Agent SDK，开箱即用。Codex、DeepSeek、GLM、Kimi、本地 Ollama 各开各的标签页，会话历史和 API Key 互不干扰。',
+        headline: '带上你已经在付费的 Agent',
+        desc: 'Claude 走官方 Agent SDK，开箱即用。Codex、Grok、DeepSeek、GLM、Kimi、本地 Ollama 各开各的标签页，会话历史和 API Key 互不干扰。',
         // chip 行的唯一数据源。此前硬编码在 SimpleStory.tsx 里，
         // 是全页唯一逃出 messages.ts 的内容。
         items: [
           { name: 'Claude', icon: 'claude' },
           { name: 'Codex', icon: 'codex' },
+          { name: 'Grok', icon: 'grok' },
           { name: 'DeepSeek', icon: 'deepseek' },
           { name: 'GLM', icon: 'glm' },
           { name: 'Kimi', icon: 'kimi' },
@@ -575,16 +592,25 @@ export const messages = {
         ],
       },
       local: {
-        headline: '把 OpenCockpit 装成独立应用',
-        desc: 'OpenCockpit 跑在浏览器里，也可以像原生应用一样装起来：有自己的窗口和图标。',
-        steps: [
-          // 命令直接重复在这一步下方，而不是说“上面那条命令”：
-          // 在 390px 视口下，那句话指向的东西在 1143px 之外。
-          '运行这条命令，OpenCockpit 启动后会自动在浏览器里打开。',
-          // 按浏览器分别说明。“点击地址栏的安装图标”只适用于 Chrome / Edge，
-          // 在 Safari 和 iOS 上并不存在。
-          'Chrome、Edge 点地址栏里的安装图标；Safari 选“共享”→“添加到程序坞”，iPhone 上则是“添加到主屏幕”。',
-          '之后像其他应用一样，从程序坞、桌面或主屏幕启动。',
+        headline: '在独立窗口里使用',
+        desc: 'macOS、Windows 上有原生桌面 App；其他平台可以把网页装成应用。',
+        // 显示在两个选项上方。390px 视口下 hero 的命令在 1143px 之外，
+        // 所以这里重复写出命令，而不是说“上面那条命令”。
+        prereq: '还没安装的话，先运行：',
+        options: [
+          {
+            title: '桌面 App',
+            platforms: 'macOS · Windows',
+            command: 'cockpit app install',
+            lines: ['装好后从程序坞或开始菜单打开。'],
+          },
+          {
+            title: '网页应用',
+            platforms: 'Linux · 手机 · 任意浏览器',
+            command: '',
+            // 按浏览器分别说明：地址栏安装图标只有 Chrome / Edge 有，Safari 和 iOS 没有。
+            lines: ['Chrome / Edge：地址栏里的安装图标', 'Safari：共享 → 添加到程序坞（iPhone 上是添加到主屏幕）'],
+          },
         ],
       },
     },
@@ -834,7 +860,7 @@ export const messages = {
         },
         {
           dim: '原生桌面应用',
-          us: '❌ 本地 Web 应用（需 Node ≥ 20）',
+          us: '✅ macOS / Windows，连本机服务的窗口（需 Node ≥ 22.19）',
           official: '✅',
           opcode: '✅ Tauri',
         },
@@ -912,6 +938,8 @@ export const messages = {
         snapshots: '逐个工具调用回看、回滚 AI Agent 的每一处改动',
         htmlApps: '能直接调用 bash 的 HTML 应用：无 CORS、无需后端',
         terminalBubble: 'AI 编程会话里的 Web 终端',
+        desktopApp: 'macOS、Windows 桌面 App：AI 编程 Agent 的独立窗口',
+        serverDeployment: 'Linux 服务器部署：systemd、HTTPS 与手机访问',
       },
       readOnGithub: '在 GitHub 阅读',
       comingSoon: '即将上线',
@@ -936,6 +964,7 @@ export const messages = {
           // Get Started
           introduction: '简介',
           quickstart: '快速开始',
+          desktopApp: '桌面 App',
 
           // Agent 面板（对话）
           messageInput: '消息输入',
@@ -984,6 +1013,7 @@ export const messages = {
       readMore: '阅读全文 →',
       backToBlog: '← 返回博客',
       publishedOn: '发布于',
+      updatedOn: '更新于',
       empty: '暂无文章。',
     },
   },

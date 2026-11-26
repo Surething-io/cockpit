@@ -69,6 +69,9 @@ function formatDate(iso: string, locale: Locale): string {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
+      // Dates are calendar days (or UTC timestamps): format them in UTC so a
+      // build machine west of Greenwich doesn't print the day before.
+      timeZone: 'UTC',
     });
   } catch {
     return iso.slice(0, 10);

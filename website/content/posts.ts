@@ -18,8 +18,15 @@ export interface PostBody {
 
 export interface Post {
   slug: string;
-  /** ISO date — used for sitemap lastModified and visible publish date. */
+  /** ISO date — the visible publish date; it also orders the blog list and the feeds. */
   date: string;
+  /**
+   * ISO date of the last substantive edit, when there is one. Feeds the sitemap
+   * lastModified, `dateModified` and the visible "Updated" line, so a rewritten
+   * post is re-crawled (and re-submitted to IndexNow by the deploy) instead of
+   * looking untouched since its publish date. Leave it out for typo fixes.
+   */
+  updated?: string;
   /** SEO keywords specific to this post. */
   keywords: string[];
   /** Per-locale content. */
@@ -31,6 +38,122 @@ export interface Post {
 // ---------------------------------------------------------------------------
 
 export const posts: Post[] = [
+  {
+    slug: 'desktop-app-not-a-second-server',
+    date: '2026-11-26',
+    keywords: [
+      'OpenCockpit desktop app',
+      'AI coding agent desktop app',
+      'Claude Code desktop app alternative',
+      'macOS Windows app for any LLM',
+      'unsigned app without Gatekeeper prompt',
+      'OpenCockpit 桌面 App',
+      'AI 编程 桌面应用',
+      'OpenCockpit',
+    ],
+    content: {
+      en: {
+        title: "A Desktop App That Isn't a Second Server",
+        description:
+          'OpenCockpit now has a macOS and Windows app: a window onto the Cockpit you already run, installed without a signing prompt, and rarely needing updates.',
+        readingTime: '4 min read',
+        body: `OpenCockpit has always run as a local server you open in a browser. That is what lets a teammate's laptop, a phone, or a second browser connect to the same sessions. But for the window you live in all day, a browser tab is the wrong shape: it hides among other tabs, and \`Cmd+W\` closes it.
+
+So there is now a desktop app for macOS and Windows. It is deliberately small: a window onto the Cockpit you already run, not a second copy of it.
+
+\`\`\`bash
+npm i -g @surething/cockpit   # if you don't have Cockpit yet
+cockpit app install
+\`\`\`
+
+## A window, not a second server
+
+When you open the app, it looks for \`node\`, \`npm\` and \`cockpit\` the way your terminal would: it reads your login shell's environment on macOS and the registry's \`PATH\` on Windows. If Cockpit isn't installed, it offers to install it. If no server is running, it runs \`cockpit start\` — the same background server you'd start from a terminal. Then it loads \`http://localhost:<port>\` in its own window.
+
+That has a few consequences worth knowing:
+
+- **Closing the window doesn't stop anything.** The server keeps running, like \`cockpit start\`. Agents finish their turns, scheduled tasks fire, terminals keep their output. Stop it from the **Server** menu or with \`cockpit stop\`.
+- **Browser tabs still work.** The app is one more client of the same server, so a Chrome tab and the app can be open on the same sessions at once.
+- **Everything else stays the same.** Agents and terminals inherit the environment the app found, so they see the same \`PATH\` and tools your terminal does.
+
+The window uses the native title bar, and its light or dark look follows Cockpit's own **Settings → Theme** rather than only the OS.
+
+## No signing, and no "unidentified developer" prompt
+
+The builds aren't code-signed. Normally that means a scary dialog the first time you open a downloaded app. Gatekeeper and SmartScreen only inspect files carrying a "downloaded from the internet" mark, which browsers attach and a plain Node download does not.
+
+So \`cockpit app install\` does the download itself: it fetches the archive built for your exact Cockpit version from GitHub Releases and checks it against a SHA-256 shipped inside the npm package, which is published from CI with provenance. A mismatch installs nothing. The checksum, not the OS, vouches for the bytes.
+
+The \`.dmg\` and \`.zip\` files are also attached to each release for people who prefer to download by hand; then the OS asks once (**Open Anyway** on macOS, **More info → Run anyway** on Windows).
+
+## Updates that mostly don't happen
+
+Cockpit ships often. The app is a thin shell that almost never changes, and an app update is a 100 MB+ download. Tying the two together would mean downloading the same shell again with every release.
+
+Instead, every build of the app is stamped with a fingerprint of its shell: Git's tree hash of the \`desktop/\` directory, which is the same on every OS for a given commit. Each Cockpit release records the fingerprint of the shell it was built with. The running app compares the two, and only offers an update when they differ. Updating Cockpit through \`cockpit update\` or the version pill is, almost always, the whole update.
+
+When the shell does change, nothing downloads without asking: you get a notification and **Download Update** in the app menu. The download runs in the background, and the new version is swapped in when you choose **Restart to Update** or simply quit. Tick **Download Updates Automatically** if you'd rather not be asked.
+
+## What it doesn't do (yet)
+
+- **Linux.** There's no Linux app. Install the page as a PWA from Chrome or Edge instead.
+- **Remote servers.** The app manages the Cockpit on its own machine. For a Cockpit on a shared dev box, keep using a browser — see [Server Deployment](/en/docs/get-started/server-deployment/).
+
+Everything else — install locations, building it yourself, troubleshooting — is in the [Desktop App](/en/docs/get-started/desktop-app/) docs.
+`,
+      },
+      zh: {
+        title: '桌面 App 来了：一个窗口，而不是第二个服务',
+        description:
+          'OpenCockpit 有了 macOS 和 Windows 桌面 App：它是你本机 Cockpit 的窗口，安装时不弹签名警告，大多数版本更新都不需要重新下载。',
+        readingTime: '阅读约 4 分钟',
+        body: `OpenCockpit 一直是本地服务加浏览器的形态。正因为这样，同事的笔记本、手机、另一个浏览器才能连到同一批会话上。但对于一整天都开着的那个窗口来说，浏览器标签页不太合适：它混在一堆标签里，按一下 \`Cmd+W\` 就关掉了。
+
+所以现在有了 macOS 和 Windows 的桌面 App。它刻意做得很小：只是你已经在用的那个 Cockpit 的一个窗口，不是再起一份。
+
+\`\`\`bash
+npm i -g @surething/cockpit   # 还没装 Cockpit 的话
+cockpit app install
+\`\`\`
+
+## 是一个窗口，不是第二个服务
+
+打开 App 时，它会像终端一样去找 \`node\`、\`npm\` 和 \`cockpit\`：macOS 上读取登录 shell 的环境，Windows 上读取注册表里的 \`PATH\`。没装 Cockpit，它会提出帮你装；服务没在跑，它就执行 \`cockpit start\`，和你在终端里启动的后台服务一模一样。然后在自己的窗口里加载 \`http://localhost:<端口>\`。
+
+这样设计带来几个值得知道的结果：
+
+- **关掉窗口不会停掉任何东西。** 服务继续运行，和 \`cockpit start\` 一样。Agent 会把当前这一轮跑完，定时任务照常触发，终端输出也都在。要停的话，用**服务**菜单或 \`cockpit stop\`。
+- **浏览器标签页照样能用。** App 只是同一个服务的又一个客户端，Chrome 标签页和 App 可以同时开着同一批会话。
+- **其他一切不变。** Agent 和终端继承 App 找到的环境，看到的 \`PATH\` 和工具与你的终端一致。
+
+窗口使用系统原生标题栏，深浅色跟随 Cockpit 自己的**设置 → 主题**，而不只是跟随系统。
+
+## 不签名，也不弹"无法验证开发者"
+
+App 没有代码签名。通常这意味着第一次打开下载的 App 时会弹出吓人的对话框。不过 Gatekeeper 和 SmartScreen 只检查带"来自网络"标记的文件，这个标记是浏览器加上的，普通的 Node 下载不会加。
+
+所以 \`cockpit app install\` 自己负责下载：从 GitHub Releases 取回与当前 Cockpit 版本完全对应的安装包，再用 npm 包里附带的 SHA-256 校验。npm 包是 CI 带 provenance 发布的，校验不通过就什么都不装。替这些文件担保的是校验和，而不是操作系统。
+
+每个版本的 Release 里也附带了 \`.dmg\` 和 \`.zip\`，给喜欢手动下载的人用；这种情况下系统会拦一次（macOS 点**仍要打开**，Windows 点**更多信息 → 仍要运行**）。
+
+## 大多数时候不需要更新 App
+
+Cockpit 发版很频繁，而 App 是一个几乎不变的壳，更新一次要下载 100 MB 以上。如果两者绑在一起，每次发版都得把同一个壳再下载一遍。
+
+所以 App 的每次构建都带上了壳的指纹：git 里 \`desktop/\` 目录的树哈希，同一个提交在任何系统上算出来都一样。每个 Cockpit 版本都会记录它构建时用的壳指纹，运行中的 App 拿两者比较，只有不一样才提示更新。用 \`cockpit update\` 或点版本号更新 Cockpit，几乎总是就已经更新完了。
+
+壳真的变了的时候，也不会擅自下载：你会收到一条通知，App 菜单里出现**下载更新**。下载在后台进行，点**重启以更新**或者直接退出 App 时换成新版。不想被问，就勾上**自动下载更新**。
+
+## 暂时还不支持的
+
+- **Linux。** 没有 Linux 版 App，可以在 Chrome 或 Edge 里把网页装成 PWA。
+- **远端服务器。** App 只管理本机上的 Cockpit。共享开发机上的 Cockpit 请继续用浏览器访问，见[服务端部署](/zh/docs/get-started/server-deployment/)。
+
+安装位置、自己构建、常见问题等其他内容，见[桌面 App](/zh/docs/get-started/desktop-app/) 文档。
+`,
+      },
+    },
+  },
   {
     slug: 'pair-programming-partner',
     date: '2026-11-06',
@@ -1659,6 +1782,7 @@ Cockpit 现在会在**每次碰文件的工具调用之后**给项目拍快照�
   {
     slug: 'self-host-claude-code-gui-for-your-team',
     date: '2026-07-02',
+    updated: '2026-11-26',
     keywords: [
       'self-host Claude Code',
       'Claude Code for teams',
@@ -1696,7 +1820,21 @@ No per-laptop installs. No "works on my machine". One box, the whole team flying
 
 ## Set up the server
 
-Follow [Server Deployment](/en/docs/reference/server-deployment/) to install Cockpit, start it at boot with systemd, and set up HTTPS and shared-token access. For a shared dev box, restrict access to your LAN or VPN.
+The whole setup is four steps:
+
+1. Install Node.js 22.19+ and Cockpit system-wide, so a service user can run it.
+2. Run it as a systemd service that listens on \`127.0.0.1:3457\` only, with a random \`COCKPIT_TOKEN\` in a root-readable environment file.
+3. Put an HTTPS reverse proxy in front (Caddy gets and renews the certificate for you), or keep it on your LAN / VPN, or reach it through an SSH tunnel.
+4. Hand teammates the address and the token. They sign in once with \`?token=…\`; Cockpit sets a login cookie and strips the token from the URL.
+
+\`\`\`bash
+sudo npm install -g @surething/cockpit      # Node.js 22.19+
+# systemd: Environment=COCKPIT_HOST=127.0.0.1, EnvironmentFile with COCKPIT_TOKEN,
+#          ExecStart=/usr/local/bin/cockpit --port 3457 --no-open
+# Caddy:   cockpit.example.com { reverse_proxy 127.0.0.1:3457 }
+\`\`\`
+
+[Server Deployment](/en/docs/get-started/server-deployment/) has every command: the service user, the token file, the unit, Caddy or your own proxy, health checks, and upgrades. For a shared dev box, restrict access to your LAN or VPN.
 
 ## Give every teammate a seat
 
@@ -1730,7 +1868,7 @@ Use git worktrees (managed in the Explorer). Each agent gets its own checkout; b
 Yes. It's plain HTTP + WebSocket on one port (default \`3457\`, \`--port\` to change).
 
 **Can I use it from a phone?**
-Yes. Open the team's address on your phone or scan the top-bar QR code to open the mobile view. See [phone access](/en/docs/reference/server-deployment/#open-on-your-phone).
+Yes. Open the team's address on your phone or scan the top-bar QR code to open the mobile view. See [phone access](/en/docs/get-started/server-deployment/#open-on-your-phone).
 
 **What about Ollama — fully offline?**
 Install Ollama on the dev box and every seat can pick any pulled model. No keys, no cloud, air-gapped if you want.
@@ -1759,7 +1897,21 @@ One \`npm i -g\` on one box, and the whole team flies together. If you try it, [
 
 ## 部署服务
 
-按 [服务端部署](/zh/docs/reference/server-deployment/) 安装 Cockpit，设置 systemd 开机自启、HTTPS 和共享令牌。共享开发机可以把访问范围限制在团队的内网或 VPN。
+整个部署就四步：
+
+1. 系统级安装 Node.js 22.19+ 和 Cockpit，让服务用户能运行它。
+2. 用 systemd 运行，只监听 \`127.0.0.1:3457\`，随机生成的 \`COCKPIT_TOKEN\` 放在只有 root 能读的环境文件里。
+3. 前面加一层 HTTPS 反代（Caddy 会自动申请和续期证书），或者只在内网 / VPN 里访问，或者走 SSH 隧道。
+4. 把地址和令牌发给队友。他们用 \`?token=…\` 登录一次，Cockpit 写入登录 Cookie，并从地址栏去掉令牌。
+
+\`\`\`bash
+sudo npm install -g @surething/cockpit      # Node.js 22.19+
+# systemd：Environment=COCKPIT_HOST=127.0.0.1，EnvironmentFile 里放 COCKPIT_TOKEN，
+#          ExecStart=/usr/local/bin/cockpit --port 3457 --no-open
+# Caddy：  cockpit.example.com { reverse_proxy 127.0.0.1:3457 }
+\`\`\`
+
+每一条命令都在 [服务端部署](/zh/docs/get-started/server-deployment/) 里：服务用户、令牌文件、systemd 单元、Caddy 或自有反代、健康检查和升级。共享开发机可以把访问范围限制在团队的内网或 VPN。
 
 ## 给每个队友一个席位
 
@@ -1793,7 +1945,7 @@ OpenCockpit 的多席位模型是**基于信任的**，就像共享机器的 SSH
 能。就是单端口的 HTTP + WebSocket（默认 \`3457\`，\`--port\` 可改）。
 
 **手机能用吗？**
-能。用手机打开团队地址，或扫电脑顶栏的二维码进入手机版。见 [手机访问](/zh/docs/reference/server-deployment/#手机访问)。
+能。用手机打开团队地址，或扫电脑顶栏的二维码进入手机版。见 [手机访问](/zh/docs/get-started/server-deployment/#手机访问)。
 
 **Ollama 全离线？**
 在开发机上装 Ollama，每个席位都能选任意已拉取的模型。无 Key、无云端，想断网就断网。
@@ -1918,6 +2070,7 @@ COCKPIT_HOST=0.0.0.0 cockpit --token 你的密钥
   {
     slug: 'cockpit-on-your-phone',
     date: '2026-06-23',
+    updated: '2026-11-26',
     keywords: [
       'mobile AI agent',
       'monitor coding agent on phone',
@@ -1962,7 +2115,7 @@ Turn on notifications and Cockpit sends one to your phone when a run finishes, i
 
 Open Cockpit on your computer at an address your phone can reach. Click the **Open on phone** QR icon in the top bar and scan it. The phone opens the current session if one is open on your computer. The code includes your shared token when token authentication is enabled. Treat it like a password.
 
-If you switch to Desktop on your phone, tap **Mobile** in the bottom-right corner to switch back. For remote access setup and what to do when the QR icon is hidden, see [Server Deployment](/en/docs/reference/server-deployment/#open-on-your-phone).
+If you switch to Desktop on your phone, tap **Mobile** in the bottom-right corner to switch back. For remote access setup and what to do when the QR icon is hidden, see [Server Deployment](/en/docs/get-started/server-deployment/#open-on-your-phone).
 
 ---
 
@@ -1997,7 +2150,7 @@ If you switch to Desktop on your phone, tap **Mobile** in the bottom-right corne
 
 在电脑上用手机也能访问的地址打开 Cockpit，点顶栏的 **在手机上打开** 二维码图标，再用手机扫码。电脑上已有打开的会话时，手机会直接进入该会话。启用 Token 后，二维码包含访问令牌，请按密码保管。
 
-如果在手机上切到桌面版，点右下角的 **手机版** 切回去。远程访问设置和二维码入口的显示条件见 [服务端部署](/zh/docs/reference/server-deployment/#手机访问)。
+如果在手机上切到桌面版，点右下角的 **手机版** 切回去。远程访问设置和二维码入口的显示条件见 [服务端部署](/zh/docs/get-started/server-deployment/#手机访问)。
 
 ---
 
@@ -3579,6 +3732,7 @@ cockpit ~/work/data-pipeline
   {
     slug: 'claude-code-gui-comparison',
     date: '2026-07-02',
+    updated: '2026-11-26',
     keywords: [
       'Claude Code GUI',
       'Claude Code desktop',
@@ -3653,9 +3807,10 @@ Aider is great. It's older, more opinionated about commits, and a good fit for s
 - Your work isn't just code — it touches a browser, a Postgres DB, or a Redis cache, and you'd like the agent to drive those too.
 - You review what the agent did before trusting it: every file-touching tool call is [snapshotted](/en/docs/agent/snapshots/) — read a reply's changes like git history, including what \`Bash\` did.
 - Your team shares a dev box: Cockpit is **web client–server**, so you [install it once and every teammate gets a seat](/en/blog/self-host-claude-code-gui-for-your-team/) — each in their own project or worktree.
+- You'd like its own window: the [desktop app](/en/docs/get-started/desktop-app/) for macOS and Windows is a window onto the same local server, so closing it leaves your sessions running.
 
 **Where it hurts:**
-- It's young (v1.0.x). You'll find rough edges.
+- It's young (v1.x). You'll find rough edges.
 - New Claude Code features arrive with a lag — Cockpit tracks Agent SDK releases; the CLI and official desktop app get them first.
 - No cloud sync — though because it's client–server, self-hosting on one box and connecting from anywhere covers most of what people want cloud sync for.
 - You still need Claude Code installed and configured. Cockpit doesn't replace the CLI, it stands on top of it.
@@ -3748,9 +3903,10 @@ Aider 很好。老牌、对 commit 有自己的脾气，适合个人 OSS 项目�
 - 你的工作不只是代码 —— 还涉及浏览器、Postgres、Redis，希望 Agent 也能驱动它们。
 - 你在信任 Agent 之前想先看清它干了什么：每次碰文件的工具调用都有[快照](/zh/docs/agent/snapshots/) —— 像读 git 历史一样读一条回复的变更，\`Bash\` 改了什么也看得到。
 - 你的团队共用一台开发机：Cockpit 是 **Web client-server** 架构，[装一次，全队一起飞](/zh/blog/self-host-claude-code-gui-for-your-team/) —— 各自在自己的项目 / worktree 上。
+- 你想要独立窗口：macOS、Windows 有[桌面 App](/zh/docs/get-started/desktop-app/)，它连的是同一个本机服务，关掉窗口会话照样在跑。
 
 **痛点：**
-- 还很年轻（v1.0.x）。会有粗糙的地方。
+- 还很年轻（v1.x）。会有粗糙的地方。
 - Claude Code 新特性到得慢一拍 —— Cockpit 跟随 Agent SDK 发版；CLI 和官方 Desktop 先拿到。
 - 没有云同步 —— 不过因为是 client-server，自托管到一台机器、任意设备接入，已经覆盖了大多数人要云同步的场景。
 - 仍然需要装好 Claude Code。Cockpit 不替代 CLI，是站在 CLI 上面。

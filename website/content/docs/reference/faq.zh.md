@@ -39,7 +39,7 @@ Cockpit 需要 Node.js 22.19.0 或更新版本。用 `node -v` 检查，升级 N
 
 **通过域名访问时收到 `401` 或 `429`**
 
-`401` 表示登录凭据缺失或无效，用当前令牌重新登录。同一 IP 连续输错 5 次后会收到 `429`，等待 `Retry-After` 指定的时间再重试。如果经过反代的多位访客一起收到 `429`，检查反代是否传递了各自的来源 IP。 [服务端部署](/zh/docs/reference/server-deployment/) · [可信代理](/zh/docs/reference/cli/#共享令牌访问网关)
+`401` 表示登录凭据缺失或无效，用当前令牌重新登录。同一 IP 连续输错 5 次后会收到 `429`，等待 `Retry-After` 指定的时间再重试。如果经过反代的多位访客一起收到 `429`，检查反代是否传递了各自的来源 IP。 [服务端部署](/zh/docs/get-started/server-deployment/) · [可信代理](/zh/docs/reference/cli/#共享令牌访问网关)
 
 ## Claude 不工作
 
@@ -110,6 +110,24 @@ rm -rf ~/.cockpit
 **怎么把一切迁移到新机器？**
 
 把 `~/.cockpit` 文件夹从旧机器拷到新机器（USB / scp / rsync 都行），在新机器上装 Cockpit，会话 / 收藏 / 定时任务 / API key 都跟着过来。
+
+## 桌面 App
+
+**macOS 提示 App 无法打开，或者"已损坏"**
+
+你是用浏览器下载的 `.dmg` 或 `.zip`，而 App 没有代码签名。到**系统设置 → 隐私与安全性**点**仍要打开**，或者执行 `xattr -dr com.apple.quarantine /Applications/OpenCockpit.app`。用 `cockpit app install` 安装就不会出现这个提示。见[桌面 App](/zh/docs/get-started/desktop-app/#手动下载)。
+
+**每次更新 Cockpit 都要更新 App 吗？**
+
+不用。App 只是 Cockpit 的窗口，很少变动。只有某个 Cockpit 版本改动了 App 本身，它才会提示更新；其他时候执行 `cockpit update` 就够了。
+
+**终端里能用 `cockpit`，App 却说没装**
+
+App 读取的是登录 shell 的 `PATH`。检查 `$SHELL -ilc 'command -v cockpit'` 能不能输出路径；如果 shell 配置启动报错或超过十秒，App 会退回到最小的 `PATH`。
+
+**有 Linux 版吗？App 能连服务器上的 Cockpit 吗？**
+
+目前都不行。Linux 上可以把网页装成 [PWA](/zh/docs/get-started/quickstart/#或者装成网页应用pwa)；远端服务器请用浏览器访问。
 
 ## 升级
 

@@ -51,6 +51,7 @@ export async function generateMetadata({
       siteName: 'OpenCockpit',
       type: 'article',
       publishedTime: post.date,
+      modifiedTime: post.updated ?? post.date,
       authors: ['Robert'],
       tags: post.keywords,
       locale: locale === 'zh' ? 'zh_CN' : 'en_US',
@@ -79,6 +80,9 @@ function formatDate(iso: string, locale: Locale): string {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
+      // Dates are calendar days (or UTC timestamps): format them in UTC so a
+      // build machine west of Greenwich doesn't print the day before.
+      timeZone: 'UTC',
     });
   } catch {
     return iso.slice(0, 10);
@@ -108,7 +112,7 @@ export default async function BlogPostPage({
     keywords: post.keywords.join(', '),
     inLanguage: locale === 'zh' ? 'zh-CN' : 'en',
     datePublished: post.date,
-    dateModified: post.date,
+    dateModified: post.updated ?? post.date,
     author: { '@type': 'Person', name: 'Robert', url: 'https://github.com/Surething-io' },
     publisher: {
       '@type': 'Organization',
@@ -139,6 +143,9 @@ export default async function BlogPostPage({
         </h1>
         <div className="mt-4 text-sm text-muted-foreground font-mono">
           {t.blog.publishedOn} {formatDate(post.date, locale as Locale)}
+          {post.updated && post.updated !== post.date
+            ? ` · ${t.blog.updatedOn} ${formatDate(post.updated, locale as Locale)}`
+            : null}
           {c.readingTime ? ` · ${c.readingTime}` : null}
         </div>
         <p className="mt-4 text-base text-muted-foreground leading-relaxed">{c.description}</p>

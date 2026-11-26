@@ -39,7 +39,7 @@ In a narrow desktop view, click **Mobile** in the bottom-right corner, or open t
 
 **The server returns `401` or `429`**
 
-A `401` means credentials are missing or invalid. Sign in again with your current token. After five consecutive incorrect tokens from one IP, Cockpit returns `429`. Wait for the time specified by `Retry-After` before retrying. If several visitors behind a reverse proxy get blocked together, check that the proxy forwards each visitor's IP. [Server Deployment](/en/docs/reference/server-deployment/) · [Trusted proxies](/en/docs/reference/cli/#shared-token-access-gate)
+A `401` means credentials are missing or invalid. Sign in again with your current token. After five consecutive incorrect tokens from one IP, Cockpit returns `429`. Wait for the time specified by `Retry-After` before retrying. If several visitors behind a reverse proxy get blocked together, check that the proxy forwards each visitor's IP. [Server Deployment](/en/docs/get-started/server-deployment/) · [Trusted proxies](/en/docs/reference/cli/#shared-token-access-gate)
 
 ## Claude isn't working
 
@@ -110,6 +110,24 @@ Next launch will recreate the folder with defaults. You'll need to re-enter API 
 **How do I move everything to a new machine?**
 
 Copy the `~/.cockpit` folder from the old machine to the new one (USB, scp, rsync — your choice), install Cockpit on the new machine, and your sessions / favourites / scheduled tasks / API keys come along.
+
+## Desktop app
+
+**macOS says the app can't be opened, or is damaged**
+
+You downloaded the `.dmg` or `.zip` through a browser, and the builds are not code-signed. Click **Open Anyway** under **System Settings → Privacy & Security**, or run `xattr -dr com.apple.quarantine /Applications/OpenCockpit.app`. Installing with `cockpit app install` avoids the prompt. See [Desktop App](/en/docs/get-started/desktop-app/#downloading-by-hand).
+
+**Do I need to update the app every time I update Cockpit?**
+
+No. The app is a window onto your Cockpit and rarely changes. It offers an update only when a Cockpit release changes the app itself; otherwise `cockpit update` is all you need.
+
+**The app says Cockpit isn't installed, but `cockpit` works in my terminal**
+
+The app reads your login shell's `PATH`. Check that `$SHELL -ilc 'command -v cockpit'` prints a path; a shell profile that errors or takes over ten seconds to start makes the app fall back to a minimal `PATH`.
+
+**Is there a Linux app? Can the app connect to Cockpit on a server?**
+
+Neither, for now. On Linux, install the page as a [PWA](/en/docs/get-started/quickstart/#or-install-it-as-a-web-app-pwa). For a remote server, use a browser.
 
 ## Updating
 

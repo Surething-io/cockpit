@@ -50,9 +50,19 @@ cockpit ~/code/my-project
 
 The server starts on port 3457 and opens `http://localhost:3457` in your browser automatically. Use `--no-open` to suppress the auto-open.
 
-### Install as a desktop app (PWA)
+### Use the desktop app (macOS / Windows)
 
-Cockpit ships a Web App Manifest, so Chrome / Edge treat `http://localhost:3457` as an installable PWA. Install it once and it runs in its own window — no address bar or tabs — feeling like a native desktop app.
+For its own window and Dock / Start-menu entry, install the desktop app that matches your Cockpit version:
+
+```bash
+cockpit app install
+```
+
+The app is a window onto the Cockpit on your machine: it starts the server with `cockpit start` when needed, and closing the window leaves the server running. See [Desktop App](/en/docs/get-started/desktop-app/) for updates, uninstalling, and troubleshooting.
+
+### Or install it as a web app (PWA)
+
+On Linux, or if you'd rather not install the app, Cockpit ships a Web App Manifest, so Chrome / Edge treat `http://localhost:3457` as an installable PWA. Install it once and it runs in its own window, with no address bar or tabs.
 
 1. Click the **install icon** on the right of the address bar (or menu → Install OpenCockpit) to install it once.
 2. After installing, visiting `http://localhost:3457` again shows an **Open in app** button in the address bar — click it to open in the standalone app window.
@@ -64,7 +74,7 @@ A narrow screen (phone/tablet) install lands on the `/m` mobile view, while a de
 
 On your computer, open Cockpit at a domain or private-network address your phone can reach, then click the **Open on phone** QR icon in the top bar. Scanning opens the mobile view and goes straight to the current session if one is open. The QR icon is hidden on `localhost`. With token authentication enabled, the QR code contains the access token. Treat it like a password.
 
-To keep Cockpit running on a server, see [Server Deployment](/en/docs/reference/server-deployment/).
+To keep Cockpit running on a server, see [Server Deployment](/en/docs/get-started/server-deployment/).
 
 ## Your first chat
 

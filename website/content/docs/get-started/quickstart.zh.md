@@ -50,9 +50,19 @@ cockpit ~/code/my-project
 
 服务在 3457 端口启动，并自动打开 `http://localhost:3457`。加 `--no-open` 阻止自动开浏览器。
 
-### 装成桌面应用（PWA）
+### 用桌面 App（macOS / Windows）
 
-Cockpit 自带 Web App Manifest，Chrome / Edge 会把 `http://localhost:3457` 当成可安装的 PWA。装一次，之后就能在独立窗口里跑，没有浏览器地址栏和标签页干扰，更像一个原生桌面应用。
+想要独立窗口和程序坞 / 开始菜单图标，就装和当前 Cockpit 版本对应的桌面 App：
+
+```bash
+cockpit app install
+```
+
+桌面 App 是本机 Cockpit 的窗口：需要时它会用 `cockpit start` 拉起服务，关掉窗口服务照样在跑。更新、卸载和常见问题见 [桌面 App](/zh/docs/get-started/desktop-app/)。
+
+### 或者装成网页应用（PWA）
+
+在 Linux 上，或者不想装 App，可以用 PWA：Cockpit 自带 Web App Manifest，Chrome / Edge 会把 `http://localhost:3457` 当成可安装的 PWA。装一次，之后就在独立窗口里跑，没有地址栏和标签页。
 
 1. 在地址栏右侧点**安装图标**（或菜单 → 安装 OpenCockpit）装一次。
 2. 装好后，再访问 `http://localhost:3457` 时地址栏会出现 **在应用中打开** 的按钮 —— 点它就在独立应用窗口里打开。
@@ -64,7 +74,7 @@ Cockpit 自带 Web App Manifest，Chrome / Edge 会把 `http://localhost:3457` �
 
 在电脑上用手机也能访问的域名或内网地址打开 Cockpit，点击顶栏二维码图标 **在手机上打开**。扫码会打开手机版，电脑上已有打开的会话时会直达该会话。通过 `localhost` 打开时，二维码入口会隐藏。启用 Token 验证后，二维码包含访问令牌，请按密码保管。
 
-如果想把 Cockpit 常驻在服务器上，见 [服务端部署](/zh/docs/reference/server-deployment/)。
+如果想把 Cockpit 常驻在服务器上，见 [服务端部署](/zh/docs/get-started/server-deployment/)。
 
 ## 开始聊天
 

@@ -6,6 +6,7 @@ OpenCockpit is the open Claude Code GUI for any LLM — Claude, Codex, DeepSeek,
 - **Bring any LLM.** Claude works out of the box. Codex, DeepSeek, GLM (Zhipu), Kimi (Moonshot), and local Ollama models are one tab away — paste an API key (or none for Ollama).
 - **More than chat.** A real terminal, Chrome automation, and bubbles for PostgreSQL / MySQL / Redis / Neo4j — all inside one window your agent can drive.
 - **Code-aware navigation.** LSP go-to-definition, a Code Map of function calls, and a `/cg` slash command that lets the AI explore the project graph via HTTP.
+- **Browser or desktop app.** Use it in any browser, or in the [desktop app](/en/docs/get-started/desktop-app/) for macOS and Windows. Either way the work runs on your machine, and closing the window leaves it running.
 
 ## The three panels
 

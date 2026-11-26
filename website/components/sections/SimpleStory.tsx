@@ -5,7 +5,9 @@ export function SimpleStory({ t }: { t: Messages }) {
   return (
     <section className="border-t border-border/60">
       <div className="mx-auto max-w-5xl px-6 py-20 md:py-28">
-        {/* Install as an app — the product's only install form, so it leads. */}
+        {/* Run as an app — the desktop app on macOS / Windows, an installed PWA
+            elsewhere. Two side-by-side options rather than numbered steps: the
+            reader picks one by platform, and each card stays a single action. */}
         <div className="mx-auto max-w-3xl text-center">
           <h2 className="text-balance text-3xl font-semibold tracking-tight md:text-4xl">
             {t.home.local.headline}
@@ -13,28 +15,32 @@ export function SimpleStory({ t }: { t: Messages }) {
           <p className="mx-auto mt-4 max-w-2xl text-balance leading-relaxed text-muted-foreground">
             {t.home.local.desc}
           </p>
-          <ol className="mx-auto mt-8 grid max-w-2xl gap-4 text-left sm:grid-cols-3">
-            {t.home.local.steps.map((step, index) => (
-              <li
-                key={step}
-                className="rounded-xl border border-border bg-card p-4 text-sm leading-relaxed text-muted-foreground"
-              >
-                <span className="mb-3 flex size-7 items-center justify-center rounded-full bg-brand/10 font-mono text-xs text-brand">
-                  {index + 1}
-                </span>
-                {step}
-                {/* Step 1 repeats the command instead of pointing back at it.
-                    On a 390px viewport the hero command sits 1,143px above this
-                    card, so "the command above" was a memory bridge across a
-                    screen and a half. */}
-                {index === 0 ? (
-                  <code className="scrollbar-hide mt-2.5 block overflow-x-auto whitespace-nowrap rounded-md bg-background px-2.5 py-1.5 font-mono text-xs text-foreground">
-                    {INSTALL_COMMAND}
+          {/* Prerequisite, with the command repeated: on a 390px viewport the
+              hero command sits 1,143px above this section. */}
+          <p className="mt-8 text-sm text-muted-foreground">{t.home.local.prereq}</p>
+          <code className="scrollbar-hide mx-auto mt-2 block max-w-full overflow-x-auto whitespace-nowrap rounded-md bg-card px-3 py-2 font-mono text-xs text-foreground sm:inline-block">
+            {INSTALL_COMMAND}
+          </code>
+          <div className="mx-auto mt-6 grid max-w-2xl gap-4 text-left sm:grid-cols-2">
+            {t.home.local.options.map((option) => (
+              <div key={option.title} className="rounded-xl border border-border bg-card p-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <h3 className="font-semibold text-foreground">{option.title}</h3>
+                  <span className="text-xs text-muted-foreground">{option.platforms}</span>
+                </div>
+                {option.command ? (
+                  <code className="scrollbar-hide mt-4 block overflow-x-auto whitespace-nowrap rounded-md bg-background px-3 py-2 font-mono text-sm text-brand">
+                    {option.command}
                   </code>
                 ) : null}
-              </li>
+                <ul className="mt-3 space-y-1.5 text-sm leading-relaxed text-muted-foreground">
+                  {option.lines.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </div>
             ))}
-          </ol>
+          </div>
         </div>
 
         {/* Engines. These marks used to sit unlabelled at the very bottom of the

@@ -88,13 +88,15 @@ See:
 - [`cockpit browser`](#cockpit-browser) — full action list (snapshot, click, type, upload, dialog, viewport, network, …)
 - [`cockpit terminal`](#cockpit-terminal) — list / output / wait (read-only)
 
+Separately, [`cockpit app`](#cockpit-app) installs and updates the desktop app for macOS and Windows.
+
 ### Upgrading
 
 ```bash
 cockpit update
 ```
 
-Equivalent to `npm install -g @surething/cockpit@latest`. See [`cockpit update`](#cockpit-update) for what gets preserved across upgrades.
+Equivalent to `npm install -g @surething/cockpit@latest`. See [`cockpit update`](#cockpit-update) for what gets preserved across upgrades. The desktop app does not need updating along with it; see [`cockpit app`](#cockpit-app).
 
 ### Exit codes
 
@@ -162,7 +164,7 @@ Pair it with `COCKPIT_HOST=0.0.0.0` when sharing over the network:
 COCKPIT_HOST=0.0.0.0 cockpit --token my-secret-value
 ```
 
-To run Cockpit as a Linux system service or expose it through a public domain, see [Server Deployment](/en/docs/reference/server-deployment/) for systemd, HTTPS, and phone access.
+To run Cockpit as a Linux system service or expose it through a public domain, see [Server Deployment](/en/docs/get-started/server-deployment/) for systemd, HTTPS, and phone access.
 
 #### Host and Origin check
 
@@ -695,6 +697,29 @@ cockpit connection list --all --json | jq
 - [`cockpit terminal`](#cockpit-terminal) — drive a terminal bubble by id.
 - [`cockpit browser`](#cockpit-browser) — drive a browser bubble by id.
 
+## cockpit app
+
+`cockpit app` installs and maintains the [desktop app](/en/docs/get-started/desktop-app/) for macOS and Windows — a window onto the Cockpit on this machine. It needs no running server.
+
+```bash
+cockpit app install              # install the app matching this cockpit version
+cockpit app update               # replace an installed app with this version's build
+cockpit app uninstall            # remove the app; ~/.cockpit is untouched
+cockpit app status --json        # this cockpit's version and desktop-shell fingerprint
+```
+
+| Option | Applies to | Meaning |
+|---|---|---|
+| `--target <path>` | install / update / uninstall | Where the app lives. Default `~/Applications/OpenCockpit.app` on macOS, `%LOCALAPPDATA%\Programs\OpenCockpit` on Windows (plus a Start-menu shortcut). |
+| `--from <zip\|dir>` | install / update | Install a local build (for example `desktop/dist` after `npm run desktop:build`) instead of downloading. |
+| `--json` | status | Machine-readable output. |
+
+`install` and `update` download the app archive for this exact cockpit version from the GitHub Release and verify it against the SHA-256 shipped inside the npm package; a mismatch installs nothing. The builds are not code-signed, but files written this way carry no "downloaded from the internet" mark, so the app opens without the Gatekeeper or SmartScreen prompt. A source checkout carries no checksums, so `install` refuses there; use `--from` with your own build.
+
+The app is a thin shell and rarely changes, so most cockpit releases need no app update. `status` reports the fingerprint of the shell this release was built with, and the running app compares it with its own to decide whether to offer one. `--stage`, `--apply`, `--wait-pid` and `--relaunch` exist for the app's own background updates; you don't need them by hand.
+
+Linux has no desktop app; install the page as a [PWA](/en/docs/get-started/quickstart/#or-install-it-as-a-web-app-pwa) instead.
+
 ## cockpit update
 
 `cockpit update` upgrades Cockpit to the latest published version.
@@ -727,7 +752,7 @@ Just the global npm package gets replaced.
 
 ### After upgrading
 
-Restart any running `cockpit` process to pick up the new version. If you have Cockpit open in a browser tab, refresh the page after restart.
+Restart any running `cockpit` process to pick up the new version. If you have Cockpit open in a browser tab, refresh the page after restart. The desktop app reconnects by itself, and only offers an app update when the new release changes the app.
 
 To verify:
 

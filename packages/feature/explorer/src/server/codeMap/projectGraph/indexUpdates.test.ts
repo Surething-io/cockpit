@@ -507,7 +507,10 @@ describe('project index updates', () => {
       invalidateIndex(worktree);
       git('worktree', 'remove', '--force', worktree);
     }
-  });
+    // A dozen synchronous git calls (commits, a linked worktree, a conflicting
+    // rebase) plus four full index builds: GitHub's macOS runners sometimes
+    // need more than the default 5s for that.
+  }, 20_000);
 });
 
 describe('full rebuild thresholds', () => {

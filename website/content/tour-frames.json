@@ -1,0 +1,81 @@
+{
+  "width": 2400,
+  "height": 1500,
+  "frames": [
+    {
+      "id": "parallel",
+      "src": "/tour/parallel.webp",
+      "zoom": 1.6,
+      "focus": {
+        "x": 0,
+        "y": 5.73,
+        "w": 31.86,
+        "h": 17.3
+      },
+      "cursor": {
+        "x": 21.12,
+        "y": 25.12
+      }
+    },
+    {
+      "id": "harvest",
+      "src": "/tour/harvest.webp",
+      "zoom": 1.3,
+      "focus": {
+        "x": 12.58,
+        "y": 8.33,
+        "w": 78.48,
+        "h": 51.53
+      },
+      "cursor": {
+        "x": 22.22,
+        "y": 18.65
+      }
+    },
+    {
+      "id": "engines",
+      "src": "/tour/engines.webp",
+      "zoom": 1.6,
+      "focus": {
+        "x": 17.56,
+        "y": 26.93,
+        "w": 8.75,
+        "h": 18.05
+      },
+      "cursor": {
+        "x": 21.12,
+        "y": 25.12
+      }
+    },
+    {
+      "id": "diff",
+      "src": "/tour/diff.webp",
+      "zoom": 1.35,
+      "focus": {
+        "x": 32.56,
+        "y": 15.5,
+        "w": 67.44,
+        "h": 29.6
+      },
+      "cursor": {
+        "x": 47.21,
+        "y": 6.33
+      }
+    },
+    {
+      "id": "console",
+      "src": "/tour/console.webp",
+      "zoom": 1.3,
+      "focus": {
+        "x": 13.12,
+        "y": 5.9,
+        "w": 42.67,
+        "h": 42.69
+      },
+      "cursor": {
+        "x": 16.76,
+        "y": 47.06
+      }
+    }
+  ]
+}

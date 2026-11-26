@@ -15,7 +15,8 @@
     "lastmod": "node scripts/docs-lastmod.mjs",
     "preview": "npx wrangler pages dev out --compatibility-date=2024-09-23",
     "test:seo": "node scripts/check-seo.mjs && node --test scripts/try.test.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "tour": "node scripts/tour/capture.mjs"
   },
   "dependencies": {
     "next": "^16.2.6",

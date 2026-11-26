@@ -1,7 +1,7 @@
 import type { Messages } from '@/content/messages';
 import { INSTALL_COMMAND } from '@/content/install';
 import { CopyableCommand } from '../CopyableCommand';
-import { HeroShot } from '../HeroShot';
+import { HeroTour } from '../HeroTour';
 
 const TRY_ONLINE_URL = '/try';
 const LICENSE_URL = 'https://github.com/Surething-io/cockpit/blob/main/LICENSE';
@@ -56,14 +56,9 @@ export function Hero({ t }: { t: Messages }) {
           </a>
         </div>
 
-        {/* The screenshot is the page's whole proof, so it has to stay
-            readable. See HeroShot for how that is handled below `md`. */}
-        <HeroShot
-          src="/opencockpit.webp"
-          alt={t.home.heroImageAlt}
-          groupLabel={t.home.heroImageGroupLabel}
-          hint={t.home.heroImageHint}
-        />
+        {/* The page's whole proof: real frames of the current UI, captured by
+            `npm run tour`. See HeroTour for playback and the phone layout. */}
+        <HeroTour copy={t.home.tour} />
       </div>
     </section>
   );

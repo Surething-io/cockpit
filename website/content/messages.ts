@@ -46,14 +46,40 @@ export const messages = {
       trustNode: 'Requires Node 22.19+',
       trustLicense: 'MIT licensed',
       tryLink: 'Try the online demo',
-      heroImageAlt: 'OpenCockpit workspace with multiple coding agents, project navigation, and slash commands',
-      // Mobile-only. The screenshot is shown at a legible scale inside a
-      // pannable frame instead of being shrunk to an unreadable 342px.
-      heroImageHint: 'Drag the screenshot sideways to explore the full workspace.',
-      // Names the interaction, not the picture. The <img> keeps `heroImageAlt`,
-      // so reusing that string here made screen readers announce the same
-      // hundred characters twice in a row.
-      heroImageGroupLabel: 'Product screenshot — scroll sideways to explore the workspace',
+      // Homepage hero tour: real UI frames captured by `npm run tour`, one per
+      // chapter, in the order of content/tour-frames.json.
+      tour: {
+        label: 'Product tour',
+        play: 'Play tour',
+        pause: 'Pause tour',
+        chapters: [
+          {
+            title: 'Parallel',
+            caption: 'Start as many sessions as you like, in any project. A session number spins while its agent is working.',
+            alt: 'Six Claude sessions running at once across two projects, each session number ringed by an orange spinner',
+          },
+          {
+            title: 'Results',
+            caption: 'Finished sessions turn solid orange. Open one to read the answer and every tool call behind it.',
+            alt: 'A finished session showing its answer and the Grep and Read calls behind it, next to the other finished sessions',
+          },
+          {
+            title: 'Engines',
+            caption: 'Pick the engine per session: Claude, Codex, Grok, DeepSeek, GLM, Kimi, or a local Ollama model.',
+            alt: 'The new-session menu listing Claude, Codex, DeepSeek, GLM, Grok, Kimi and Ollama',
+          },
+          {
+            title: 'Review',
+            caption: 'Review what the agent changed as a diff in Explorer, file by file, before you commit.',
+            alt: 'Explorer showing the uncommitted diff of payments.ts next to the list of changed files',
+          },
+          {
+            title: 'Console',
+            caption: 'Run tests, preview files and keep terminals open in Console, without leaving the workspace.',
+            alt: 'Console with a passing npm test run, a README preview and two git commands',
+          },
+        ],
+      },
       copy: {
         idle: 'Copy',
         copied: 'Copied',
@@ -563,12 +589,38 @@ export const messages = {
       trustNode: '需要 Node 22.19+',
       trustLicense: 'MIT 开源',
       tryLink: '先体验在线 Demo',
-      heroImageAlt: 'OpenCockpit 工作台：多个编程 Agent、项目导航、斜杠命令',
-      // 仅移动端。截图以可读比例放在可拖动的框里，而不是被压到 342px 看不清。
-      heroImageHint: '左右滑动看完整界面。',
-      // 描述的是交互，不是图片本身。<img> 仍用 heroImageAlt，
-      // 此处若复用同一串文字，屏幕阅读器会把同样一百个字符连读两遍。
-      heroImageGroupLabel: '产品截图，可左右滚动查看完整界面',
+      tour: {
+        label: '产品导览',
+        play: '播放导览',
+        pause: '暂停导览',
+        chapters: [
+          {
+            title: '并行',
+            caption: '想开几个会话就开几个，跨项目也行。Agent 在干活时，会话编号一直转圈。',
+            alt: '两个项目里六个 Claude 会话同时运行，每个会话编号外都有橙色转圈',
+          },
+          {
+            title: '收割',
+            caption: '跑完的会话编号变成实心橙色。点开就能看结论，以及背后的每一次工具调用。',
+            alt: '一个已完成的会话：结论和背后的 Grep、Read 调用，旁边是其他已完成的会话',
+          },
+          {
+            title: '引擎',
+            caption: '每个会话自选引擎：Claude、Codex、Grok、DeepSeek、GLM、Kimi，或本地 Ollama 模型。',
+            alt: '新建会话菜单，列出 Claude、Codex、DeepSeek、GLM、Grok、Kimi 和 Ollama',
+          },
+          {
+            title: '审阅',
+            caption: '提交之前，在 Explorer 里逐个文件看 Agent 改动的 diff。',
+            alt: 'Explorer 中 payments.ts 未提交的 diff，旁边是改动文件列表',
+          },
+          {
+            title: 'Console',
+            caption: '在 Console 里跑测试、预览文件、开终端，不用离开工作区。',
+            alt: 'Console 里通过的 npm test、README 预览和两条 git 命令',
+          },
+        ],
+      },
       copy: {
         idle: '复制',
         copied: '已复制',

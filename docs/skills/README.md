@@ -23,6 +23,7 @@ projects in the same Cockpit.
 |---|---|---|
 | [`cockpit-release/`](./cockpit-release/SKILL.md) | `/cockpit-release [patch\|minor\|major]` | Run the full release pipeline end-to-end: bump → tag → publish → release notes → website redeploy → verify. |
 | [`cockpit-changelog/`](./cockpit-changelog/SKILL.md) | `/cockpit-changelog [from-tag] [to-tag]` | Draft user-facing GitHub release notes in the project's voice. Invoked by `/cockpit-release` at the right step, also runnable standalone. |
+| [`cockpit-hero-tour/`](./cockpit-hero-tour/SKILL.md) | `/cockpit-hero-tour [what changed]` | Refresh the website's homepage hero tour: recapture its frames from the current UI with fictional data (`npm run tour`), adjust chapters and copy, verify the player. |
 
 ## How to use them inside Cockpit
 
@@ -37,6 +38,7 @@ SKILL.md by default. You register the absolute path once:
    ```
    /path/to/cockpit/docs/skills/cockpit-release/SKILL.md
    /path/to/cockpit/docs/skills/cockpit-changelog/SKILL.md
+   /path/to/cockpit/docs/skills/cockpit-hero-tour/SKILL.md
    ```
 
 4. Repeat for each skill.

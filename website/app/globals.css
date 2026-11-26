@@ -240,3 +240,16 @@ html {
   padding: 0;
   font-size: inherit;
 }
+
+/* Homepage hero tour (components/HeroTour.tsx). */
+@keyframes tour-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes tour-click {
+  0% { transform: scale(0.3); opacity: 0.9; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+.tour-click {
+  animation: tour-click 0.5s ease-out 0.55s both;
+}

@@ -4,7 +4,7 @@
 
 | 组件 | 最低版本 | 备注 |
 |---|---|---|
-| **Node.js** | 20.x | 在 20 LTS 和 22 上测试通过；不支持更老的版本。 |
+| **Node.js** | 22.19.0 | 检查版本用 `node -v`。 |
 | **Claude Code** | 最新版 | 默认 Claude 引擎需要。`npm install -g @anthropic-ai/claude-code`，然后跑一次 `claude` 让它把 token 存到 `~/.claude/`。 |
 | **Git** | 任意近期版本 | 驱动 Git 状态 / 历史 / blame 视图。 |
 | **Chrome / Chromium** | 任意近期版本 | 可选 —— 仅当需要 AI 操作网页（配合 Chrome 扩展）时需要。 |
@@ -59,6 +59,12 @@ Cockpit 自带 Web App Manifest，Chrome / Edge 会把 `http://localhost:3457` �
 3. 已经开着应用窗口时点这个按钮，会复用现有窗口而不是新开一个（`launch_handler: navigate-existing`）。
 
 窄屏（手机/平板）安装后会自动进入 `/m` 移动版，桌面安装则落在完整三面板工作台 —— 同一个安装适配两端。
+
+### 在手机上打开
+
+在电脑上用手机也能访问的域名或内网地址打开 Cockpit，点击顶栏二维码图标 **在手机上打开**。扫码会打开手机版，电脑上已有打开的会话时会直达该会话。通过 `localhost` 打开时，二维码入口会隐藏。启用 Token 验证后，二维码包含访问令牌，请按密码保管。
+
+如果想把 Cockpit 常驻在服务器上，见 [服务端部署](/zh/docs/reference/server-deployment/)。
 
 ## 开始聊天
 

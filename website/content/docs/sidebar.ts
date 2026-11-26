@@ -135,12 +135,12 @@ export const docsSidebar: DocSection[] = [
   },
 
   // ─── 6. Reference (everything outside the running app) ────────────
-  // Three flat reference docs: CLI (the cockpit binary surface),
-  // keyboard shortcuts, and the FAQ.
+  // Flat reference docs for server deployment, the CLI, shortcuts, and troubleshooting.
   // `chrome-extension` moved to Console (it's what powers Browser bubbles).
   {
     key: 'reference',
     pages: [
+      { slug: 'reference/server-deployment', labelKey: 'serverDeployment', available: true },
       { slug: 'reference/cli', labelKey: 'cli', available: true },
       { slug: 'reference/keyboard-shortcuts', labelKey: 'keyboardShortcuts', available: true },
       { slug: 'reference/faq', labelKey: 'faq', available: true },

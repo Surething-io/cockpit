@@ -25,7 +25,21 @@ npm config get prefix
 
 **`Error: Node version is too old`**
 
-Cockpit 需要 Node.js 20 或更新。`node -v` 检查。升级 Node，然后重装 Cockpit。
+Cockpit 需要 Node.js 22.19.0 或更新版本。用 `node -v` 检查，升级 Node 后重装 Cockpit。
+
+## 远程访问与手机扫码
+
+**顶栏没有二维码**
+
+用手机也能访问的域名或内网地址打开桌面版。通过 `localhost` 或回环 IP 打开时，二维码图标会隐藏。如果版本还没有扫码入口，可以在手机上直接打开服务器地址的 `/m`。
+
+**手机切到桌面版后，怎么切回去？**
+
+在窄屏桌面版右下角点击 **手机版**，或直接打开服务器地址的 `/m`。
+
+**通过域名访问时收到 `401` 或 `429`**
+
+`401` 表示登录凭据缺失或无效，用当前令牌重新登录。同一 IP 连续输错 5 次后会收到 `429`，等待 `Retry-After` 指定的时间再重试。如果经过反代的多位访客一起收到 `429`，检查反代是否传递了各自的来源 IP。 [服务端部署](/zh/docs/reference/server-deployment/) · [可信代理](/zh/docs/reference/cli/#共享令牌访问网关)
 
 ## Claude 不工作
 

@@ -25,7 +25,21 @@ It prints something like `/usr/local`; the global bin lives in `/usr/local/bin` 
 
 **`Error: Node version is too old`**
 
-Cockpit needs Node.js 20 or newer. Check with `node -v`. Upgrade Node, then reinstall Cockpit.
+Cockpit needs Node.js 22.19.0 or later. Check with `node -v`. Upgrade Node, then reinstall Cockpit.
+
+## Remote access and phone QR codes
+
+**The top bar has no QR icon**
+
+Open the desktop workspace at a domain or private-network address your phone can reach. The icon is hidden on `localhost` and other loopback addresses. If your version predates the QR code, open the server's `/m` URL directly on your phone.
+
+**How do I switch back after opening Desktop on my phone?**
+
+In a narrow desktop view, click **Mobile** in the bottom-right corner, or open the server's `/m` URL directly.
+
+**The server returns `401` or `429`**
+
+A `401` means credentials are missing or invalid. Sign in again with your current token. After five consecutive incorrect tokens from one IP, Cockpit returns `429`. Wait for the time specified by `Retry-After` before retrying. If several visitors behind a reverse proxy get blocked together, check that the proxy forwards each visitor's IP. [Server Deployment](/en/docs/reference/server-deployment/) · [Trusted proxies](/en/docs/reference/cli/#shared-token-access-gate)
 
 ## Claude isn't working
 

@@ -162,6 +162,8 @@ Pair it with `COCKPIT_HOST=0.0.0.0` when sharing over the network:
 COCKPIT_HOST=0.0.0.0 cockpit --token my-secret-value
 ```
 
+To run Cockpit as a Linux system service or expose it through a public domain, see [Server Deployment](/en/docs/reference/server-deployment/) for systemd, HTTPS, and phone access.
+
 #### Host and Origin check
 
 Independent of the token, every HTTP request and WebSocket upgrade first passes a Host / Origin check. It blocks two ways a web page open in your browser could reach a local Cockpit — DNS rebinding and cross-site request forgery. A rejected request gets `403 Forbidden`.

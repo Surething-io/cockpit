@@ -21,8 +21,9 @@
   "explorer/recent": "2026-05-31T22:45:55+08:00",
   "explorer/search": "2026-09-09T16:22:09+08:00",
   "get-started/introduction": "2026-11-25T00:04:36-08:00",
-  "get-started/quickstart": "2026-11-25T00:04:36-08:00",
-  "reference/cli": "2026-11-25T00:04:36-08:00",
-  "reference/faq": "2026-11-25T00:04:36-08:00",
-  "reference/keyboard-shortcuts": "2026-09-09T16:22:09+08:00"
+  "get-started/quickstart": "2026-11-26T17:59:19Z",
+  "reference/cli": "2026-11-26T17:59:19Z",
+  "reference/faq": "2026-11-26T17:59:19Z",
+  "reference/keyboard-shortcuts": "2026-09-09T16:22:09+08:00",
+  "reference/server-deployment": "2026-11-26T17:59:19Z"
 }

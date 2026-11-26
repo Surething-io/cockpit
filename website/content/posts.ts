@@ -1694,52 +1694,13 @@ No per-laptop installs. No "works on my machine". One box, the whole team flying
 - **Shared horsepower.** A single GPU box serves everyone's local **Ollama** tabs. Laptops stay cool.
 - **Any device is a seat.** A browser is the only client — that includes your phone on the same VPN.
 
-## Setup (5 minutes)
+## Set up the server
 
-On the dev box:
-
-\`\`\`bash
-# 1. Install (Node ≥ 20)
-npm install -g @surething/cockpit
-
-# 2. Expose on the network + require a token for remote clients
-COCKPIT_HOST=0.0.0.0 cockpit --token your-shared-secret
-\`\`\`
-
-That's it. Two knobs worth knowing:
-
-| Knob | Meaning |
-|---|---|
-| \`COCKPIT_HOST\` | Defaults to \`127.0.0.1\` (local-only). Set \`0.0.0.0\` to accept LAN / VPN clients. |
-| \`--token\` (or \`COCKPIT_TOKEN\`) | Remote clients must present this token; **loopback stays exempt**, so local CLI use keeps working untouched. See [the access-token post](/en/blog/cockpit-access-token/). |
-
-To keep it running, wrap it in your process manager of choice — a minimal systemd unit:
-
-\`\`\`ini
-[Unit]
-Description=OpenCockpit
-After=network.target
-
-[Service]
-User=dev
-Environment=COCKPIT_HOST=0.0.0.0
-Environment=COCKPIT_TOKEN=your-shared-secret
-ExecStart=/usr/local/bin/cockpit
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-\`\`\`
+Follow [Server Deployment](/en/docs/reference/server-deployment/) to install Cockpit, start it at boot with systemd, and set up HTTPS and shared-token access. For a shared dev box, restrict access to your LAN or VPN.
 
 ## Give every teammate a seat
 
-Each dev opens:
-
-\`\`\`
-http://<dev-box>:3457/?token=your-shared-secret
-\`\`\`
-
-Cockpit sets a cookie and cleans the URL — the token doesn't linger in the address bar. From there, everyone:
+Each developer opens the team's HTTPS address and signs in with the shared token. Cockpit stores the login in a cookie. From there, everyone:
 
 - opens **their own project** as a tab (multi-project tabs are independent sessions),
 - or, when two people work the **same repo**, each takes a **git worktree** — Cockpit manages worktrees from the Explorer, so parallel agents never trample each other's checkout,
@@ -1769,7 +1730,7 @@ Use git worktrees (managed in the Explorer). Each agent gets its own checkout; b
 Yes. It's plain HTTP + WebSocket on one port (default \`3457\`, \`--port\` to change).
 
 **Can I use it from a phone?**
-Yes — the UI is a three-panel swipe layout designed for it. Same URL, same token.
+Yes. Open the team's address on your phone or scan the top-bar QR code to open the mobile view. See [phone access](/en/docs/reference/server-deployment/#open-on-your-phone).
 
 **What about Ollama — fully offline?**
 Install Ollama on the dev box and every seat can pick any pulled model. No keys, no cloud, air-gapped if you want.
@@ -1796,52 +1757,13 @@ One \`npm i -g\` on one box, and the whole team flies together. If you try it, [
 - **算力共享**。一台 GPU 机器承载所有人的 **Ollama** tab，笔记本保持凉快。
 - **任何设备都是一个席位**。客户端只需要浏览器 —— 包括同一 VPN 里的手机。
 
-## 部署（5 分钟）
+## 部署服务
 
-在开发机上：
-
-\`\`\`bash
-# 1. 安装（Node ≥ 20）
-npm install -g @surething/cockpit
-
-# 2. 暴露到网络 + 远程客户端要求令牌
-COCKPIT_HOST=0.0.0.0 cockpit --token your-shared-secret
-\`\`\`
-
-就这样。两个开关值得了解：
-
-| 开关 | 含义 |
-|---|---|
-| \`COCKPIT_HOST\` | 默认 \`127.0.0.1\`（仅本机）。设为 \`0.0.0.0\` 接受局域网 / VPN 客户端。 |
-| \`--token\`（或 \`COCKPIT_TOKEN\`） | 远程客户端必须出示令牌；**loopback 豁免**，本机 CLI 使用完全不受影响。详见[访问令牌一文](/zh/blog/cockpit-access-token/)。 |
-
-想常驻运行，交给你惯用的进程管理器 —— 最小 systemd unit：
-
-\`\`\`ini
-[Unit]
-Description=OpenCockpit
-After=network.target
-
-[Service]
-User=dev
-Environment=COCKPIT_HOST=0.0.0.0
-Environment=COCKPIT_TOKEN=your-shared-secret
-ExecStart=/usr/local/bin/cockpit
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-\`\`\`
+按 [服务端部署](/zh/docs/reference/server-deployment/) 安装 Cockpit，设置 systemd 开机自启、HTTPS 和共享令牌。共享开发机可以把访问范围限制在团队的内网或 VPN。
 
 ## 给每个队友一个席位
 
-每人打开：
-
-\`\`\`
-http://<dev-box>:3457/?token=your-shared-secret
-\`\`\`
-
-Cockpit 会写入 cookie 并清理 URL —— 令牌不会留在地址栏里。接下来，每个人：
+每位队友打开团队的 HTTPS 地址，用共享令牌登录。Cockpit 会把登录状态保存在 Cookie 里。接下来，每个人：
 
 - 把**自己的项目**开成一个 tab（多项目 tab 是相互独立的会话）；
 - 两个人改**同一个仓库**时，各占一个 **git worktree** —— Cockpit 在 Explorer 里直接管理 worktree，并行的 Agent 不会互踩检出；
@@ -1871,7 +1793,7 @@ OpenCockpit 的多席位模型是**基于信任的**，就像共享机器的 SSH
 能。就是单端口的 HTTP + WebSocket（默认 \`3457\`，\`--port\` 可改）。
 
 **手机能用吗？**
-能 —— 三面板滑动布局就是为此设计的。同一个 URL、同一个令牌。
+能。用手机打开团队地址，或扫电脑顶栏的二维码进入手机版。见 [手机访问](/zh/docs/reference/server-deployment/#手机访问)。
 
 **Ollama 全离线？**
 在开发机上装 Ollama，每个席位都能选任意已拉取的模型。无 Key、无云端，想断网就断网。
@@ -2038,7 +1960,9 @@ Turn on notifications and Cockpit sends one to your phone when a run finishes, i
 
 ## Try it
 
-Update Cockpit and open it on your phone. Turn on notifications and start a run.
+Open Cockpit on your computer at an address your phone can reach. Click the **Open on phone** QR icon in the top bar and scan it. The phone opens the current session if one is open on your computer. The code includes your shared token when token authentication is enabled. Treat it like a password.
+
+If you switch to Desktop on your phone, tap **Mobile** in the bottom-right corner to switch back. For remote access setup and what to do when the QR icon is hidden, see [Server Deployment](/en/docs/reference/server-deployment/#open-on-your-phone).
 
 ---
 
@@ -2071,7 +1995,9 @@ Update Cockpit and open it on your phone. Turn on notifications and start a run.
 
 ## 试一下
 
-更新 Cockpit,在手机上打开。打开通知,发起一轮任务。
+在电脑上用手机也能访问的地址打开 Cockpit，点顶栏的 **在手机上打开** 二维码图标，再用手机扫码。电脑上已有打开的会话时，手机会直接进入该会话。启用 Token 后，二维码包含访问令牌，请按密码保管。
+
+如果在手机上切到桌面版，点右下角的 **手机版** 切回去。远程访问设置和二维码入口的显示条件见 [服务端部署](/zh/docs/reference/server-deployment/#手机访问)。
 
 ---
 

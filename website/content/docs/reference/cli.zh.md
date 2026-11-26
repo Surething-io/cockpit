@@ -164,6 +164,8 @@ cockpit --token 你的密钥        # 或:COCKPIT_TOKEN=你的密钥 cockpit
 COCKPIT_HOST=0.0.0.0 cockpit --token 你的密钥
 ```
 
+如果要在 Linux 服务器上常驻运行或通过公网域名访问，见 [服务端部署](/zh/docs/reference/server-deployment/) 的 systemd、HTTPS 和手机连接步骤。
+
 #### Host 与 Origin 校验
 
 与令牌无关,所有 HTTP 请求和 WebSocket 升级都先经过一道 Host / Origin 校验,挡住浏览器里的网页够到本机 Cockpit 的两条路 —— DNS 重绑定和跨站请求伪造。被拒的请求返回 `403 Forbidden`。

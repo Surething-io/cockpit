@@ -477,6 +477,7 @@ export const messages = {
           aliasesEnv: 'Aliases & Env Vars',
 
           // Reference
+          serverDeployment: 'Server Deployment',
           cli: 'Cockpit CLI',
           chromeExtension: 'Chrome Extension',
           keyboardShortcuts: 'Keyboard Shortcuts',
@@ -963,6 +964,7 @@ export const messages = {
           aliasesEnv: '别名与环境变量',
 
           // Reference
+          serverDeployment: '服务端部署',
           cli: 'Cockpit CLI',
           chromeExtension: 'Chrome 扩展',
           keyboardShortcuts: '键盘快捷键',

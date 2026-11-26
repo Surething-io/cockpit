@@ -4,7 +4,7 @@ From `npm install` to a real, agent-driven task on your own project — in one p
 
 | Component | Minimum | Notes |
 |---|---|---|
-| **Node.js** | 20.x | Tested on 20 LTS and 22; older versions are not supported. |
+| **Node.js** | 22.19.0 | Check with `node -v`. |
 | **Claude Code** | latest | Needed for the default Claude engine. `npm install -g @anthropic-ai/claude-code`, then run `claude` once so it can save its token to `~/.claude/`. |
 | **Git** | any recent | Powers the Git status / history / blame views. |
 | **Chrome / Chromium** | any recent | Optional — only if the AI should drive web pages (with the Chrome extension). |
@@ -59,6 +59,12 @@ Cockpit ships a Web App Manifest, so Chrome / Edge treat `http://localhost:3457`
 3. Clicking that button while the app window is already open reuses the existing window instead of spawning a new one (`launch_handler: navigate-existing`).
 
 A narrow screen (phone/tablet) install lands on the `/m` mobile view, while a desktop install lands on the full three-panel workspace — one install adapts to both.
+
+### Open on your phone
+
+On your computer, open Cockpit at a domain or private-network address your phone can reach, then click the **Open on phone** QR icon in the top bar. Scanning opens the mobile view and goes straight to the current session if one is open. The QR icon is hidden on `localhost`. With token authentication enabled, the QR code contains the access token. Treat it like a password.
+
+To keep Cockpit running on a server, see [Server Deployment](/en/docs/reference/server-deployment/).
 
 ## Your first chat
 

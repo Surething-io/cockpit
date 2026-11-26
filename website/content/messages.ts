@@ -13,7 +13,7 @@ export const messages = {
       // Page <title>. Kept separate from `headline` because the root layout's
       // title template appends ' · OpenCockpit'; using `headline` here rendered
       // the tab as "OpenCockpit · OpenCockpit".
-      metaTitle: 'OpenCockpit — Open Claude Code GUI for Any LLM (Codex, GLM, Kimi)',
+      metaTitle: 'OpenCockpit — Open Claude Code GUI for Any LLM (Codex, DeepSeek)',
       subheadline: 'One seat. One AI. Everything under control.',
       // Short, punchy lead shown in the Hero. `description` below stays long for
       // JSON-LD / structured data — don't merge them.

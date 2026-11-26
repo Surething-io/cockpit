@@ -14,7 +14,7 @@ const inter = Inter({
 });
 
 const SITE_URL = 'https://opencockpit.dev';
-const DEFAULT_TITLE = 'OpenCockpit — Open Claude Code GUI for Any LLM (Codex, GLM, Kimi)';
+const DEFAULT_TITLE = 'OpenCockpit — Open Claude Code GUI for Any LLM (Codex, DeepSeek)';
 // Kept under 160 chars so Google SERP doesn't truncate before the closing keywords.
 const DEFAULT_DESCRIPTION =
   "Cockpit IDE: Claude Code's agent workflow on any LLM — Claude, Codex, DeepSeek, GLM, Kimi or local Ollama. Terminal, browser & DB built in. Self-host. MIT.";

@@ -92,7 +92,8 @@ export function MobileApp({ initialCwd, initialSessionId, initialSessions }: Mob
   }, []);
 
   // Escape hatch: remember the choice so boot.js stops auto-redirecting, then
-  // navigate to the desktop workspace.
+  // navigate to the desktop workspace. The workspace's narrow-screen "Mobile"
+  // button leads back, and boot.js forgets the choice on landing here.
   const handleUseDesktop = useCallback(() => {
     try { localStorage.setItem('cockpit-force-desktop', '1'); } catch { /* ignore */ }
     window.location.href = '/';

@@ -11,11 +11,17 @@
   // desktop 3-panel layout fits. Runs synchronously in <head> before the body paints,
   // so the desktop UI never flashes. Escape hatch: the /m "use desktop" action sets
   // `cockpit-force-desktop` in localStorage, which suppresses the redirect thereafter.
+  // Landing on /m again (the workspace's narrow-screen "Mobile" button, a scanned
+  // QR code, a typed URL) clears it, so the choice is never a one-way door —
+  // without this an installed PWA, which has no address bar, could never get back.
   try {
     var path = window.location.pathname;
     var onMobileRoute = path === '/m' || path.indexOf('/m/') === 0;
     var forceDesktop = false;
-    try { forceDesktop = !!localStorage.getItem('cockpit-force-desktop'); } catch (_e) {}
+    try {
+      if (onMobileRoute && window.self === window.top) localStorage.removeItem('cockpit-force-desktop');
+      else forceDesktop = !!localStorage.getItem('cockpit-force-desktop');
+    } catch (_e) {}
     // Never redirect inside an iframe: the desktop shell embeds /project in a
     // frame that is 42px (sidebar) narrower than the window, so a tablet-width
     // top page (e.g. 768px iPad) would otherwise nest the mobile UI inside the

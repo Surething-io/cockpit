@@ -243,7 +243,8 @@
     "stop": "停止",
     "enableNotifications": "开启通知",
     "disableNotifications": "关闭通知",
-    "notifyError": "无法开启通知"
+    "notifyError": "无法开启通知",
+    "useMobile": "手机版"
   },
   "sessions": {
     "recentSessions": "最近会话",
@@ -1254,7 +1255,12 @@
     "openInCursor": "在 Cursor 中打开",
     "aliasesGlobal": "命令别名（全局）",
     "tokenStats": "Token 统计",
-    "openSurething": "打开 Surething"
+    "openSurething": "打开 Surething",
+    "openOnPhone": "在手机上打开",
+    "phoneQrHint": "用手机扫码打开 Cockpit",
+    "phoneQrSessionHint": "用手机扫码打开当前会话",
+    "phoneQrTokenWarning": "二维码包含访问令牌，请勿外传",
+    "phoneQrFailed": "二维码生成失败"
   },
   "hoverTooltip": {
     "findReferences": "查找引用",

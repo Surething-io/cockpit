@@ -11,6 +11,7 @@ import { TokenStatsModal } from '@cockpit/feature-agent';
 import { NoteModal } from './NoteModal';
 import { SkillsModal } from '@cockpit/feature-skills';
 import { BotsModal } from './BotsModal';
+import { UseMobileButton } from './UseMobileButton';
 import { SessionCompleteToastContainer, showSessionCompleteToast } from '@cockpit/feature-agent';
 import { useEffectQuery } from '@cockpit/effect-react';
 import { Effect } from 'effect';
@@ -824,6 +825,9 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
 
       {/* Bottom-left session complete notification */}
       <SessionCompleteToastContainer onNavigate={handleSwitchProject} />
+
+      {/* Narrow window: way back to the mobile route */}
+      <UseMobileButton />
     </div>
   );
 }

@@ -243,7 +243,8 @@
     "stop": "Stop",
     "enableNotifications": "Enable notifications",
     "disableNotifications": "Disable notifications",
-    "notifyError": "Could not enable notifications"
+    "notifyError": "Could not enable notifications",
+    "useMobile": "Mobile"
   },
   "sessions": {
     "recentSessions": "Recent Sessions",
@@ -1257,7 +1258,12 @@
     "openInCursor": "Open in Cursor",
     "aliasesGlobal": "Command Aliases (Global)",
     "tokenStats": "Token Stats",
-    "openSurething": "Open Surething"
+    "openSurething": "Open Surething",
+    "openOnPhone": "Open on phone",
+    "phoneQrHint": "Scan with your phone to open Cockpit",
+    "phoneQrSessionHint": "Scan with your phone to open this session",
+    "phoneQrTokenWarning": "This code contains your access token. Don't share it.",
+    "phoneQrFailed": "Could not generate the QR code"
   },
   "hoverTooltip": {
     "findReferences": "Find References",

@@ -70,6 +70,26 @@ export const saveSettings = (
   }).pipe(Effect.ensuring(Effect.sync(() => forgetInFlight("/api/settings"))))
 
 // ─────────────────────────────────────────────────────────
+// /api/mobile-link
+// ─────────────────────────────────────────────────────────
+
+/** The server's access token for the phone QR code; null when token mode is off. */
+export const loadMobileLinkToken = (): Effect.Effect<string | null, AppError> =>
+  httpJson<{ token: string | null }>("/api/mobile-link", { cache: "no-store" }).pipe(
+    Effect.map((res) => res.token ?? null)
+  )
+
+/** QR code for `text` as an SVG string; the encoder is loaded on first use. */
+export const renderQrSvg = (text: string): Effect.Effect<string, AppError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const QRCode = await import("qrcode")
+      return QRCode.toString(text, { type: "svg", margin: 1, errorCorrectionLevel: "M" })
+    },
+    catch: (cause) => new AppError({ message: "QR code generation failed", cause }),
+  })
+
+// ─────────────────────────────────────────────────────────
 // /api/version & /api/extension/version
 // ─────────────────────────────────────────────────────────
 

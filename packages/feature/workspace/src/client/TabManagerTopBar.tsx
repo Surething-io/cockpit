@@ -12,6 +12,7 @@ import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { fetchBranches } from '@cockpit/feature-explorer';
 import { buildResumeCommand } from '@cockpit/feature-agent';
 import { createGitWorktree, openInVscode, openInCursor } from './effect/workspaceClient';
+import { MobileQrButton } from './MobileQrButton';
 
 // ============================================
 // TopBar
@@ -306,6 +307,8 @@ export function TabManagerTopBar({
 
         {/* Right: session-related */}
         <div className="flex items-center gap-2">
+          {/* QR code to open this session on a phone (remote access only) */}
+          <MobileQrButton cwd={activeTab?.cwd ?? initialCwd} sessionId={activeTab?.sessionId} />
           {/* Reload current project */}
           <button
             onClick={() => window.location.reload()}

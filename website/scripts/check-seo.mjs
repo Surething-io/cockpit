@@ -45,6 +45,8 @@ for (const url of urls) {
   const title = decode(titleMatches[0][1]);
   const description = meta('description');
   assert.ok(!titles.has(title), `${path}: duplicate title`);
+  // Bing Webmaster Tools reports titles over 70 characters as an SEO error.
+  assert.ok(title.length <= 70, `${path}: title is ${title.length} characters (max 70): ${title}`);
   assert.ok(!descriptions.has(description), `${path}: duplicate description`);
   titles.add(title); descriptions.add(description);
   assert.equal(tags(markup, 'h1').length, 1, `${path}: one H1`);

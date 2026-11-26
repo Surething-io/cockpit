@@ -13,7 +13,7 @@ export const messages = {
       // Page <title>. Kept separate from `headline` because the root layout's
       // title template appends ' · OpenCockpit'; using `headline` here rendered
       // the tab as "OpenCockpit · OpenCockpit".
-      metaTitle: 'OpenCockpit — Open Claude Code GUI for Any LLM (Codex, GLM, Kimi, Ollama)',
+      metaTitle: 'OpenCockpit — Open Claude Code GUI for Any LLM (Codex, GLM, Kimi)',
       subheadline: 'One seat. One AI. Everything under control.',
       // Short, punchy lead shown in the Hero. `description` below stays long for
       // JSON-LD / structured data — don't merge them.
@@ -416,10 +416,10 @@ export const messages = {
         // the page's H1. The problem-shaped title duplicated the intent of the
         // claude-code-with-glm-kimi-deepseek post, and Google dropped this page
         // from the index (crawled, not indexed) in favour of the post.
-        engines: 'AI Engines: Claude, Codex, Grok, DeepSeek, GLM, Kimi, Ollama',
+        engines: 'AI Engines: Claude/Codex/Grok/DeepSeek/GLM/Kimi/Ollama',
         workflows: 'Chain Slash Commands into Multi-Step AI Workflows',
         skills: 'Turn Chats into Reusable Claude Code Skills (SKILL.md)',
-        snapshots: 'Undo and Review Every AI Agent Change, Tool Call by Tool Call',
+        snapshots: 'Review and Undo Every AI Agent Change, Per Tool Call',
         htmlApps: 'HTML Apps That Run Bash: No CORS, No Server',
         terminalBubble: 'Web Terminal for AI Coding Sessions',
       },

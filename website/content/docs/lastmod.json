@@ -6,7 +6,7 @@
   "agent/notes": "2026-10-10T15:41:44+08:00",
   "agent/scheduled-tasks": "2026-09-09T16:22:09+08:00",
   "agent/sessions": "2026-09-14T20:12:55+08:00",
-  "agent/skills": "2026-11-25T00:04:36-08:00",
+  "agent/skills": "2026-11-26T11:26:34-08:00",
   "agent/snapshots": "2026-10-10T18:27:50+08:00",
   "agent/workflows": "2026-09-18T18:26:31+08:00",
   "console/aliases-env": "2026-05-31T22:45:55+08:00",
@@ -20,10 +20,11 @@
   "explorer/history": "2026-07-09T11:25:06+08:00",
   "explorer/recent": "2026-05-31T22:45:55+08:00",
   "explorer/search": "2026-09-09T16:22:09+08:00",
-  "get-started/introduction": "2026-11-25T00:04:36-08:00",
-  "get-started/quickstart": "2026-11-26T17:59:19Z",
-  "reference/cli": "2026-11-26T17:59:19Z",
-  "reference/faq": "2026-11-26T17:59:19Z",
-  "reference/keyboard-shortcuts": "2026-09-09T16:22:09+08:00",
-  "get-started/server-deployment": "2026-11-26T17:59:19Z"
+  "get-started/desktop-app": "2026-11-26T11:26:34-08:00",
+  "get-started/introduction": "2026-11-26T11:26:34-08:00",
+  "get-started/quickstart": "2026-11-26T11:26:34-08:00",
+  "get-started/server-deployment": "2026-11-26T11:26:34-08:00",
+  "reference/cli": "2026-11-26T11:26:34-08:00",
+  "reference/faq": "2026-11-26T11:26:34-08:00",
+  "reference/keyboard-shortcuts": "2026-09-09T16:22:09+08:00"
 }

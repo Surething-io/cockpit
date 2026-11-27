@@ -10,6 +10,10 @@ describe('cleanSuggestedTitle', () => {
     expect(cleanSuggestedTitle('\n\n# 「支付对账」\n')).toBe('支付对账');
     expect(cleanSuggestedTitle('Two\\nparts')).toBe('Two parts');
     expect(cleanSuggestedTitle('  @  ')).toBe('');
+    // A leaked control token means the model derailed: nothing around it is a title.
+    expect(cleanSuggestedTitle('化<|end_of_turn|>')).toBe('');
+    expect(cleanSuggestedTitle('Fix login<|im_end|>')).toBe('');
+    expect(cleanSuggestedTitle('a <b> c|d')).toBe('a <b> c|d');
     const long = cleanSuggestedTitle('word '.repeat(30));
     expect([...long].length).toBeLessThanOrEqual(SUGGESTED_TITLE_MAX);
     for (const raw of ['Title: "a@b"', '- item', 'ok.', '「中文」']) {
@@ -20,14 +24,14 @@ describe('cleanSuggestedTitle', () => {
 });
 
 describe('title excerpt and prompt', () => {
-  it('takes the first user messages and the latest reply', () => {
+  it('takes only the first user messages', () => {
     const excerpt = excerptOf([
       { role: 'user', content: 'first' }, { role: 'assistant', content: 'r1' }, { role: 'user', content: ' ' },
       { role: 'user', content: 'second' }, { role: 'user', content: 'third' }, { role: 'user', content: 'fourth' },
       { role: 'assistant', content: 'latest' },
     ]);
-    expect(excerpt).toEqual({ userMessages: ['first', 'second', 'third'], lastReply: 'latest' });
-    const prompt = buildTitlePrompt({ userMessages: ['x'.repeat(2000)], lastReply: null });
+    expect(excerpt).toEqual({ userMessages: ['first', 'second'] });
+    const prompt = buildTitlePrompt({ userMessages: ['x'.repeat(2000)] });
     expect(prompt).toContain('ONLY the title');
     expect(prompt).not.toContain('x'.repeat(700));
   });

@@ -7,7 +7,6 @@ import { runSdkLoop, type BuildSdkOptions } from './shared/sdkLoop';
 import { stashTranscript, mergeStashedTranscript } from './shared/noHistoryTranscript';
 import type { EngineSpec, RunCtx, TitleSuggestionRequest } from './types';
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { suggestionModel } from './sessionModel';
 
 type PlanPermissionResult =
   | { behavior: 'allow'; updatedInput: Record<string, unknown> }
@@ -182,22 +181,29 @@ function buildClaudeOptions(ctx: RunCtx, independent: boolean): BuildSdkOptions 
 }
 
 /**
- * One answer from the session's model with no session behind it: `persistSession: false`
- * writes no transcript, no tools and one turn keep it a plain completion, and no setting
- * sources means no hooks or project instructions run for what is only a title.
+ * A title is a label, not reasoning: it runs on Haiku with thinking off rather than on the
+ * session's own model (an Opus session took 5-6 s per suggestion, nearly all of it model
+ * time and CLI start-up, none of it transcript size).
  */
-async function suggestClaudeTitle({ cwd, sessionId, prompt, signal }: TitleSuggestionRequest): Promise<string> {
+const CLAUDE_TITLE_MODEL = 'haiku';
+
+/**
+ * One answer with no session behind it: `persistSession: false` writes no transcript, no
+ * tools and one turn keep it a plain completion, and no setting sources means no hooks or
+ * project instructions run for what is only a title.
+ */
+async function suggestClaudeTitle({ cwd, prompt, signal }: TitleSuggestionRequest): Promise<string> {
   const abortController = new AbortController();
   const abort = () => abortController.abort();
   signal.addEventListener('abort', abort, { once: true });
   try {
-    const model = await suggestionModel('claude', cwd, sessionId);
     let text = '';
     for await (const message of query({
       prompt,
       options: {
         cwd,
-        ...(model && { model }),
+        model: CLAUDE_TITLE_MODEL,
+        thinking: { type: 'disabled' },
         tools: [],
         maxTurns: 1,
         persistSession: false,

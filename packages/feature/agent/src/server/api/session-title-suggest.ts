@@ -1,9 +1,9 @@
 /**
  * POST /api/session-title/suggest   Body: { cwd, sessionId }  →  { title }
  *
- * The title dialog's "suggest" button. Asks the session's OWN engine, on the session's own
- * model, to name the conversation from a short excerpt (first questions + latest reply),
- * without creating or touching a session — see engines/shared/titleSuggestion.
+ * The title dialog's "suggest" button. Asks the session's OWN engine to name the
+ * conversation from its first user messages, without creating or touching a session —
+ * see engines/shared/titleSuggestion (and each engine's suggestTitle for the model used).
  * Nothing is saved: the title only fills the dialog's input.
  */
 import { Effect } from 'effect';
@@ -17,11 +17,10 @@ import {
 import { resolveSessionPath } from './session/sessionStore';
 import { parseCodexTranscriptFile, parseTranscriptFile } from './session/transcriptParsers';
 
-const USER_MESSAGES = 3;
+const USER_MESSAGES = 2;
 
 export const excerptOf = (messages: ReadonlyArray<{ role: string; content: string }>): TitleExcerpt => ({
   userMessages: messages.filter((m) => m.role === 'user' && m.content.trim()).slice(0, USER_MESSAGES).map((m) => m.content),
-  lastReply: [...messages].reverse().find((m) => m.role === 'assistant' && m.content.trim())?.content ?? null,
 });
 
 export const POST = handler((req) => Effect.gen(function* () {

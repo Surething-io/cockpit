@@ -1,7 +1,7 @@
 /**
  * "Suggest a title" for the title dialog, run on the session's OWN engine.
  *
- * Every engine answers one prompt built from a short excerpt of the conversation, and does
+ * Every engine answers one prompt built from the first few user messages, and does
  * so without creating a session: Claude with `persistSession: false`, Codex on an ephemeral
  * thread, the Pi-family providers with a plain chat completion, Grok in a throwaway
  * directory whose native session is removed afterwards. See each engine's `suggestTitle`.
@@ -18,10 +18,9 @@ export const TITLE_SUGGESTION_TIMEOUT_MS = 60_000;
 export const SUGGESTED_TITLE_MAX = 40;
 
 export interface TitleExcerpt {
-  /** The first few things the user asked, oldest first. */
+  /** The first few things the user asked, oldest first. What a session is about is set
+   *  by how it opens; replies only add input tokens to a call whose speed is the point. */
   userMessages: string[];
-  /** The latest assistant reply, if any. */
-  lastReply: string | null;
 }
 
 const clip = (text: string, max: number) => (text.length <= max ? text : `${text.slice(0, max)}…`);
@@ -36,16 +35,22 @@ export function buildTitlePrompt(excerpt: TitleExcerpt): string {
     '',
     'The user asked:',
     asked || '(nothing yet)',
-    ...(excerpt.lastReply ? ['', 'The latest reply:', clip(excerpt.lastReply.trim(), 1200)] : []),
   ].join('\n');
 }
+
+/** A leaked chat-template control token (`<|end_of_turn|>`, `<|im_end|>`, …). */
+const CONTROL_TOKEN_RE = /<\|[^|<>\s]*\|>/;
 
 /**
  * The model's answer reduced to a saveable title, or '' when nothing usable is left.
  * Takes the first meaningful line, drops a "Title:" lead-in, wrapping quotes and markdown,
  * removes every `@`, collapses whitespace and caps the length.
+ *
+ * An answer carrying a control token is rejected whole: the model has derailed, and what
+ * surrounds the token is fragments (seen live: `化<|end_of_turn|>`), not a title.
  */
 export function cleanSuggestedTitle(raw: string): string {
+  if (CONTROL_TOKEN_RE.test(raw)) return '';
   const line = raw.split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? '';
   let title = line
     .replace(/\*\*|__|`/g, '')

@@ -215,10 +215,15 @@ describe('SnapshotServiceLive', () => {
       });
       expect(listed.files.find((file) => file.path === 'generated1.js')?.newContent).toBe('// other changed file\n');
 
-      const results = await Promise.all([
-        svc((s) => s.diff(fixture, recorded.hash!, path)),
-        svc((s) => s.rangeDiff(fixture, baseline.hash!, recorded.hash!, path)),
-      ]);
+      const results = await runtime.runPromise(
+        Effect.all(
+          [
+            Effect.flatMap(SnapshotService, (s) => s.diff(fixture, recorded.hash!, path)),
+            Effect.flatMap(SnapshotService, (s) => s.rangeDiff(fixture, baseline.hash!, recorded.hash!, path)),
+          ],
+          { concurrency: 'unbounded' }
+        )
+      );
       for (const diff of results) {
         expect(diff.files.map((file) => file.path)).toEqual([path]);
         expect(diff.files[0].oldContent === before).toBe(true);

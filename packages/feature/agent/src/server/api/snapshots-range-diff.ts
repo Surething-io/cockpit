@@ -1,5 +1,5 @@
 /**
- * GET /api/snapshots/range-diff?cwd=<abs path>&head=<hash>[&base=<hash>]
+ * GET /api/snapshots/range-diff?cwd=<abs path>&head=<hash>[&base=<hash>][&file=<relative path>]
  *
  * Net file-level diff across a range of snapshot commits — what a whole turn
  * changed, as opposed to /api/snapshots/diff's single tool call.
@@ -29,7 +29,7 @@ export const GET = handler((req) =>
       return yield* Effect.fail(new ValidationError({ field: 'head', reason: 'missing' }));
     }
     const svc = yield* SnapshotService;
-    const diff = yield* svc.rangeDiff(cwd, base || null, head);
+    const diff = yield* svc.rangeDiff(cwd, base || null, head, searchParams.get('file') ?? undefined);
     return ok(diff);
   })
 );

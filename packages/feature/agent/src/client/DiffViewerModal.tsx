@@ -30,6 +30,7 @@ import {
   type GitFileNode,
 } from '@cockpit/feature-explorer';
 import {
+  loadSnapshotDiff,
   loadSnapshotDiffsForToolIds,
   loadSnapshotRangeDiff,
   type SnapshotDiffDto,
@@ -63,6 +64,7 @@ interface CallFile {
   new_string: string;
   /** Binary or over-cap file — contents not viewable. */
   unviewable?: boolean;
+  contentDeferred?: boolean;
   /** Binary image: rendered as before/after <img> instead of a text diff. */
   isImage?: boolean;
   /** Snapshot revisions holding the image; null = absent on that side. */
@@ -149,6 +151,7 @@ function toCallFile(f: SnapshotFileDiffDto, declared: Set<string> | null): CallF
     // An image is "unviewable" as TEXT but perfectly viewable as an image,
     // so it must not fall into the not-viewable branch.
     unviewable: !f.isImage && (f.binary || (f.oldContent === null && f.newContent === null)),
+    contentDeferred: f.contentDeferred,
     isImage: f.isImage,
     oldRev: f.oldRev,
     newRev: f.newRev,
@@ -514,9 +517,39 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
     () => buildGitFileTree(activeFiles),
     [activeFiles],
   );
-  const selectedFile = useMemo(
+  const selectedEntry = useMemo(
     () => activeFiles.find((f) => f.path === selectedFilePath) ?? null,
     [activeFiles, selectedFilePath],
+  );
+  const deferredPath = selectedEntry?.contentDeferred ? selectedEntry.path : undefined;
+  const deferredBase = aggregate ? range?.base ?? null : null;
+  const deferredHead = aggregate ? range?.head : displayCall?.hash;
+  const fileQueryKey = cwd && deferredPath && deferredHead
+    ? JSON.stringify([cwd, aggregate, deferredBase, deferredHead, deferredPath])
+    : null;
+  const fileQ = useEffectQuery(
+    fileQueryKey && cwd && deferredPath && deferredHead
+      ? Effect.gen(function* () {
+          const { files } = yield* aggregate
+            ? loadSnapshotRangeDiff(cwd, deferredBase, deferredHead, deferredPath)
+            : loadSnapshotDiff(cwd, deferredHead, deferredPath);
+          return { key: fileQueryKey, file: files[0] ?? null };
+        }).pipe(
+          Effect.orElseSucceed(() => ({ key: fileQueryKey, file: null })),
+        )
+      : Effect.succeed(null),
+    [fileQueryKey],
+  );
+  // The query hook keeps its previous result until the new effect starts.
+  // A file can have the same path in two calls, so match the revisions too.
+  const deferredFile = fileQ.status === 'success' && fileQ.data?.key === fileQueryKey
+    ? fileQ.data?.file
+    : undefined;
+  const selectedFile = useMemo(
+    () => deferredFile && selectedEntry
+      ? { ...toCallFile(deferredFile, null), external: selectedEntry.external }
+      : selectedEntry,
+    [deferredFile, selectedEntry],
   );
   const activeStats = useMemo(() => fileLineStats(activeFiles), [activeFiles]);
 
@@ -934,13 +967,18 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
                         />
                       ) : selectedFile.unviewable ? (
                         <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-                          {t('diffViewer.notViewable')}
+                          {fileQueryKey && deferredFile === undefined
+                            ? t('diffViewer.loadingFile')
+                            : fileQueryKey && deferredFile === null
+                              ? t('diffViewer.fileLoadFailed')
+                              : t('diffViewer.notViewable')}
                         </div>
                       ) : viewMode === 'unified' ? (
                         <DiffUnifiedView
                           oldContent={selectedFile.old_string}
                           newContent={selectedFile.new_string}
                           filePath={selectedFile.path}
+                          highlight={!deferredPath}
                           cwd={cwd}
                           // Same selection toolbar (comment / send-to-AI /
                           // search) as split — commentsEnabled still gates on a
@@ -968,6 +1006,7 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
                           oldContent={selectedFile.old_string}
                           newContent={selectedFile.new_string}
                           filePath={selectedFile.path}
+                          highlight={!deferredPath}
                           isNew={selectedFile.status === 'added'}
                           isDeleted={selectedFile.status === 'deleted'}
                           cwd={cwd}

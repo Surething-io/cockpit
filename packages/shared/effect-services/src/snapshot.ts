@@ -66,6 +66,8 @@ export interface SnapshotFileDiff {
   /** Content omitted when binary or over the size cap. */
   readonly oldContent: string | null
   readonly newContent: string | null
+  /** The list omitted this text; request the individual file to read it. */
+  readonly contentDeferred?: boolean
   /**
    * Binary file whose extension is an image: contents stay null (bytes never
    * travel as text), but each side can be rendered as an `<img>` against
@@ -144,10 +146,11 @@ export interface SnapshotService {
     toolIds: ReadonlyArray<string>,
     sessionKey?: string
   ) => Effect.Effect<ReadonlyArray<SnapshotCommit>, AppError>
-  /** Full file-level diff of one snapshot commit vs its parent. */
+  /** Diff of one snapshot commit vs its parent, optionally for one file. */
   readonly diff: (
     cwd: string,
-    commitHash: string
+    commitHash: string,
+    file?: string
   ) => Effect.Effect<SnapshotDiff, AppError | ValidationError | NotFoundError>
   /**
    * Net file-level diff between two snapshot revisions (`base..head`).
@@ -160,7 +163,8 @@ export interface SnapshotService {
   readonly rangeDiff: (
     cwd: string,
     base: string | null,
-    head: string
+    head: string,
+    file?: string
   ) => Effect.Effect<SnapshotRangeDiff, AppError | ValidationError | NotFoundError>
   /**
    * Raw bytes of an IMAGE blob at a snapshot revision — what makes the image

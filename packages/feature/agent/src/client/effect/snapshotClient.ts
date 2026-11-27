@@ -33,6 +33,7 @@ export interface SnapshotFileDiffDto {
   deletions?: number
   oldContent: string | null
   newContent: string | null
+  contentDeferred?: boolean
   /** Binary image: contents are null, but each side has a blob to render. */
   isImage?: boolean
   /** Revision holding the "before" blob; null when the file was added. */
@@ -88,10 +89,13 @@ export const loadSnapshotsByToolIds = (
 
 export const loadSnapshotDiff = (
   cwd: string,
-  commit: string
+  commit: string,
+  file?: string
 ): Effect.Effect<SnapshotDiffDto, AppError> =>
   httpJson<SnapshotDiffDto>(
-    `/api/snapshots/diff?cwd=${encodeURIComponent(cwd)}&commit=${encodeURIComponent(commit)}`
+    `/api/snapshots/diff?cwd=${encodeURIComponent(cwd)}&commit=${encodeURIComponent(commit)}${
+      file === undefined ? "" : `&file=${encodeURIComponent(file)}`
+    }`
   )
 
 /** List a message's snapshot commits, then materialize each commit's diff. */
@@ -118,10 +122,11 @@ export const loadSnapshotDiffsForToolIds = (
 export const loadSnapshotRangeDiff = (
   cwd: string,
   base: string | null,
-  head: string
+  head: string,
+  file?: string
 ): Effect.Effect<SnapshotRangeDiffDto, AppError> =>
   httpJson<SnapshotRangeDiffDto>(
     `/api/snapshots/range-diff?cwd=${encodeURIComponent(cwd)}&head=${encodeURIComponent(head)}${
       base ? `&base=${encodeURIComponent(base)}` : ""
-    }`
+    }${file === undefined ? "" : `&file=${encodeURIComponent(file)}`}`
   )

@@ -189,6 +189,47 @@ describe('SnapshotServiceLive', () => {
     expect(diff.files[0].oldContent).toContain('b = 1');
   });
 
+  it('loads large text only by its exact path in both snapshot diff modes', async () => {
+    const fixture = await mkdtemp(join(tmpdir(), 'cockpit-snap-large-diff-'));
+    const path = 'generated[1].js';
+    const largeLine = '漢'.repeat(540_000);
+    const before = `// before ${largeLine}\n`;
+    const after = `// after ${largeLine}\n`;
+    try {
+      await writeFile(join(fixture, path), before);
+      const baseline = await svc((s) => s.baseline(fixture, 'large-diff', 'claude'));
+      await writeFile(join(fixture, path), after);
+      await writeFile(join(fixture, 'generated1.js'), '// other changed file\n');
+      const recorded = await svc((s) =>
+        s.record({ cwd: fixture, sessionKey: 'large-diff', provider: 'claude', toolId: 'large-diff' })
+      );
+      expect(recorded.committed).toBe(true);
+
+      const listed = await svc((s) => s.diff(fixture, recorded.hash!));
+      expect(listed.files.find((file) => file.path === path)).toMatchObject({
+        contentDeferred: true,
+        oldContent: null,
+        newContent: null,
+        additions: 1,
+        deletions: 1,
+      });
+      expect(listed.files.find((file) => file.path === 'generated1.js')?.newContent).toBe('// other changed file\n');
+
+      const results = await Promise.all([
+        svc((s) => s.diff(fixture, recorded.hash!, path)),
+        svc((s) => s.rangeDiff(fixture, baseline.hash!, recorded.hash!, path)),
+      ]);
+      for (const diff of results) {
+        expect(diff.files.map((file) => file.path)).toEqual([path]);
+        expect(diff.files[0].oldContent === before).toBe(true);
+        expect(diff.files[0].newContent === after).toBe(true);
+        expect(diff.files[0].contentDeferred).toBeUndefined();
+      }
+    } finally {
+      await rm(fixture, { recursive: true, force: true });
+    }
+  });
+
   it('flags a changed image and serves both sides byte-exact via blob()', async () => {
     // Two 1x1 PNGs (different pixel), so the change is a real binary modify.
     const pngOld = Buffer.from(

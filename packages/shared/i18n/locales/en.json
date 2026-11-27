@@ -1209,6 +1209,8 @@
       "expandAll": "Click to expand {{count}} lines"
     },
     "loadingSnapshots": "Loading snapshots…",
+    "loadingFile": "Loading file diff…",
+    "fileLoadFailed": "Could not load the file diff",
     "noChanges": "No file changes detected in this turn",
     "notViewable": "Binary or oversized file — diff not viewable",
     "externalChange": "Concurrent change from another session/process",

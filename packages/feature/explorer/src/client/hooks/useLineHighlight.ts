@@ -68,12 +68,13 @@ import { type BundledLanguage, getHighlighter, getLanguageFromPath, escapeHtml, 
  * "phase 1 plain-text" render), and external callers see no API
  * change — they still get `string[]` aligned 1:1 with `lines`.
  */
-export function useLineHighlight(lines: string[], filePath: string): string[] {
+export function useLineHighlight(lines: string[], filePath: string, enabled = true): string[] {
   const [tokenCache, setTokenCache] = useState<{ key: string; html: string[] } | null>(null);
   const [isDark, setIsDark] = useState(false);
 
   // Detect dark mode
   useEffect(() => {
+    if (!enabled) return;
     const checkDarkMode = () => {
       setIsDark(document.documentElement.classList.contains('dark'));
     };
@@ -86,9 +87,9 @@ export function useLineHighlight(lines: string[], filePath: string): string[] {
     });
 
     return () => observer.disconnect();
-  }, []);
+  }, [enabled]);
 
-  const linesKey = useMemo(() => lines.join('\n'), [lines]);
+  const linesKey = useMemo(() => enabled ? lines.join('\n') : '', [lines, enabled]);
   const currentKey = `${linesKey}:${filePath}:${isDark}`;
 
   // Render-time, synchronously aligned output. The cache is only
@@ -97,20 +98,20 @@ export function useLineHighlight(lines: string[], filePath: string): string[] {
   // lines array, which is by construction the same length / order
   // as the consumer's view of the data.
   const result = useMemo<string[]>(() => {
-    if (tokenCache && tokenCache.key === currentKey) {
+    if (enabled && tokenCache && tokenCache.key === currentKey) {
       return tokenCache.html;
     }
     // Fallback (also covers first paint before the highlighter
     // resolves). Same shape as the old "phase 1" setState, just
     // derived in-render instead of via state.
     return lines.map(l => escapeHtml(l || ' '));
-  }, [lines, currentKey, tokenCache]);
+  }, [lines, currentKey, tokenCache, enabled]);
 
   // Async upgrade: compute token HTML, then publish to the cache.
   // The cancelled flag guards against out-of-order resolutions when
   // `currentKey` changes again before the async work completes.
   useEffect(() => {
-    if (lines.length === 0) return;
+    if (!enabled || lines.length === 0) return;
 
     let cancelled = false;
 
@@ -121,8 +122,7 @@ export function useLineHighlight(lines: string[], filePath: string): string[] {
         const language = getLanguageFromPath(filePath);
         const theme = isDark ? 'github-dark' : 'github-light';
 
-        const content = lines.join('\n');
-        const tokenResult = highlighter.codeToTokens(content, {
+        const tokenResult = highlighter.codeToTokens(linesKey, {
           lang: language as BundledLanguage,
           theme,
         });
@@ -148,7 +148,7 @@ export function useLineHighlight(lines: string[], filePath: string): string[] {
     highlight();
     return () => { cancelled = true; };
 
-  }, [linesKey, filePath, isDark]);
+  }, [linesKey, filePath, isDark, enabled]);
 
   return result;
 }

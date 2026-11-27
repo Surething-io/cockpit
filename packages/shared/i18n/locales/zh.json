@@ -1205,6 +1205,8 @@
       "expandAll": "点击展开 {{count}} 行"
     },
     "loadingSnapshots": "正在加载快照…",
+    "loadingFile": "正在加载文件差异…",
+    "fileLoadFailed": "无法加载文件差异",
     "noChanges": "本轮未检测到文件变更",
     "notViewable": "二进制或超大文件，无法展示 diff",
     "externalChange": "同期其他会话/外部进程的变更",

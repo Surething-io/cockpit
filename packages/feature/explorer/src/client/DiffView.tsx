@@ -74,6 +74,8 @@ interface DiffViewProps {
    * See `compactDiff.ts` header.)
    */
   compact?: boolean;
+  /** Turn off syntax highlighting for large diffs; keep the full escaped text. */
+  highlight?: boolean;
   /**
    * Function-like symbols (post-edit / AFTER snapshot) used by
    * compact mode to label each gap bar with the enclosing function
@@ -155,7 +157,7 @@ function formatSignature(s: SymbolInfo): string {
 // new-side rows. The hook+ToolbarRenderer combination is what keeps the
 // toolbar's show/hide isolated from DiffView's virtual list re-renders.
 
-export function DiffView({ oldContent, newContent, filePath, isNew = false, isDeleted = false, cwd, enableComments = false, onPreview, previewLabel, headerLeading, onContentSearch, targetLine, compact = false, symbols, onTokenHover, onTokenHoverLeave, onTokenHoverCancel }: DiffViewProps) {
+export function DiffView({ oldContent, newContent, filePath, isNew = false, isDeleted = false, cwd, enableComments = false, onPreview, previewLabel, headerLeading, onContentSearch, targetLine, compact = false, highlight = true, symbols, onTokenHover, onTokenHoverLeave, onTokenHoverCancel }: DiffViewProps) {
   const { t } = useTranslation();
   const handleTokenMouseOver = useAfterSideTokenHover(onTokenHover);
   const resolvedPreviewLabel = previewLabel ?? t('common.preview');
@@ -262,7 +264,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
   }, [diffLines]);
 
   const allLines = useMemo(() => diffLines.map(line => line.content), [diffLines]);
-  const highlightedLines = useLineHighlight(allLines, filePath);
+  const highlightedLines = useLineHighlight(allLines, filePath, highlight);
 
   // ============================================
   // Compact mode — gap state + render-row pipeline.
@@ -924,7 +926,7 @@ function buildUnifiedCompactRows(diffLines: DiffLine[], expandedGaps: Set<number
   return rows;
 }
 
-export function DiffUnifiedView({ oldContent, newContent, filePath, cwd, enableComments = false, onPreview, previewLabel, headerLeading, onContentSearch, compact = false, onTokenHover, onTokenHoverLeave, onTokenHoverCancel }: Omit<DiffViewProps, 'isNew' | 'isDeleted'>) {
+export function DiffUnifiedView({ oldContent, newContent, filePath, cwd, enableComments = false, onPreview, previewLabel, headerLeading, onContentSearch, compact = false, highlight = true, onTokenHover, onTokenHoverLeave, onTokenHoverCancel }: Omit<DiffViewProps, 'isNew' | 'isDeleted'>) {
   const { t } = useTranslation();
   const handleTokenMouseOver = useAfterSideTokenHover(onTokenHover);
   const resolvedPreviewLabel = previewLabel ?? t('common.preview');
@@ -932,7 +934,7 @@ export function DiffUnifiedView({ oldContent, newContent, filePath, cwd, enableC
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const allLines = useMemo(() => diffLines.map(line => line.content), [diffLines]);
-  const highlightedLines = useLineHighlight(allLines, filePath);
+  const highlightedLines = useLineHighlight(allLines, filePath, highlight);
 
   // Comment / selection-toolbar / search machinery — SAME hook the split view
   // uses, so unified is at full feature parity. The single scroll container is

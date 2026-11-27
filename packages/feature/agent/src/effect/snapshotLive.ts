@@ -92,8 +92,9 @@ const MAX_TOTAL_BYTES = 1024 * 1024 * 1024 // 1 GB
  */
 const GUARD_BACKOFF_MS = 6 * 3600 * 1000
 
-/** Per-side content cap returned by diff (bytes). */
-const MAX_DIFF_CONTENT_BYTES = 500 * 1024
+/** Per-side byte caps for the initial list and an individually selected file. */
+const INLINE_DIFF_BYTES = 500 * 1024
+const SELECTED_DIFF_BYTES = 2 * 1024 * 1024
 
 /** Max files materialized in one diff response. */
 const MAX_DIFF_FILES = 200
@@ -188,6 +189,7 @@ interface GitResult {
   code: number
   stdout: string
   stderr: string
+  bufferExceeded: boolean
 }
 
 const runGit = (
@@ -195,7 +197,8 @@ const runGit = (
   workTree: string | null,
   args: ReadonlyArray<string>,
   /** Written to the child's stdin then closed (e.g. --pathspec-from-file=-). */
-  input?: string
+  input?: string,
+  maxBuffer = 64 * 1024 * 1024
 ): Effect.Effect<GitResult, AppError> =>
   Effect.tryPromise({
     try: () =>
@@ -215,13 +218,18 @@ const runGit = (
               GIT_INDEX_FILE: join(repoDir, "index"),
             },
             cwd: workTree ?? repoDir,
-            maxBuffer: 64 * 1024 * 1024,
+            maxBuffer,
           },
           (error, stdout, stderr) => {
             // error.code: number exit code on non-zero exit, string (e.g. ENOENT) on spawn failure.
             const raw = (error as { code?: number | string } | null)?.code
             const code = error ? (typeof raw === "number" ? raw : 1) : 0
-            resolve({ code, stdout: String(stdout), stderr: String(stderr) })
+            resolve({
+              code,
+              stdout: String(stdout),
+              stderr: String(stderr),
+              bufferExceeded: raw === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
+            })
           }
         )
         if (input !== undefined) child.stdin?.end(input)
@@ -775,11 +783,12 @@ const showFile = (
   repoDir: string,
   cwd: string,
   rev: string,
-  path: string
-): Effect.Effect<string | null, never> =>
-  runGit(repoDir, cwd, ["show", `${rev}:${path}`]).pipe(
-    Effect.map((r) => (r.code === 0 ? r.stdout : null)),
-    Effect.orElseSucceed(() => null)
+  path: string,
+  maxBytes: number
+): Effect.Effect<{ content: string | null; oversized: boolean }, never> =>
+  runGit(repoDir, cwd, ["show", `${rev}:${path}`], undefined, maxBytes).pipe(
+    Effect.map((r) => ({ content: r.code === 0 ? r.stdout : null, oversized: r.bufferExceeded })),
+    Effect.orElseSucceed(() => ({ content: null, oversized: false }))
   )
 
 /**
@@ -863,15 +872,21 @@ const collectRangeFiles = (
   repoDir: string,
   cwd: string,
   base: string,
-  head: string
-): Effect.Effect<{ files: SnapshotFileDiff[]; truncated: boolean }, AppError> =>
+  head: string,
+  file?: string
+): Effect.Effect<{ files: SnapshotFileDiff[]; truncated: boolean }, AppError | ValidationError> =>
   Effect.gen(function* () {
+    if (file !== undefined && (!file || isAbsolute(file) || file.split("/").includes("..") || file.includes("\0"))) {
+      return yield* Effect.fail(new ValidationError({ field: "file", reason: "invalid path" }))
+    }
+    const paths = file === undefined ? [] : ["--", `:(top,literal)${file}`]
+    const maxBytes = file === undefined ? INLINE_DIFF_BYTES : SELECTED_DIFF_BYTES
     // name-status + numstat in one pass each; numstat flags binaries ("-").
     const nameStatus = yield* runGitOk(repoDir, cwd, [
-      "diff-tree", "-r", "-z", "--no-renames", "--name-status", base, head,
+      "diff-tree", "-r", "-z", "--no-renames", "--name-status", base, head, ...paths,
     ])
     const numstat = yield* runGitOk(repoDir, cwd, [
-      "diff-tree", "-r", "-z", "--no-renames", "--numstat", base, head,
+      "diff-tree", "-r", "-z", "--no-renames", "--numstat", base, head, ...paths,
     ])
     const binarySet = new Set<string>()
     const lineStats = new Map<string, { additions: number; deletions: number }>()
@@ -890,20 +905,19 @@ const collectRangeFiles = (
     for (let i = 0; i + 1 < tokens.length && files.length < MAX_DIFF_FILES; i += 2) {
       const st = tokens[i]
       const path = tokens[i + 1]
+      if (file !== undefined && path !== file) continue
       const status = st === "A" ? "added" : st === "D" ? "deleted" : "modified"
       const binary = binarySet.has(path)
       let oldContent: string | null = null
       let newContent: string | null = null
+      let oversized = false
       if (!binary) {
-        if (status !== "added") oldContent = yield* showFile(repoDir, cwd, base, path)
-        if (status !== "deleted") newContent = yield* showFile(repoDir, cwd, head, path)
-        // Over-cap contents are dropped (client renders a "not viewable" state).
-        if (
-          (oldContent?.length ?? 0) > MAX_DIFF_CONTENT_BYTES ||
-          (newContent?.length ?? 0) > MAX_DIFF_CONTENT_BYTES
-        ) {
-          oldContent = null
-          newContent = null
+        const before = status === "added" ? null : yield* showFile(repoDir, cwd, base, path, maxBytes)
+        const after = status === "deleted" || before?.oversized ? null : yield* showFile(repoDir, cwd, head, path, maxBytes)
+        oversized = Boolean(before?.oversized || after?.oversized)
+        if (!oversized) {
+          oldContent = before?.content ?? null
+          newContent = after?.content ?? null
         }
       }
       const stats = lineStats.get(path)
@@ -921,6 +935,7 @@ const collectRangeFiles = (
         deletions: stats?.deletions ?? 0,
         oldContent,
         newContent,
+        ...(oversized && file === undefined ? { contentDeferred: true } : {}),
         ...(isImage
           ? {
               isImage: true,
@@ -935,13 +950,14 @@ const collectRangeFiles = (
     }
 
     // More name-status tokens than files materialized → response is capped.
-    return { files, truncated: tokens.length / 2 > files.length }
+    return { files, truncated: file === undefined && tokens.length / 2 > files.length }
   })
 
 const diffImpl = (
   snapshotsRoot: string,
   cwd: string,
-  commitHash: string
+  commitHash: string,
+  file?: string
 ): Effect.Effect<SnapshotDiff, AppError | ValidationError | NotFoundError> =>
   Effect.gen(function* () {
     if (!/^[0-9a-f]{6,40}$/i.test(commitHash)) {
@@ -966,7 +982,7 @@ const diffImpl = (
       return yield* Effect.fail(new ValidationError({ field: "commit", reason: "commit not found" }))
     }
     const base = commit.parent ?? EMPTY_TREE
-    const { files, truncated } = yield* collectRangeFiles(repoDir, cwd, base, commit.hash)
+    const { files, truncated } = yield* collectRangeFiles(repoDir, cwd, base, commit.hash, file)
     return { commit, files, truncated } satisfies SnapshotDiff
   }).pipe(Effect.withSpan("snapshot.diff", { attributes: { cwd, commit: commitHash } }))
 
@@ -983,7 +999,8 @@ const rangeDiffImpl = (
   snapshotsRoot: string,
   cwd: string,
   base: string | null,
-  head: string
+  head: string,
+  file?: string
 ): Effect.Effect<SnapshotRangeDiff, AppError | ValidationError | NotFoundError> =>
   Effect.gen(function* () {
     if (base !== null && !/^[0-9a-f]{6,40}$/i.test(base)) {
@@ -1014,7 +1031,8 @@ const rangeDiffImpl = (
       repoDir,
       cwd,
       base ?? EMPTY_TREE,
-      headCommit.hash
+      headCommit.hash,
+      file
     )
     return { base, head: headCommit, files, truncated } satisfies SnapshotRangeDiff
   }).pipe(Effect.withSpan("snapshot.rangeDiff", { attributes: { cwd, base: base ?? "empty-tree", head } }))
@@ -1190,9 +1208,8 @@ export const SnapshotServiceLive = Layer.scoped(
         toolIds: ReadonlyArray<string>,
         sessionKey?: string,
       ) => listByToolIdsImpl(snapshotsRoot, cwd, toolIds, sessionKey),
-      diff: (cwd: string, commitHash: string) => diffImpl(snapshotsRoot, cwd, commitHash),
-      rangeDiff: (cwd: string, base: string | null, head: string) =>
-        rangeDiffImpl(snapshotsRoot, cwd, base, head),
+      diff: (cwd, commitHash, file) => diffImpl(snapshotsRoot, cwd, commitHash, file),
+      rangeDiff: (cwd, base, head, file) => rangeDiffImpl(snapshotsRoot, cwd, base, head, file),
       blob: (cwd: string, rev: string, file: string) => blobImpl(snapshotsRoot, cwd, rev, file),
       cleanup,
     })

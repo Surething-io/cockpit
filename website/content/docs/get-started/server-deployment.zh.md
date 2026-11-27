@@ -1,5 +1,7 @@
 在 Ubuntu 服务器上安装 OpenCockpit，用 systemd 开机自启，再通过 SSH 隧道、内网或 HTTPS 域名访问。项目文件、终端和 Agent 进程都在服务器上运行。
 
+如果 Cockpit 跑在自己的电脑或本地 Docker 里，见 [本机远程访问](/zh/docs/get-started/remote-access/)。
+
 ## 安装
 
 准备 Ubuntu、[Node.js 22.19.0 或更新版本](https://nodejs.org/en/download)、npm、Git 和 OpenSSL。把 Node 和 npm 安装在系统级路径，确保 systemd 的服务账户也能运行它们。

@@ -1,5 +1,7 @@
 Install OpenCockpit on an Ubuntu server, start it at boot with systemd, and connect over SSH, a private network, or a public HTTPS domain. Project files, terminals, and agent processes stay on the server.
 
+If Cockpit runs on your own computer or in local Docker, see [Remote Access from Your Computer](/en/docs/get-started/remote-access/).
+
 ## Install
 
 Use Ubuntu with [Node.js 22.19.0 or later](https://nodejs.org/en/download), npm, Git, and OpenSSL. Install Node and npm system-wide so the systemd service user can run them.

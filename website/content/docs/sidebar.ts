@@ -58,6 +58,7 @@ export const docsSidebar: DocSection[] = [
       // Running it on a server — the third way to run Cockpit, after the
       // local quickstart and the desktop app.
       { slug: 'get-started/server-deployment', labelKey: 'serverDeployment', available: true },
+      { slug: 'get-started/remote-access', labelKey: 'remoteAccess', available: true },
     ],
   },
 

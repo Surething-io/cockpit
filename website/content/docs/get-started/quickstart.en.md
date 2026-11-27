@@ -74,7 +74,7 @@ A narrow screen (phone/tablet) install lands on the `/m` mobile view, while a de
 
 On your computer, open Cockpit at a domain or private-network address your phone can reach, then click the **Open on phone** QR icon in the top bar. Scanning opens the mobile view and goes straight to the current session if one is open. The QR icon is hidden on `localhost`. With token authentication enabled, the QR code contains the access token. Treat it like a password.
 
-To keep Cockpit running on a server, see [Server Deployment](/en/docs/get-started/server-deployment/).
+To open Cockpit on your own computer or in Docker from your phone, see [Remote Access from Your Computer](/en/docs/get-started/remote-access/). To keep Cockpit running on a server, see [Server Deployment](/en/docs/get-started/server-deployment/).
 
 ## Your first chat
 

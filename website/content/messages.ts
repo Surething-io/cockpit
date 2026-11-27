@@ -462,6 +462,7 @@ export const messages = {
         desktopApp: 'Desktop App for AI Coding Agents on macOS and Windows',
         // Not "Self-Host …": that phrasing belongs to the self-host-claude-code-gui-for-your-team post.
         serverDeployment: 'Linux Server Setup: systemd, HTTPS and Phone Access',
+        remoteAccess: 'Remote Access with Cloudflare Tunnel and Docker',
       },
       readOnGithub: 'Read on GitHub',
       comingSoon: 'Coming soon',
@@ -489,6 +490,7 @@ export const messages = {
           // Get Started
           introduction: 'Introduction',
           quickstart: 'Quickstart',
+          remoteAccess: 'Remote Access from Your Computer',
           desktopApp: 'Desktop App',
 
           // Agent panel (chat)
@@ -992,6 +994,7 @@ export const messages = {
         terminalBubble: 'AI 编程会话里的 Web 终端',
         desktopApp: 'macOS、Windows 桌面 App：AI 编程 Agent 的独立窗口',
         serverDeployment: 'Linux 服务器部署：systemd、HTTPS 与手机访问',
+        remoteAccess: '用 Cloudflare Tunnel 访问本机或 Docker 上的 Cockpit',
       },
       readOnGithub: '在 GitHub 阅读',
       comingSoon: '即将上线',
@@ -1016,6 +1019,7 @@ export const messages = {
           // Get Started
           introduction: '简介',
           quickstart: '快速开始',
+          remoteAccess: '本机远程访问',
           desktopApp: '桌面 App',
 
           // Agent 面板（对话）

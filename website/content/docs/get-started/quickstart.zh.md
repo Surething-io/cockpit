@@ -74,7 +74,7 @@ cockpit app install
 
 在电脑上用手机也能访问的域名或内网地址打开 Cockpit，点击顶栏二维码图标 **在手机上打开**。扫码会打开手机版，电脑上已有打开的会话时会直达该会话。通过 `localhost` 打开时，二维码入口会隐藏。启用 Token 验证后，二维码包含访问令牌，请按密码保管。
 
-如果想把 Cockpit 常驻在服务器上，见 [服务端部署](/zh/docs/get-started/server-deployment/)。
+要用手机访问正在本机或 Docker 运行的 Cockpit，见 [本机远程访问](/zh/docs/get-started/remote-access/)。如果想把 Cockpit 常驻在服务器上，见 [服务端部署](/zh/docs/get-started/server-deployment/)。
 
 ## 开始聊天
 

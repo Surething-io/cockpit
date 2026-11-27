@@ -19,7 +19,7 @@ import { readPiSession } from './piSessionLive';
  *             a later unrelated success cannot resolve an outstanding input.
  *   codex     last lifecycle event_msg: task_complete (error → failed), turn_aborted.
  */
-import { open, stat } from "node:fs/promises"
+import { open, readFile, stat } from "node:fs/promises"
 import { basename, isAbsolute } from "node:path"
 import { randomUUID } from "node:crypto"
 import { Duration, Effect, Either, Layer, Ref } from "effect"
@@ -41,6 +41,7 @@ import {
 } from "@cockpit/effect-services"
 import { buildSessionLink } from "@cockpit/shared-utils/sessionLink"
 import { dispatchChat } from "../server/engines/orchestrator"
+import { delegatedOriginLine, parseMessageOrigin, sentOriginLine } from "../shared/messageOrigin"
 import type { DispatchParams } from "../server/engines/types"
 import { getEngineSpec } from "../server/engines/registry"
 import {
@@ -114,6 +115,27 @@ const inheritedEngine = (parentRunId: string | null | undefined): DelegationEngi
     : "claude"
 }
 
+/**
+ * The engine an existing session runs on, read from where its transcript lives. The body
+ * may not choose one: the session already has an engine, and a mismatch would either
+ * resume it on the wrong engine or fail somewhere far less legible than here.
+ */
+const existingSessionEngine = (
+  cwd: string,
+  sessionId: string,
+  body: Readonly<Record<string, unknown>>
+): Effect.Effect<DelegationEngine, ValidationError> =>
+  Effect.gen(function* () {
+    if (str(body.engine)) return yield* Effect.fail(invalid("engine", "an existing session keeps its own engine; omit engine with sessionId"))
+    if (str(body.model)) return yield* Effect.fail(invalid("model", "an existing session keeps its own model; omit model with sessionId"))
+    const store = yield* Effect.tryPromise(() => resolveSessionPath(cwd, sessionId)).pipe(Effect.orElseSucceed(() => null))
+    if (!store) return yield* Effect.fail(invalid("sessionId", `no session ${sessionId} in ${cwd}`))
+    if (!DELEGATION_ENGINES.includes(store.engine as DelegationEngine)) {
+      return yield* Effect.fail(invalid("sessionId", `session runs on ${store.engine}, which cannot take delegated input`))
+    }
+    return store.engine as DelegationEngine
+  })
+
 export const validateRequest = (
   body: Readonly<Record<string, unknown>>,
   parentRunId?: string | null
@@ -123,7 +145,10 @@ export const validateRequest = (
     if (!cwd || !isAbsolute(cwd)) return yield* Effect.fail(invalid("cwd", "must be an absolute path"))
     if (!(yield* isDirectory(cwd))) return yield* Effect.fail(invalid("cwd", "directory does not exist"))
 
-    const engine = (str(body.engine) ?? inheritedEngine(parentRunId)) as DelegationEngine
+    const sessionId = str(body.sessionId)
+    const engine = sessionId
+      ? yield* existingSessionEngine(cwd, sessionId, body)
+      : (str(body.engine) ?? inheritedEngine(parentRunId)) as DelegationEngine
     if (!DELEGATION_ENGINES.includes(engine)) {
       return yield* Effect.fail(invalid("engine", `expected one of ${DELEGATION_ENGINES.join(", ")}`))
     }
@@ -139,16 +164,30 @@ export const validateRequest = (
     const fallbackTitle = prompt ? prompt.split("\n")[0] : basename(briefPath!)
     const title = (str(body.title) ?? fallbackTitle).replace(/\s+/g, " ").slice(0, TITLE_MAX)
     const model = str(body.model)
-    return { cwd, engine, title, ...(model && { model }), ...(prompt && { prompt }), ...(briefPath && { briefPath }) }
+    return {
+      cwd, engine, title,
+      ...(model && { model }), ...(prompt && { prompt }), ...(briefPath && { briefPath }), ...(sessionId && { sessionId }),
+    }
   })
 
 /** The child's first message: title first (session lists title a session by it), then origin, then the task. */
 export const buildChildPrompt = (request: DelegateRequest, parent: DelegationParent | null): string => {
   const lines: string[] = [`Task: ${request.title}`]
-  if (parent) lines.push(`[Delegated from Cockpit session ${parent.link} (${basename(parent.cwd)})]`)
+  if (parent) lines.push(delegatedOriginLine(parent.link, basename(parent.cwd)))
   lines.push("")
   if (request.prompt) lines.push(request.prompt)
   if (request.briefPath) lines.push(`Read this task brief first, then carry it out: ${request.briefPath}`)
+  return lines.join("\n")
+}
+
+/**
+ * A message sent into an existing session: origin first, then the task. No `Task:` title
+ * line — the session already has its own title, and this is one more turn in it.
+ */
+export const buildSessionMessage = (request: DelegateRequest, parent: DelegationParent | null, inputId?: string): string => {
+  const lines: string[] = [sentOriginLine(parent?.link ?? null, parent ? basename(parent.cwd) : "", inputId), ""]
+  if (request.prompt) lines.push(request.prompt)
+  if (request.briefPath) lines.push(`Read this brief first, then carry it out: ${request.briefPath}`)
   return lines.join("\n")
 }
 
@@ -385,10 +424,98 @@ export const piUnfinishedInput = (
   };
 }
 
+type RawEntry = { readonly [key: string]: unknown }
+type InputFormat = "claude" | "codex" | "pi"
+
+const textOf = (content: unknown): string | null => {
+  if (typeof content === "string") return content
+  if (!Array.isArray(content)) return null
+  const blocks = content as Array<{ type?: string; text?: string }>
+  if (blocks.some((b) => b?.type === "tool_result")) return null // a tool result, not a person
+  const text = blocks.filter((b) => b?.type === "text").map((b) => b.text ?? "").join("")
+  return text || null
+}
+
+/** The text of a HUMAN turn in a raw transcript entry, or null for anything else. */
+export const humanTurnText = (entry: RawEntry, format: InputFormat): string | null => {
+  if (format === "codex") {
+    const payload = entry.payload as { type?: string; message?: unknown } | undefined
+    return entry.type === "event_msg" && payload?.type === "user_message" && typeof payload.message === "string" ? payload.message : null
+  }
+  if (format === "pi") {
+    const message = entry.message as { role?: string; content?: unknown } | undefined
+    return entry.type === "message" && message?.role === "user" ? textOf(message.content) : null
+  }
+  if (entry.type !== "user" || entry.isMeta) return null
+  return textOf((entry.message as { content?: unknown } | undefined)?.content)
+}
+
+/**
+ * Where ONE message sent into an existing session (its origin line carries `inputId`) stands
+ * in the raw transcript: whether it arrived at all, whether it is still the latest human
+ * turn, and — when a later human turn followed — the engine's own end-of-turn evidence for
+ * ITS segment (the entries between it and the next human turn). Having produced some text is
+ * not evidence: a turn stopped after "let me look" has text and never finished.
+ */
+export const inputSegment = (
+  entries: ReadonlyArray<RawEntry>,
+  format: InputFormat,
+  engine: string,
+  inputId: string
+): { found: false } | { found: true; latest: true } | { found: true; latest: false; terminal: Terminal } => {
+  const human = entries.flatMap((entry, i) => {
+    const text = humanTurnText(entry, format)
+    return text === null ? [] : [{ i, text }]
+  })
+  const at = human.findIndex((h) => parseMessageOrigin(h.text)?.inputId === inputId)
+  if (at === -1) return { found: false }
+  if (at === human.length - 1) return { found: true, latest: true }
+  const segment = entries.slice(human[at].i + 1, human[at + 1].i)
+  let terminal: Terminal
+  if (format === "codex") terminal = codexTerminal(segment as TranscriptEntry[]) ?? "incomplete"
+  else if (format === "pi") {
+    const last = [...segment].reverse().find((e) => e.type === "message" && (e.message as { role?: string } | undefined)?.role === "assistant")
+    const stop = (last?.message as { stopReason?: string } | undefined)?.stopReason
+    terminal = stop === "stop" ? "done" : stop === "error" ? "failed" : "incomplete"
+  } else terminal = claudeShapedTerminal(segment as TranscriptEntry[], engine) ?? "incomplete"
+  return { found: true, latest: false, terminal }
+}
+
+const NOT_DELIVERED = "The message was not delivered: the session stopped before it took it in."
+
+/**
+ * The status report for ONE message (`inputId`), never the session's latest turn:
+ *   not in the transcript  → running while the session runs (it may still be queued),
+ *                            else "not delivered"
+ *   the latest human turn  → the session's own state (running, or its terminal state)
+ *   followed by later turns → its own segment's end-of-turn evidence; a later run going on
+ *                            in the session does not make this one "running"
+ * The reply is the last answer between it and the next human turn.
+ */
+export const inputOutcome = (
+  messages: ReadonlyArray<{ role: string; content: string }>,
+  segment: ReturnType<typeof inputSegment>,
+  inputId: string,
+  sessionStatus: SessionRunStatus,
+  max: number
+): { status: SessionRunStatus; lastReply: string | null; lastReplyTruncated: boolean } => {
+  if (!segment.found) {
+    return sessionStatus === "running"
+      ? { status: "running", lastReply: null, lastReplyTruncated: false }
+      : { status: "incomplete", lastReply: NOT_DELIVERED, lastReplyTruncated: false }
+  }
+  const at = messages.findIndex((m) => m.role === "user" && parseMessageOrigin(m.content)?.inputId === inputId)
+  const after = at === -1 ? [] : messages.slice(at + 1)
+  const next = after.findIndex((m) => m.role === "user")
+  const reply = lastReplyOf(next === -1 ? after : after.slice(0, next), max)
+  return { status: segment.latest ? sessionStatus : segment.terminal, ...reply }
+}
+
 const statusImpl = (
   cwd: string,
   sessionId: string,
-  full: boolean
+  full: boolean,
+  inputId?: string
 ): Effect.Effect<SessionStatusReport, NotFoundError | AppError> =>
   Effect.gen(function* () {
     const busyAtStart = yield* Effect.sync(() => isSessionBusy(sessionId))
@@ -424,13 +551,27 @@ const statusImpl = (
             ).pipe(Effect.catchAll((error) => (error.cause as NodeJS.ErrnoException)?.code === 'ENOENT'
               ? readTerminal(source, (entries) => engine === "codex" ? codexTerminal(entries) : claudeShapedTerminal(entries, engine))
               : Effect.fail(error)))
+      const max = full ? Number.POSITIVE_INFINITY : LAST_REPLY_MAX
+      if (inputId) {
+        const format: InputFormat = piView ? "pi" : engine === "codex" ? "codex" : "claude"
+        const raw: ReadonlyArray<RawEntry> = piView
+          ? (piView.entries as unknown as RawEntry[])
+          : parseTailEntries(
+              typeof source === "string"
+                ? yield* Effect.tryPromise({ try: () => readFile(source, "utf-8"), catch: (cause) => new AppError({ message: `failed to read transcript ${source}`, cause }) })
+                : source.text,
+              false
+            ) as unknown as RawEntry[]
+        const segment = inputSegment(raw, format, engine, inputId)
+        return { cwd, sessionId, engine: store.engine, title: parsed.title, ...inputOutcome(parsed.messages, segment, inputId, status, max), link }
+      }
       return {
         cwd,
         sessionId,
         engine: store.engine,
         title: parsed.title,
         status,
-        ...lastReplyOf(unfinished && !running ? [{ role: 'assistant', content: unfinished.text }] : parsed.messages, full ? Number.POSITIVE_INFINITY : LAST_REPLY_MAX),
+        ...lastReplyOf(unfinished && !running ? [{ role: 'assistant', content: unfinished.text }] : parsed.messages, max),
         link,
       }
     })).pipe(Effect.mapError((cause) => cause instanceof AppError ? cause : new AppError({ message: "Cannot read session status", cause })))
@@ -466,6 +607,44 @@ export const DelegationServiceLive = Layer.effect(
         const spec = getEngineSpec(request.engine)
         if (!spec) return yield* Effect.fail(invalid("engine", `no engine spec for ${request.engine}`))
         const parent = yield* resolveParent(parentRunId)
+
+        // Into an existing session: exactly what typing into it does. A live run takes the
+        // message mid-run (`inject`), an idle session starts its next turn; the session's
+        // recorded model is used. No slot is claimed — no new session is being created, and
+        // a person typing the same message into that tab is not capped either.
+        if (request.sessionId) {
+          const target = request.sessionId
+          if (parent && parent.sessionId === target) {
+            return yield* Effect.fail(invalid("sessionId", "a session cannot send a task to itself"))
+          }
+          // The message's own identity: written into its origin line and returned in the
+          // receipt, so `status` can follow THIS message rather than the session's last turn.
+          const inputId = randomUUID()
+          const outcome = yield* Effect.tryPromise({
+            try: () => dispatchChat(spec, {
+              prompt: buildSessionMessage(request, parent, inputId),
+              cwd: request.cwd,
+              engine: request.engine,
+              sessionId: target,
+              runId: inputId,
+              inject: true,
+            }),
+            catch: (cause) => new AgentError({ provider: request.engine, kind: "unknown", cause }),
+          })
+          if (!outcome.ok) return yield* Effect.fail(invalid("sessionId", outcome.error))
+          return {
+            cwd: request.cwd,
+            engine: request.engine,
+            sessionId: target,
+            link: buildSessionLink(request.cwd, target),
+            title: request.title,
+            createdAt: Date.now(),
+            existing: true,
+            inputId,
+            ...(parent && { parent }),
+          }
+        }
+
         const presetId = randomUUID()
 
         // dispatchChat's preflight settles `model` in place — an engine may complete a bare
@@ -524,7 +703,7 @@ export const DelegationServiceLive = Layer.effect(
       validate: validateRequest,
       delegate,
       status: (cwd, sessionId, options) =>
-        statusImpl(cwd, sessionId, options?.full === true).pipe(Effect.withSpan("delegation.status")),
+        statusImpl(cwd, sessionId, options?.full === true, options?.inputId).pipe(Effect.withSpan("delegation.status")),
     })
   })
 )

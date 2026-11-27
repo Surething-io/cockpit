@@ -5,7 +5,9 @@ import {
 import { getSessionTitle } from '../state/globalState';
 import { runSdkLoop, type BuildSdkOptions } from './shared/sdkLoop';
 import { stashTranscript, mergeStashedTranscript } from './shared/noHistoryTranscript';
-import type { EngineSpec, RunCtx } from './types';
+import type { EngineSpec, RunCtx, TitleSuggestionRequest } from './types';
+import { query } from '@anthropic-ai/claude-agent-sdk';
+import { suggestionModel } from './sessionModel';
 
 type PlanPermissionResult =
   | { behavior: 'allow'; updatedInput: Record<string, unknown> }
@@ -179,8 +181,45 @@ function buildClaudeOptions(ctx: RunCtx, independent: boolean): BuildSdkOptions 
   });
 }
 
+/**
+ * One answer from the session's model with no session behind it: `persistSession: false`
+ * writes no transcript, no tools and one turn keep it a plain completion, and no setting
+ * sources means no hooks or project instructions run for what is only a title.
+ */
+async function suggestClaudeTitle({ cwd, sessionId, prompt, signal }: TitleSuggestionRequest): Promise<string> {
+  const abortController = new AbortController();
+  const abort = () => abortController.abort();
+  signal.addEventListener('abort', abort, { once: true });
+  try {
+    const model = await suggestionModel('claude', cwd, sessionId);
+    let text = '';
+    for await (const message of query({
+      prompt,
+      options: {
+        cwd,
+        ...(model && { model }),
+        tools: [],
+        maxTurns: 1,
+        persistSession: false,
+        settingSources: [],
+        abortController,
+        env: sanitizedSpawnEnv({}),
+      },
+    })) {
+      const m = message as { type?: string; subtype?: string; result?: unknown; errors?: unknown };
+      if (m.type !== 'result') continue;
+      if (m.subtype !== 'success') throw new Error(`Title suggestion failed: ${JSON.stringify(m.errors ?? m.subtype)}`);
+      if (typeof m.result === 'string') text = m.result;
+    }
+    return text;
+  } finally {
+    signal.removeEventListener('abort', abort);
+  }
+}
+
 export const claudeSpec: EngineSpec = {
   name: 'claude',
+  suggestTitle: suggestClaudeTitle,
   runner: {
     async run(ctx) {
       const runCtx = withClaudePromptEffort(ctx);

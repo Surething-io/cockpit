@@ -1,12 +1,15 @@
 'use client'
 
 import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Bot, FolderOpen, FolderPlus, Trash2, X } from 'lucide-react'
+import { Bot, FolderOpen, FolderPlus, MessageSquare, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { BrowserRuntime } from '@cockpit/effect-runtime'
 import { publishTopic } from '@cockpit/effect-react'
 import { Topics } from '@cockpit/effect-services'
-import { addBot, failureMessage, loadBots, notifyBotsChanged, removeBot, type BotInfo } from '@cockpit/shared-api'
+import {
+  addBot, failureMessage, loadBots, loadSessionBots, notifyBotsChanged, removeBot, removeSessionBot,
+  type BotInfo, type SessionBotInfo,
+} from '@cockpit/shared-api'
 import { MODAL_SHELL_CLASS, toast } from '@cockpit/shared-ui'
 import { DirectoryPane } from '@cockpit/feature-explorer'
 import {
@@ -72,12 +75,20 @@ export function BotsModal({ isOpen, onClose, onOpenSession }: BotsModalProps) {
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null)
   // Recent sessions, fetched per open; the Sessions tab filters them by Bot.
   const [sessions, setSessions] = useState<ReadonlyArray<RecentSessionInfo>>([])
+  // Session Bots: sessions ticked "can be @-mentioned" in their title dialog. Listed here
+  // with the directory Bots because `@` treats them as one list.
+  const [sessionBots, setSessionBots] = useState<ReadonlyArray<SessionBotInfo>>([])
 
   const reload = useCallback(async () => {
     setLoading(true)
-    const exit = await BrowserRuntime.runPromiseExit(loadBots())
+    const [exit, sessionExit] = await Promise.all([
+      BrowserRuntime.runPromiseExit(loadBots()),
+      BrowserRuntime.runPromiseExit(loadSessionBots()),
+    ])
     if (exit._tag === 'Success') setBots(exit.value)
     else toast(failureMessage(exit.cause, t('bots.loadFailed')), 'error')
+    if (sessionExit._tag === 'Success') setSessionBots(sessionExit.value)
+    else toast(failureMessage(sessionExit.cause, t('bots.loadFailed')), 'error')
     setLoading(false)
   }, [t])
 
@@ -121,23 +132,45 @@ export function BotsModal({ isOpen, onClose, onOpenSession }: BotsModalProps) {
       { key: 'builtin', labelKey: 'bots.builtin', items: filtered.filter((b) => b.builtin).slice().sort(byName) },
     ].filter((g) => g.items.length > 0)
   }, [filtered])
-  const flat = useMemo(() => groups.flatMap((g) => g.items), [groups])
+  const filteredSessionBots = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    const items = [...sessionBots].sort((a, b) => (a.name ?? a.title).localeCompare(b.name ?? b.title))
+    if (!needle) return items
+    return items.filter((bot) => `${bot.title}\n${bot.cwd}`.toLowerCase().includes(needle))
+  }, [sessionBots, query])
+  const flat = useMemo(() => [
+    ...groups.flatMap((g) => g.items.map((b) => b.id)),
+    ...filteredSessionBots.map(sessionBotId),
+  ], [groups, filteredSessionBots])
   const selected = selectedId ? bots.find((b) => b.id === selectedId) ?? null : null
+  const selectedSession = selectedId ? sessionBots.find((b) => sessionBotId(b) === selectedId) ?? null : null
 
   // Auto-select the first row; only fills a hole (nothing selected, or removed).
   useEffect(() => {
-    if (!isOpen || selected) return
-    setSelectedId(flat[0]?.id ?? null)
-  }, [isOpen, selected, flat])
+    if (!isOpen || selected || selectedSession) return
+    setSelectedId(flat[0] ?? null)
+  }, [isOpen, selected, selectedSession, flat])
 
 
   // Built-in Bots ship with Cockpit and are always present, so they must not
   // count towards "is this panel empty?" — otherwise the first-run guidance
   // below could never appear again, and `filtered.length === 0` (the old empty
   // state) became unreachable the moment the first built-in was added.
-  const userBotCount = useMemo(() => bots.filter((bot) => !bot.builtin).length, [bots])
+  const userBotCount = useMemo(() => bots.filter((bot) => !bot.builtin).length + sessionBots.length, [bots, sessionBots])
   const searching = query.trim().length > 0
   const showGuidance = !searching && userBotCount === 0
+
+  // Only stops the session being a Bot; the session and its title are untouched.
+  const unregisterSession = useCallback(async (bot: SessionBotInfo) => {
+    const exit = await BrowserRuntime.runPromiseExit(removeSessionBot(bot.cwd, bot.sessionId))
+    if (exit._tag === 'Success') {
+      setSessionBots((current) => current.filter((b) => sessionBotId(b) !== sessionBotId(bot)))
+      notifyBotsChanged()
+      toast(t('bots.removed'), 'success')
+    } else {
+      toast(failureMessage(exit.cause, t('bots.removeFailed')), 'error')
+    }
+  }, [t])
 
   const unregister = useCallback(async (id: string) => {
     const exit = await BrowserRuntime.runPromiseExit(removeBot(id))
@@ -221,6 +254,25 @@ export function BotsModal({ isOpen, onClose, onOpenSession }: BotsModalProps) {
                   </div>
                 ))}
 
+                {filteredSessionBots.length > 0 && (
+                  <div className="rounded-lg border border-border">
+                    <div className="sticky top-0 z-10 px-3 py-1.5 bg-card rounded-t-lg border-b border-border/60 text-[11px] font-medium text-muted-foreground flex items-center">
+                      <span data-tooltip={t('bots.sessionGroupHint')}>{t('bots.sessionGroup')}</span>
+                      <span className="ml-auto tabular-nums text-foreground-subtle">{filteredSessionBots.length}</span>
+                    </div>
+                    <div className="p-1 space-y-0.5">
+                      {filteredSessionBots.map((bot) => (
+                        <SessionBotRow
+                          key={sessionBotId(bot)}
+                          bot={bot}
+                          selected={sessionBotId(bot) === selectedId}
+                          onSelect={setSelectedId}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {flat.length === 0 && searching && (
                   <p className="text-center text-xs text-muted-foreground py-6">{t('bots.emptyNoMatch')}</p>
                 )}
@@ -263,6 +315,16 @@ export function BotsModal({ isOpen, onClose, onOpenSession }: BotsModalProps) {
                 onOpenSession={(cwd, sessionId) => { onOpenSession(cwd, sessionId); onClose() }}
                 onClose={onClose}
               />
+            ) : selectedSession ? (
+              <SessionBotDetail
+                key={sessionBotId(selectedSession)}
+                bot={selectedSession}
+                confirmingRemove={confirmRemoveId === sessionBotId(selectedSession)}
+                onAskRemove={() => setConfirmRemoveId(sessionBotId(selectedSession))}
+                onCancelRemove={() => setConfirmRemoveId(null)}
+                onRemove={() => { setConfirmRemoveId(null); void unregisterSession(selectedSession) }}
+                onOpenSession={() => { onOpenSession(selectedSession.cwd, selectedSession.sessionId); onClose() }}
+              />
             ) : (
               <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">
                 {t('bots.selectHint')}
@@ -273,6 +335,94 @@ export function BotsModal({ isOpen, onClose, onOpenSession }: BotsModalProps) {
       </div>
 
       {showAdd && <AddBotDialog onCancel={closeAdd} onAdded={onAdded} />}
+    </div>
+  )
+}
+
+const sessionBotId = (bot: { cwd: string; sessionId: string }) => `session:${bot.cwd}\n${bot.sessionId}`
+const projectOf = (cwd: string) => cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd
+
+interface SessionBotRowProps {
+  readonly bot: SessionBotInfo
+  readonly selected: boolean
+  readonly onSelect: (id: string) => void
+}
+
+/** A session Bot: its `@` name (or why it has none) over its project. */
+const SessionBotRow = memo(function SessionBotRow({ bot, selected, onSelect }: SessionBotRowProps) {
+  const { t } = useTranslation()
+  const unusable = !bot.name || !bot.engine
+  return (
+    <div
+      onClick={() => onSelect(sessionBotId(bot))}
+      className={`rounded-md px-2 py-2 cursor-pointer transition-colors ${selected ? 'bg-brand/10' : 'hover:bg-hover'}`}
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <MessageSquare className="w-4 h-4 text-brand flex-shrink-0" />
+        <span className={`font-medium text-xs truncate flex-1 min-w-0 ${unusable ? 'text-muted-foreground' : 'text-foreground'}`} data-tooltip={bot.title}>
+          {bot.name ? `@${bot.name}` : bot.title}
+        </span>
+        {unusable && <span className="text-[10px] text-destructive flex-shrink-0">{t('bots.invalid')}</span>}
+      </div>
+      <p className={`text-xs mt-0.5 pl-6 truncate ${unusable ? 'text-destructive' : 'text-muted-foreground'}`} data-tooltip={bot.cwd}>
+        {!bot.engine ? t('bots.sessionGone') : !bot.name ? t('bots.sessionNameInvalid') : projectOf(bot.cwd)}
+      </p>
+    </div>
+  )
+})
+
+interface SessionBotDetailProps {
+  readonly bot: SessionBotInfo
+  readonly confirmingRemove: boolean
+  readonly onAskRemove: () => void
+  readonly onCancelRemove: () => void
+  readonly onRemove: () => void
+  readonly onOpenSession: () => void
+}
+
+/** Right pane for a session Bot: how to address it, then the session's own transcript. */
+function SessionBotDetail({ bot, confirmingRemove, onAskRemove, onCancelRemove, onRemove, onOpenSession }: SessionBotDetailProps) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-border flex-shrink-0">
+        <div className="flex-1 min-w-0">
+          <h2 className="text-sm font-medium text-foreground truncate">{bot.name ? `@${bot.name}` : bot.title}</h2>
+          <div className="text-xs text-muted-foreground mt-0.5 truncate">
+            {bot.name ? t('bots.sessionUsage', { name: bot.name }) : t('bots.sessionNameInvalid')}
+          </div>
+        </div>
+        {confirmingRemove ? (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button onClick={onRemove} className="px-2 py-1 text-xs rounded bg-red-9 text-white hover:bg-red-10">
+              {t('bots.removeSession')}
+            </button>
+            <button onClick={onCancelRemove} className="px-2 py-1 text-xs rounded border border-border text-muted-foreground hover:text-foreground">
+              {t('common.cancel')}
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onAskRemove}
+            className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-red-9/10 flex-shrink-0"
+            data-tooltip={t('bots.removeSession')}
+            aria-label={t('bots.removeSession')}
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+      {bot.engine ? (
+        <SessionTranscriptPreview
+          cwd={bot.cwd}
+          sessionId={bot.sessionId}
+          subtitle={bot.title}
+          emptyText={t('bots.noSessions')}
+          onOpenSession={onOpenSession}
+        />
+      ) : (
+        <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">{t('bots.sessionGone')}</div>
+      )}
     </div>
   )
 }

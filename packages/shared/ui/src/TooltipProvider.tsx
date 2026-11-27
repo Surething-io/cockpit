@@ -144,8 +144,10 @@ export function TooltipProvider() {
          dark chip in light mode, a surface lifted above the base in dark — so
          the border is no longer load-bearing and steps down from brand to a
          plain line. shadow-lv3 rather than lv2 because this is the topmost
-         layer in the app (z-9999), above even menus. */
-      className="fixed z-[9999] max-w-[min(80vw,64rem)] px-2 py-1 bg-tooltip text-tooltip-foreground text-xs font-mono rounded shadow-lv3 border border-line-1 whitespace-pre-wrap break-words pointer-events-none"
+         layer in the app — above menus (z-9999) and modal dialogs (z-10000)
+         alike, or a button's tip inside a dialog renders behind it. It never
+         takes the pointer, so sitting on top costs nothing. */
+      className="fixed z-[10001] max-w-[min(80vw,64rem)] px-2 py-1 bg-tooltip text-tooltip-foreground text-xs font-mono rounded shadow-lv3 border border-line-1 whitespace-pre-wrap break-words pointer-events-none"
       style={{ left: pos.left, top: pos.top }}
     >
       {tip.text}

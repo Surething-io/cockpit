@@ -2,6 +2,8 @@
 import { resolveOllamaConnection, readOllamaLastModel, rememberOllamaLastModel } from '@cockpit/shared-utils';
 import { runPiAgentPromise } from '../../effect/piAgentLive';
 import { readPiModel } from '../../effect/piSessionLive';
+import { openAiCompatibleTitle } from './shared/titleSuggestion';
+import { readSessionModel } from './sessionModel';
 import { listOllamaModels, type OllamaCatalogEntry } from './ollamaCatalog';
 import type { DispatchParams, EngineSpec } from './types';
 
@@ -99,6 +101,15 @@ async function resolveOllamaModel(params: DispatchParams): Promise<Preflight> {
 
 export const ollamaSpec: EngineSpec = {
   name: 'ollama',
+  // The session's model (else the default pick) as one plain completion on the same server.
+  async suggestTitle({ cwd, sessionId, prompt, signal }) {
+    // Picker first (what the next turn would run), then the transcript's last model.
+    const recorded = await readSessionModel('ollama', cwd, sessionId) ?? await readPiModel(cwd, sessionId, 'ollama');
+    const choice = recorded ? { ok: true as const, model: recorded } : await resolveDefaultOllamaModel();
+    if (!choice.ok) throw new Error(choice.reason);
+    const connection = await resolveOllamaConnection();
+    return openAiCompatibleTitle({ baseUrl: `${connection.baseUrl}/v1`, apiKey: connection.apiKey || 'ollama', model: choice.model, prompt, signal });
+  },
   async preflight(params) {
     return resolveOllamaModel(params);
   },

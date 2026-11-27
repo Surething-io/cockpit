@@ -8,6 +8,8 @@ import path, { join } from 'path';
 import type { BotSummary } from '@cockpit/effect-services';
 import { BOTS_FILE, COCKPIT_DIR, SKILLS_FILE } from '@cockpit/shared-utils';
 import { mentionableBots, resolveBot } from '../../shared/bots';
+import { matchSessionMention, type MentionableSession } from '../../shared/sessionMention';
+import { footerHeader } from '../../shared/commandPrompt';
 import { listBuiltinBots, realpathOr } from './builtinBots';
 import {
   listBuiltinSkillExtras,
@@ -111,6 +113,13 @@ export function resolveCommandPrompt(
   language = 'en',
   _req?: Request,
   cwd?: string,
+  // Session Bots addressable as `@<title>` (server/lib/sessionBots). Passed in rather than
+  // read here: their titles come from async title metadata, and this function stays sync
+  // for its callers. The caller loads them only when a line starts with `@`.
+  sessionBots: ReadonlyArray<MentionableSession> = [],
+  // The session this message is being sent IN. A session Bot cannot be handed its own
+  // message: the task would land back in this very turn.
+  selfSessionId?: string,
 ): string {
   const lang: 'zh' | 'en' = language.startsWith('zh') ? 'zh' : 'en';
 
@@ -135,7 +144,10 @@ export function resolveCommandPrompt(
   // `local` is decided PER LINE: `@a` is compared against a's directory and
   // `@b` against b's, so a message may legitimately carry one of each. Nothing
   // about one line changes the verdict of another.
-  const cmds: Array<{ i: number; marker: StepMarker; cmd: string; rest: string; local: boolean }> = [];
+  // `session` is not a marker anyone types: it is an `@` line that named no Bot but did
+  // name a session Bot. Kept distinct from '@' so every Bot rule below (handoff
+  // paths, bot-run, bot-turn) stays Bot-only.
+  const cmds: Array<{ i: number; marker: StepMarker | 'session'; cmd: string; rest: string; local: boolean; session?: MentionableSession }> = [];
   lines.forEach((line, i) => {
     const m = line.match(COMMAND_LINE_RE);
     if (!m) return;
@@ -154,6 +166,27 @@ export function resolveCommandPrompt(
     // reader at all. So it is ALSO reported in the message (see below), which
     // the model can relay. Still logged for the server-side trail.
     if (marker !== '@') return;
+    // Not a Bot: the line may address a session Bot by its title. Directory Bots win a
+    // clash (they are checked first, above) — a session whose title begins with a Bot's
+    // name is simply not addressable that way.
+    const mention = matchSessionMention(line.slice(line.indexOf('@') + 1), sessionBots);
+    if (mention?.kind === 'match' && selfSessionId && mention.session.sessionId === selfSessionId) {
+      unresolved.push(lang === 'zh'
+        ? `@${mention.title} → 这就是当前会话，不能 @ 自己；没有发出`
+        : `@${mention.title} → that is this session itself; a session cannot @-mention itself. Nothing was sent`);
+      return;
+    }
+    if (mention?.kind === 'match') {
+      cmds.push({ i, marker: 'session', cmd: mention.title, rest: mention.rest, local: false, session: mention.session });
+      return;
+    }
+    if (mention?.kind === 'ambiguous') {
+      const where = mention.candidates.map((c) => path.basename(c.cwd) || c.cwd).join(', ');
+      unresolved.push(lang === 'zh'
+        ? `@${mention.title} → 有 ${mention.candidates.length} 个会话 Bot 用了这个标题（${where}），没有发出；请先给其中一个改名`
+        : `@${mention.title} → ${mention.candidates.length} session Bots share this title (${where}); nothing was sent. Rename one of them first`);
+      return;
+    }
     if (builtins.has(m[2]) || userSkills.some((s) => s.name === m[2])) {
       console.warn(`[skills] "@${m[2]}" is not a registered Bot; the subagent form is now "/@${m[2]}" — left as plain text`);
       unresolved.push(`@${m[2]} → the subagent form for a skill is now /@${m[2]}`);
@@ -202,6 +235,11 @@ export function resolveCommandPrompt(
       if (lines[j].trim() === '') break; // blank line = hard body boundary
       bodyLines.push(lines[j].trim());
       consumed.add(j);
+    }
+    if (c.marker === 'session') {
+      const body = bodyLines.join('\n');
+      rendered.set(c.i, body ? `[session·@${c.cmd}] ${body}` : `[session·@${c.cmd}]`);
+      return;
     }
     const ref: SkillRef = c.marker === '@'
       ? { name: `@${c.cmd}`, path: bots.get(c.cmd)!, content: null }
@@ -284,6 +322,25 @@ export function resolveCommandPrompt(
     // is no delegation to recite a recipe for.
   }
 
+  // A `[session·@title]` line pulls in session-run, the messenger's recipe, and the
+  // coordinates of each addressed session — the only place the dispatcher learns them.
+  let sessionRunInline: string | null = null;
+  const sessionLines = cmds.filter((c) => c.marker === 'session');
+  if (sessionLines.length > 0) {
+    const run = resolveSkillRef('session-run', baseUrl, userSkills);
+    if (run.path && !seen.has(key('read', run.name))) {
+      seen.add(key('read', run.name));
+      listed.unshift({ name: run.name, path: run.path, kind: 'read' });
+    } else if (!run.path) {
+      sessionRunInline = run.content;
+    }
+  }
+  const targets = [...new Map(sessionLines.map((c) => [`${c.session!.cwd}\n${c.session!.sessionId}`, c])).values()];
+  const targetsBlock = targets.length === 0 ? null : [
+    footerHeader('targets', lang),
+    ...targets.map((c) => `- @${c.cmd}: ${JSON.stringify({ cwd: c.session!.cwd, sessionId: c.session!.sessionId })}`),
+  ].join('\n');
+
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     if (consumed.has(i)) continue;
@@ -307,20 +364,14 @@ export function resolveCommandPrompt(
   // open these" would forbid the file the block above just told this session to
   // read. Only the mixed message pays for that wording; a pure delegation keeps
   // the blunt version, which is the one that has to hold.
-  const handoffHeader = runsHere
-    ? (lang === 'zh'
-      ? '以下路径原样转交给你派发的子会话；除上面读取列表已列出的以外，不要自己打开：'
-      : 'Pass these paths verbatim to the session you delegate to; do not open any that the read list above does not already list:')
-    : (lang === 'zh'
-      ? '以下文件交给你派发的子会话去读，你只转交路径，不要自己打开：'
-      : 'These files are for the session you delegate to. Pass the paths along; do not open them yourself:');
+  const handoffHeader = footerHeader(runsHere ? 'handoffMixed' : 'handoff', lang);
   const blocks = [
-    block('read', lang === 'zh'
-      ? '请先读取以下 skill 文件，再据此执行：'
-      : 'Read these skill files first, then act accordingly:'),
+    block('read', footerHeader('read', lang)),
     block('handoff', handoffHeader),
+    targetsBlock,
     botRunInline,
     botTurnInline,
+    sessionRunInline,
   ].filter((b): b is string => b !== null);
   if (blocks.length > 0) result = `${result}\n\n${blocks.join('\n\n')}`;
   return appendUnresolvedNote(result, unresolved, lang);
@@ -333,9 +384,7 @@ export function resolveCommandPrompt(
  */
 function appendUnresolvedNote(result: string, unresolved: string[], lang: 'zh' | 'en'): string {
   if (unresolved.length === 0) return result;
-  const header = lang === 'zh'
-    ? '以下 @ 开头的行没有被识别，已按普通文本处理，请告知用户：'
-    : 'These @ lines were not recognised and were left as plain text. Tell the user:';
+  const header = footerHeader('unresolved', lang);
   return `${result}\n\n${header}\n${unresolved.map((u) => `- ${u}`).join('\n')}`;
 }
 

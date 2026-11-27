@@ -3,13 +3,19 @@ import { AppError } from '@cockpit/effect-core';
 import type { SessionTitleChange, SessionTitlesResponse } from '../../shared/sessionTitle';
 import { acceptSessionTitles, titleKey, titleSnapshot } from '../sessionTitleState';
 
-export const requestSessionTitle = (cwd: string, sessionId: string, customTitle?: string | null) => Effect.tryPromise({
+/** Read a session's title, or save a patch: a rename (`customTitle`, null restores the
+ *  default) and/or the "can be @-mentioned" flag. */
+export const requestSessionTitle = (
+  cwd: string,
+  sessionId: string,
+  patch?: { customTitle?: string | null; mentionable?: boolean },
+) => Effect.tryPromise({
   try: async () => {
     const response = await fetch('/api/session-title', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cwd, sessionId, ...(customTitle !== undefined ? { customTitle } : {}) }),
+      body: JSON.stringify({ cwd, sessionId, ...patch }),
     });
-    if (!response.ok) throw new Error(`Cannot ${customTitle === undefined ? 'read' : 'save'} session title (HTTP ${response.status})`);
+    if (!response.ok) throw new Error(`Cannot ${patch === undefined ? 'read' : 'save'} session title (HTTP ${response.status})`);
     return await response.json() as SessionTitleChange;
   },
   catch: (cause) => new AppError({ message: 'Session title request failed', cause }),
@@ -35,4 +41,18 @@ export const loadSessionTitles = (cwd: string, sessionIds: string[]) => Effect.s
       sessionId: change.sessionId,
     }))),
   );
+});
+
+/** Ask the session's own engine for a title (fills the dialog; never saved here). */
+export const suggestSessionTitle = (cwd: string, sessionId: string) => Effect.tryPromise({
+  try: async (signal) => {
+    const response = await fetch('/api/session-title/suggest', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
+      body: JSON.stringify({ cwd, sessionId }),
+    });
+    const body = await response.json().catch(() => null) as { title?: string; error?: string } | null;
+    if (!response.ok || typeof body?.title !== 'string') throw new Error(body?.error ?? `HTTP ${response.status}`);
+    return body.title;
+  },
+  catch: (cause) => new AppError({ message: cause instanceof Error ? cause.message : 'Title suggestion failed', cause }),
 });

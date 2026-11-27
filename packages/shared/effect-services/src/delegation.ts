@@ -1,8 +1,9 @@
 /**
  * DelegationService — fire-and-forget sub-task sessions, plus status of any session.
  *
- * `delegate` starts a brand-new session in any directory on any engine and returns a
- * receipt at once; nothing is stored server-side (the receipt, returned to the caller's
+ * `delegate` starts a brand-new session in any directory on any engine — or, with
+ * `sessionId`, sends the task into an existing session (an `@<favorite>` line) — and
+ * returns a receipt at once; nothing is stored server-side (the receipt, returned to the caller's
  * transcript, IS the record). `status` derives a session's state on read from the run
  * registry and the transcript's own terminal markers.
  *
@@ -20,6 +21,9 @@ export interface DelegateRequest {
   readonly title: string
   readonly prompt?: string
   readonly briefPath?: string
+  /** Send into this existing session instead of starting one. Its engine and model are
+   *  the session's own; `engine` is then read from the session, never from the body. */
+  readonly sessionId?: string
 }
 
 export interface DelegationParent {
@@ -37,6 +41,11 @@ export interface DelegationReceipt {
   readonly title: string
   readonly createdAt: number
   readonly parent?: DelegationParent
+  /** True when the task went into an existing session rather than a new one. */
+  readonly existing?: boolean
+  /** Existing-session sends only: this message's identity in the target's transcript. Pass
+   *  it to `status` to follow THIS message, not whatever the session last finished. */
+  readonly inputId?: string
 }
 
 /**
@@ -76,7 +85,7 @@ export interface DelegationService {
   readonly status: (
     cwd: string,
     sessionId: string,
-    options?: { readonly full?: boolean }
+    options?: { readonly full?: boolean; readonly inputId?: string }
   ) => Effect.Effect<SessionStatusReport, NotFoundError | AppError>
 }
 

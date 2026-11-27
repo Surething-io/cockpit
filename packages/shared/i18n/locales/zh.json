@@ -249,6 +249,13 @@
   "sessions": {
     "recentSessions": "最近会话",
     "favorites": "收藏会话",
+    "titleSingleLine": "标题只能有一行，不能包含换行或 \\n",
+    "titleNoAt": "标题不能包含 @",
+    "titleNotMentionable": "当前标题不能用来 @：{{reason}}。请改个名字",
+    "mentionable": "可被 @ 调用",
+    "mentionableHint": "勾选后加入 Bots 列表，可在任意会话里用「@标题 任务」把任务派给它",
+    "suggestTitle": "让 AI 起个标题",
+    "titleSuggestFailed": "生成标题失败：{{reason}}",
     "noFavorites": "暂无收藏会话，在 Tab 栏点击星标可添加",
     "addFavorite": "收藏此会话",
     "removeFavorite": "取消收藏",
@@ -603,6 +610,15 @@
     "closeEsc": "关闭 (Esc)"
   },
   "chat": {
+    "commandRefs": "附带 {{count}} 个引用",
+    "commandRef_read": "读取",
+    "commandRef_handoff": "转交",
+    "commandRef_handoffMixed": "转交",
+    "commandRef_targets": "目标",
+    "commandRef_inline": "内嵌",
+    "originSent": "来自 {{project}} 的 @ 消息",
+    "originDelegated": "由 {{project}} 委派",
+    "originUnknown": "另一个会话",
     "decisionContextAttached": "附带了 {{count}} 条相关决策",
     "codexInput": {
       "queued": "追加消息等待发送",
@@ -1380,6 +1396,13 @@
     "unstagedFileMessage": "解释一下 git 工作区中 {{path}} 的改动"
   },
   "bots": {
+    "sessionBadge": "会话",
+    "sessionGroup": "会话 Bot",
+    "sessionGroupHint": "在会话的改名框里勾选「可被 @ 调用」的会话；@ 它会把任务发进这个会话",
+    "sessionGone": "会话已不存在",
+    "sessionNameInvalid": "标题不能用作名字（多行或含 @），改个名字才能 @",
+    "sessionUsage": "在任意会话里写「@{{name}} 任务」把任务发进这个会话",
+    "removeSession": "移出 Bots",
     "title": "机器人",
     "search": "搜索机器人",
     "addExisting": "添加机器人",

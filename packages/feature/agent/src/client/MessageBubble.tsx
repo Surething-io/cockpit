@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
 import { Portal, toast, confirm as confirmDialog } from '@cockpit/shared-ui';
-import { Copy, FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, MessageSquareDashed, GitBranch, MessageSquareQuote, Trash2, ArrowRightToLine, ArrowLeftToLine, ChevronDown, ChevronUp } from 'lucide-react';
+import { Copy, FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, MessageSquareDashed, CornerDownRight, GitBranch, MessageSquareQuote, Trash2, ArrowRightToLine, ArrowLeftToLine, ChevronDown, ChevronUp } from 'lucide-react';
 import { ToolCallModal } from './ToolCallModal';
 import { AskQuestionViewerModal } from './AskQuestionViewerModal';
 import { DiffViewerModal, resolveDiffCalls } from './DiffViewerModal';
@@ -26,6 +26,8 @@ import { readFileForPreview } from './effect/agentClient';
 import { useTranslation } from 'react-i18next';
 import { parseLocalFileLink, getFilePreviewKind, type FilePreviewRequest } from './filePreview';
 import { splitDecisionContext } from '../shared/decisionContext';
+import { parseMessageOrigin } from '../shared/messageOrigin';
+import { parseCommandPrompt, typedPromptText, type ParsedCommandPrompt } from '../shared/commandPrompt';
 
 // Migrated from src/components/project/MessageBubble.tsx.
 
@@ -399,18 +401,51 @@ const TextPartRow = memo(function TextPartRow({
     };
   }, [isUser, handleFileLinkClick]);
 
-  // User turns render as plain text, so a session link in one (the
-  // `[Delegated from Cockpit session /project?…]` line a delegated session starts
-  // with) is linkified here instead of by the markdown renderer.
+  // A turn another session wrote (`@<session Bot>`, `/dl`, `@bot`) opens with an origin
+  // line meant for the model. It is shown as a small "from <project> <session>" label
+  // instead, above the message itself (shared/messageOrigin).
+  const origin = useMemo(() => (isUser ? parseMessageOrigin(text) : null), [isUser, text]);
+  const originTarget = useMemo(() => (origin?.link ? parseSessionLink(origin.link) : null), [origin]);
+  const shownText = origin ? origin.body : text;
+  // A message resolveCommandPrompt rewrote (`/skill`, `@bot`, `@<session Bot>` lines) is
+  // shown as typed, its skill/path footer folded (shared/commandPrompt).
+  const commandPrompt = useMemo(() => (isUser ? parseCommandPrompt(shownText) : null), [isUser, shownText]);
+
+  // User turns render as plain text, so a session link in one is linkified here
+  // instead of by the markdown renderer.
   const userSegments = useMemo(() => {
     if (!isUser) return null;
-    const segments = splitSessionLinks(text);
+    const segments = splitSessionLinks(shownText);
     return segments.some((s) => s.kind === 'link') ? segments : null;
-  }, [isUser, text]);
+  }, [isUser, shownText]);
+
+  const originLabel = origin && (
+    <div className="flex items-center gap-1.5 mb-1 text-xs text-muted-foreground">
+      <CornerDownRight className="w-3 h-3 shrink-0" aria-hidden />
+      <span>
+        {origin.kind === 'sent'
+          ? t('chat.originSent', { project: origin.project ?? t('chat.originUnknown') })
+          : t('chat.originDelegated', { project: origin.project ?? t('chat.originUnknown') })}
+      </span>
+      {origin.link && originTarget && (
+        <SessionLinkChip
+          href={origin.link}
+          target={originTarget}
+          onClick={(e) => {
+            e.preventDefault();
+            openSessionLink(originTarget, origin.link!);
+          }}
+        />
+      )}
+    </div>
+  );
 
   const body = (
     <>
-      {userSegments ? (
+      {originLabel}
+      {commandPrompt ? (
+        <CommandPromptBody prompt={commandPrompt} />
+      ) : userSegments ? (
         <div className="reading-measure whitespace-pre-wrap break-words">
           {userSegments.map((seg, i) =>
             seg.kind === 'link' ? (
@@ -429,7 +464,7 @@ const TextPartRow = memo(function TextPartRow({
           )}
         </div>
       ) : (
-        <MarkdownRenderer content={text} isUser={isUser} isStreaming={isStreaming} onLinkClick={handleLinkClick} />
+        <MarkdownRenderer content={shownText} isUser={isUser} isStreaming={isStreaming} onLinkClick={handleLinkClick} />
       )}
       {isStreaming && <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse" />}
     </>
@@ -441,6 +476,55 @@ const TextPartRow = memo(function TextPartRow({
     <div className="flex gap-1.5 break-words opacity-65">
       <MessageSquareDashed className="w-3 h-3 mt-[5px] shrink-0 text-muted-foreground" aria-hidden />
       <div className="flex-1 min-w-0">{body}</div>
+    </div>
+  );
+});
+
+/**
+ * A command message as typed: each command line leads with a chip (`/cr`, `/@cr`, `@bot`,
+ * `@Payments`), the footer the model reads folds into one "N references" toggle, and the
+ * "not recognised" notes stay visible — those were written for the user.
+ */
+const CommandPromptBody = memo(function CommandPromptBody({ prompt }: { prompt: ParsedCommandPrompt }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const { lines, references, notes } = prompt;
+  return (
+    <div className="reading-measure break-words">
+      <div className="whitespace-pre-wrap">
+        {lines.map((line, i) => (
+          <div key={i}>
+            {line.command && (
+              <span className="mr-1.5 inline-block rounded bg-brand/15 px-1.5 font-mono text-[0.85em] text-brand">{line.command}</span>
+            )}
+            {line.text || (line.command ? null : '\u00a0')}
+          </div>
+        ))}
+      </div>
+      {references.length > 0 && (
+        <div className="mt-1.5 text-xs text-muted-foreground">
+          <button type="button" onClick={() => setOpen((v) => !v)} className="inline-flex items-center gap-1 hover:text-foreground">
+            {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            {t('chat.commandRefs', { count: references.length })}
+          </button>
+          {open && (
+            <ul className="mt-1 space-y-0.5 pl-4">
+              {references.map((ref, i) => (
+                <li key={i} className="truncate font-mono" data-tooltip={ref.detail || undefined}>
+                  <span className="mr-1.5 font-sans">{t(`chat.commandRef_${ref.kind}`)}</span>
+                  <span className="text-foreground">{ref.name}</span>
+                  {ref.detail && <span className="ml-1.5">{ref.detail}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {notes.length > 0 && (
+        <div className="mt-1.5 rounded border border-amber-9/30 bg-amber-9/10 px-2 py-1 text-xs text-amber-11">
+          {notes.map((note, i) => <div key={i}>{note}</div>)}
+        </div>
+      )}
     </div>
   );
 });
@@ -801,7 +885,10 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   // Copy message content
   const handleCopy = () => {
     if (message.content) {
-      navigator.clipboard.writeText(decisionContext ? decisionContext.body : message.content);
+      // A user turn copies as typed, so a copied command can be sent again as-is. An
+      // assistant reply is copied verbatim — it was never resolved.
+      const content = decisionContext ? decisionContext.body : message.content;
+      navigator.clipboard.writeText(isUser ? typedPromptText(content) : content);
       toast(t('toast.copiedMessage'));
     }
   };

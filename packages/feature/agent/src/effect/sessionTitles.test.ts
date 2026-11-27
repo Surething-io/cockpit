@@ -83,7 +83,7 @@ describe('session title lifecycle', () => {
     expect((await read(cwd, 'old')).title).toBe('My task');
     await writeFile(paths.PINNED_SESSIONS_FILE, '[]');
     expect((await read(cwd, 'old')).title).toBe('My task');
-    await save(cwd, 'old', '  New\nname  ');
+    await save(cwd, 'old', '  New name  ');
     expect((await read(cwd, 'old')).title).toBe('New name');
     await save(cwd, 'old', null);
     await writeFile(paths.PINNED_SESSIONS_FILE, JSON.stringify([{ cwd, sessionId: 'old', customTitle: 'Old client snapshot' }]));
@@ -121,6 +121,19 @@ describe('session title lifecycle', () => {
     await save(cwd, 's', 'Keep');
     for (const value of [' \n ', 12, {}, undefined]) await expect(save(cwd, 's', value)).rejects.toThrow();
     expect((await read(cwd, 's')).title).toBe('Keep');
+  });
+
+  it('rejects a title with a line break or a literal \\n: it must be one line', async () => {
+    const cwd = join(root, 'single-line');
+    await save(cwd, 's', 'Keep');
+    for (const value of ['Two\nlines', 'Two\r\nlines', 'Escaped\\nbreak', 'Escaped\\rbreak']) {
+      await expect(save(cwd, 's', value)).rejects.toThrow();
+    }
+    expect((await read(cwd, 's')).title).toBe('Keep');
+    await expect(save(cwd, 's', '@ 收藏会话功能')).rejects.toThrow();
+    await expect(save(cwd, 's', 'mail a@b')).rejects.toThrow();
+    // A backslash that does not spell a line break is ordinary text.
+    expect((await save(cwd, 's', 'C:\\work\\api')).customTitle).toBe('C:\\work\\api');
   });
 
   it('fails on malformed metadata without overwriting it', async () => {

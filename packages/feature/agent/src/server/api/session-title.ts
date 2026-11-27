@@ -2,6 +2,7 @@ import { Effect } from 'effect';
 import { handler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import { AppError, NotFoundError, ValidationError } from '@cockpit/effect-core';
 import { refreshSessionTitle, titleStore, writeSessionTitle } from '../../effect/sessionTitles';
+import { isSessionBot, setSessionBot } from '../lib/sessionBots';
 import { readCachedSessionTitles } from '../sessionTitleCache';
 import { readLogicalTranscript } from '../../effect/logicalTranscript';
 import { defaultSessionTitle } from '../transcriptViews';
@@ -18,7 +19,7 @@ const refreshTitle = (cwd: string, sessionId: string, store: { sessionPath: stri
 });
 
 export const POST = handler((req) => Effect.gen(function* () {
-  const body = (yield* parseJsonRaw(req)) as { cwd?: unknown; sessionId?: unknown; sessionIds?: unknown; customTitle?: unknown; cachedOnly?: unknown };
+  const body = (yield* parseJsonRaw(req)) as { cwd?: unknown; sessionId?: unknown; sessionIds?: unknown; customTitle?: unknown; mentionable?: unknown; cachedOnly?: unknown };
   if (typeof body.cwd !== 'string' || !body.cwd) {
     return yield* Effect.fail(new ValidationError({ field: 'cwd', reason: 'cwd is required' }));
   }
@@ -27,7 +28,7 @@ export const POST = handler((req) => Effect.gen(function* () {
   }
   if (Object.hasOwn(body, 'sessionIds')) {
     if (!Array.isArray(body.sessionIds) || body.sessionIds.some((id) => typeof id !== 'string' || !id)
-      || Object.hasOwn(body, 'sessionId') || Object.hasOwn(body, 'customTitle')) {
+      || Object.hasOwn(body, 'sessionId') || Object.hasOwn(body, 'customTitle') || Object.hasOwn(body, 'mentionable')) {
       return yield* Effect.fail(new ValidationError({ field: 'sessionIds', reason: 'expected an array of session ids for a title batch' }));
     }
     const cwd = body.cwd;
@@ -56,13 +57,26 @@ export const POST = handler((req) => Effect.gen(function* () {
   const refreshed = yield* refreshTitle(cwd, sessionId, store);
   const fallback = refreshed.defaultTitle;
   const kind = titleStore(store.engine);
-  if (Object.hasOwn(body, 'customTitle')) {
-    const record = yield* writeSessionTitle(cwd, sessionId, kind, body.customTitle);
+  // One save may rename and tick "can be @-mentioned" (a session Bot, server/lib/sessionBots)
+  // together: the title first, so a rejected title (multi-line, contains @) changes neither.
+  const hasTitle = Object.hasOwn(body, 'customTitle');
+  const hasMentionable = Object.hasOwn(body, 'mentionable');
+  if (hasMentionable && typeof body.mentionable !== 'boolean') {
+    return yield* Effect.fail(new ValidationError({ field: 'mentionable', reason: 'must be a boolean' }));
+  }
+  const record = hasTitle ? yield* writeSessionTitle(cwd, sessionId, kind, body.customTitle) : null;
+  const mentionable = hasMentionable
+    ? yield* setSessionBot(cwd, sessionId, body.mentionable as boolean)
+    : yield* isSessionBot(cwd, sessionId);
+  if (record) {
     const defaultTitle = record.defaultTitle ?? fallback;
-    const change = { cwd, sessionId, title: record.customTitle ?? defaultTitle, defaultTitle, customTitle: record.customTitle, titleRevision: record.revision };
+    const change = {
+      cwd, sessionId, title: record.customTitle ?? defaultTitle, defaultTitle, customTitle: record.customTitle,
+      titleRevision: record.revision, ...(mentionable && { mentionable: true }),
+    };
     // Saving is authoritative even if a client disconnects before notification.
     yield* broadcastSessionTitle(change);
     return ok(change);
   }
-  return ok(refreshed);
+  return ok({ ...refreshed, ...(mentionable && { mentionable: true }) });
 }));

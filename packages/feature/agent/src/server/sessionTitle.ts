@@ -20,11 +20,13 @@
  * deriving this native fallback.
  */
 import { stripDecisionContext } from '../shared/decisionContext';
+import { humanUserText } from '../shared/commandPrompt';
 
 /** Filter command/system tags and extract the meaningful user text. */
 export function filterCommandTags(rawText: string): string {
-  // Decision-mode context is Cockpit's own preamble, never the user's words.
-  const text = stripDecisionContext(rawText);
+  // Decision-mode context is Cockpit's own preamble, never the user's words; nor is a
+  // resolved command's footer or another session's origin line (shared/commandPrompt).
+  const text = humanUserText(stripDecisionContext(rawText));
   // First try to extract command-args (the user's actual input).
   const argsMatch = text.match(/<command-args>([^<]*)<\/command-args>/);
   if (argsMatch && argsMatch[1].trim()) {
@@ -57,8 +59,10 @@ export function generateTitle(aiTitle: string, summary: string, userMessages: st
     const filtered = filterCommandTags(msg);
     if (!filtered) continue;
 
-    // Bare command (starts with /): record it and keep looking for follow-up content.
-    if (filtered.startsWith('/') && !commandName) {
+    // Bare command (a lone `/name`): record it and keep looking for follow-up content.
+    // A command WITH its text (`/cr look at the diff`, the typed form of a resolved
+    // message) is already a full title.
+    if (/^\/\S+$/.test(filtered) && !commandName) {
       commandName = filtered;
       continue;
     }
@@ -78,7 +82,13 @@ export function generateTitle(aiTitle: string, summary: string, userMessages: st
   return 'Untitled Session';
 }
 
-/** Codex has no native title line; its first displayed prompt names the session. */
+/**
+ * Codex has no native title line; its first displayed prompt names the session — as a
+ * person reads it: no origin line from another session, a resolved command in its typed
+ * form (humanUserText). NOT filterCommandTags: Codex writes no `<command-*>` tags, so such
+ * text in a Codex prompt is the user's own and stays.
+ */
 export function generateCodexTitle(firstPrompt: string | null | undefined): string {
-  return (firstPrompt ?? 'Untitled Session').slice(0, 80);
+  const text = firstPrompt ? humanUserText(firstPrompt).trim() : '';
+  return (text || 'Untitled Session').slice(0, 80);
 }

@@ -39,6 +39,9 @@ Cockpit 不介入 Bot 目录的读写。Bot 目录就是普通文件夹，用户
 | `/skill` | builtin `skills/` + `skills.json` | 主会话 | SKILL.md |
 | `/@skill` | 同上 | subagent | SKILL.md |
 | `@bot` | `bot.json` 中有效的 Bot | 按 `bot-run` 契约派发独立子会话 | BOT.md |
+| `@<会话标题>` | 会话 Bot：改名框里勾了「可被 @ 调用」的会话，登记在 `session-bots.json`，与 Bot 同列（`@` 补全、Bots 面板）；`@` 后首词不是 Bot 时才查 | 按 `session-run` 契约发进**那个已有会话**（同手动发送：忙则并入当前运行），**默认等结果带回**，`--no-wait` 才只发不等（与 `/dl` 相反：`@` 会话多是问它事） | `session-run` + 目标的 cwd / sessionId |
+
+`@<会话标题>` 的匹配规则在 `shared/sessionMention.ts`：名字是会话**当前**标题（自定义或默认皆可），标题须合规（单行、不含 `@`，规则见 `shared/sessionTitle.titleNameProblem`；自定义标题保存时即按此校验，对话框的 ✨ 按钮用会话自己的引擎生成合规标题）；取行首能对上的**最长**标题（不分大小写，标题后须是空白或行尾），其余是任务；两个会话 Bot 同名时不发、在消息里列出候选。命中行渲染为 `[session·@标题] <正文>`，派发走 `POST /api/sessions/delegate` 带 `sessionId`——引擎、模型都沿用目标会话自己的，消息首行标明来源会话。
 
 解析在 `packages/feature/agent/src/server/lib/slashCommands.ts::resolveCommandPrompt` 完成，与 skill 共用同一套"就地标注"规则：
 

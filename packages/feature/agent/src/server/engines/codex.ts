@@ -12,6 +12,7 @@ import { StringDecoder } from 'string_decoder';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import type { EngineSpec, ImageData, RunCtx } from './types';
+import { suggestCodexTitle } from './codexTitle';
 import { mergeStashedCodexRollout, stashCodexRollout } from './shared/noHistoryRollout';
 import { cancelCodexSuggestion, startCodexSuggestion } from './codexSuggestion';
 import { broadcastPromptSuggestion } from '../promptSuggestionBroadcast';
@@ -999,6 +1000,7 @@ async function runCodexAppServerWithInput(ctx: RunCtx, input: CodexRunInput): Pr
 
 export const codexSpec: EngineSpec = {
   name: 'codex',
+  suggestTitle: suggestCodexTitle,
   // No preflight: the orchestrator's own "prompt or images" check is sufficient.
   runner: {
     async run(ctx: RunCtx) {

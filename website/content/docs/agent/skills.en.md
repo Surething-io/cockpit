@@ -221,7 +221,7 @@ The right entry point depends on what you have:
 - If you need an earlier conversation back → `/ss`
 - If the work belongs in another project or on another engine → `/dl`
 
-> The table above lists the visible built-in Skills. Internal `bot-run` and `bot-turn` workflows are hidden from the `/` menu. For repeated workflows of your own, see [Custom Skills](#custom-skills) below — they show up in the same `/` menu as `/skill-name`.
+> The table above lists the visible built-in Skills. Internal `bot-run`, `bot-turn` and `session-run` workflows are hidden from the `/` menu. For repeated workflows of your own, see [Custom Skills](#custom-skills) below — they show up in the same `/` menu as `/skill-name`.
 
 ## Custom Skills
 

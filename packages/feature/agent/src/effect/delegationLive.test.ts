@@ -119,6 +119,45 @@ describe('validateRequest', () => {
   });
 });
 
+describe('validateRequest into an existing session', () => {
+  const sid = '44444444-4444-4444-8444-444444444444';
+  const run = (body: Record<string, unknown>) => Effect.runPromiseExit(dl.validateRequest(body, null));
+  beforeAll(() => {
+    const dir = path.join(home, '.claude', 'projects', encodePath(projectDir));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${sid}.jsonl`), line({ type: 'user', uuid: 'u-1', cwd: projectDir, timestamp: '2026-09-01T00:00:00Z', message: { role: 'user', content: 'hi' } }));
+  });
+
+  it('takes the engine from the session itself', async () => {
+    const exit = await run({ cwd: projectDir, sessionId: sid, prompt: 'what changed?' });
+    expect(Exit.isSuccess(exit) && exit.value).toMatchObject({ sessionId: sid, engine: 'claude', title: 'what changed?' });
+  });
+
+  it('rejects an unknown session, and an engine or model the session does not own', async () => {
+    const reason = async (body: Record<string, unknown>) => {
+      const exit = await run(body);
+      return Exit.isFailure(exit) ? JSON.stringify(exit.cause) : 'ok';
+    };
+    expect(await reason({ cwd: projectDir, sessionId: 'no-such-session', prompt: 'x' })).toMatch(/no session/);
+    expect(await reason({ cwd: projectDir, sessionId: sid, engine: 'codex', prompt: 'x' })).toMatch(/keeps its own engine/);
+    expect(await reason({ cwd: projectDir, sessionId: sid, model: 'opus', prompt: 'x' })).toMatch(/keeps its own model/);
+  });
+});
+
+describe('buildSessionMessage', () => {
+  it('names the sender first, with no Task: title line', () => {
+    const text = dl.buildSessionMessage(
+      { cwd: projectDir, engine: 'claude', title: 'x', prompt: 'which files changed?', sessionId: 's2' },
+      { cwd: '/Users/me/parent-proj', sessionId: 's1', link: '/project?cwd=%2Fp&sessionId=s1&view=agent' },
+    );
+    expect(text.split('\n')).toEqual([
+      '[Sent from Cockpit session /project?cwd=%2Fp&sessionId=s1&view=agent (parent-proj) via @mention]',
+      '',
+      'which files changed?',
+    ]);
+  });
+});
+
 describe('buildChildPrompt', () => {
   it('puts the title first, then the parent, then the brief pointer', () => {
     const text = dl.buildChildPrompt(
@@ -287,6 +326,78 @@ describe('DelegationService.status', () => {
     source.appendMessage({ role: 'user', content: 'clean branch', timestamp: Date.now() });
     source.appendMessage(success);
     expect((await ok(source.getSessionId())).status).toBe('done');
+  });
+
+  describe('one message sent into an existing session (inputId)', () => {
+    const byInput = async (sid: string, inputId: string) => {
+      const exit = await Effect.runPromiseExit(
+        Effect.flatMap(services.DelegationService, (svc) => svc.status(projectDir, sid, { inputId })).pipe(Effect.provide(dl.DelegationServiceLive)),
+      );
+      if (Exit.isFailure(exit)) throw new Error(`status failed: ${JSON.stringify(exit.cause)}`);
+      return exit.value;
+    };
+    const sent = (id: string, text: string) => userLine(`${dl.buildSessionMessage({ cwd: projectDir, engine: 'claude', title: 't', prompt: text, sessionId: 'x' }, null, id)}`);
+
+    it('reports a message stopped before delivery as not delivered, never the older answer', async () => {
+      const sid = '55555555-5555-4555-8555-555555555555';
+      writeClaude(sid, [userLine('earlier task'), asstLine('end_turn', [{ type: 'text', text: 'OLD ANSWER' }])]);
+      // Session-level status still reads the old turn — exactly what used to be returned.
+      expect((await ok(sid)).lastReply).toBe('OLD ANSWER');
+      const report = await byInput(sid, 'input-never-delivered');
+      expect(report.status).toBe('incomplete');
+      expect(report.lastReply).toContain('not delivered');
+    });
+
+    it('reports a finished message as finished while a LATER turn is running (#1)', async () => {
+      const sid = '77777777-7777-4777-8777-777777777777';
+      writeClaude(sid, [
+        sent('input-a', 'what changed?'), asstLine('end_turn', [{ type: 'text', text: 'ANSWER A' }]),
+        userLine('task b'), asstLine('tool_use', [{ type: 'text', text: 'COMMENTARY B' }]),
+      ]);
+      expect(hub.startRun(sid, projectDir, 'task b', sid, 'claude')).toBe(true);
+      try {
+        expect(await byInput(sid, 'input-a')).toMatchObject({ status: 'done', lastReply: 'ANSWER A' });
+        // Not in the transcript yet while the session runs: it may still be queued.
+        expect((await byInput(sid, 'input-queued')).status).toBe('running');
+      } finally {
+        hub.releaseRun(sid);
+      }
+    });
+
+    it('does not call an interrupted message done just because it said something (#2)', async () => {
+      const sid = '88888888-8888-4888-8888-888888888888';
+      writeClaude(sid, [
+        sent('input-a', 'inspect it'), asstLine('tool_use', [{ type: 'text', text: 'I will inspect it' }]),
+        userLine('later task'), asstLine('end_turn', [{ type: 'text', text: 'LATER ANSWER' }]),
+      ]);
+      expect(await byInput(sid, 'input-a')).toMatchObject({ status: 'incomplete', lastReply: 'I will inspect it' });
+    });
+
+    it('reads a Codex segment by its own task_complete', () => {
+      const user = (message: string) => ({ type: 'event_msg', payload: { type: 'user_message', message } });
+      const origin = dl.buildSessionMessage({ cwd: projectDir, engine: 'codex', title: 't', prompt: 'go', sessionId: 'x' }, null, 'in-c');
+      const done = [user(origin), { type: 'event_msg', payload: { type: 'task_started' } }, { type: 'event_msg', payload: { type: 'task_complete' } }, user('next')];
+      expect(dl.inputSegment(done, 'codex', 'codex', 'in-c')).toEqual({ found: true, latest: false, terminal: 'done' });
+      const aborted = [user(origin), { type: 'event_msg', payload: { type: 'turn_aborted' } }, user('next')];
+      expect(dl.inputSegment(aborted, 'codex', 'codex', 'in-c')).toMatchObject({ terminal: 'incomplete' });
+      expect(dl.inputSegment([user(origin)], 'codex', 'codex', 'in-c')).toEqual({ found: true, latest: true });
+      expect(dl.inputSegment([user('other')], 'codex', 'codex', 'in-c')).toEqual({ found: false });
+    });
+
+    it('reports the reply to that message, even after later turns', async () => {
+      const sid = '66666666-6666-4666-8666-666666666666';
+      writeClaude(sid, [
+        userLine('earlier task'), asstLine('end_turn', [{ type: 'text', text: 'OLD ANSWER' }]),
+        sent('input-1', 'what changed?'), asstLine('end_turn', [{ type: 'text', text: 'NEW ANSWER' }]),
+      ]);
+      expect(await byInput(sid, 'input-1')).toMatchObject({ status: 'done', lastReply: 'NEW ANSWER' });
+      writeClaude(sid, [
+        userLine('earlier task'), asstLine('end_turn', [{ type: 'text', text: 'OLD ANSWER' }]),
+        sent('input-1', 'what changed?'), asstLine('end_turn', [{ type: 'text', text: 'NEW ANSWER' }]),
+        userLine('unrelated later'), asstLine('end_turn', [{ type: 'text', text: 'LATER' }]),
+      ]);
+      expect(await byInput(sid, 'input-1')).toMatchObject({ status: 'done', lastReply: 'NEW ANSWER' });
+    });
   });
 
   it('done on end_turn, with the reply and a link', async () => {

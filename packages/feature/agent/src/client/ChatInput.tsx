@@ -38,9 +38,11 @@ interface ChatInputProps {
   setDraftImages?: React.Dispatch<React.SetStateAction<ImageInfo[]>>;
   /** Predicted next prompt: shown as the placeholder, Tab on an empty box accepts it (no send). */
   suggestion?: string | null;
+  /** The session this composer sends into; left out of the `@` menu. */
+  sessionId?: string;
 }
 
-export const ChatInput = memo(function ChatInput({ onSend, disabled, running, cwd, engine: _engine, onShowGitStatus, onShowComments, hasComments, onOpenNote, draft, setDraft, draftImages, setDraftImages, suggestion }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({ onSend, disabled, running, cwd, engine: _engine, onShowGitStatus, onShowComments, hasComments, onOpenNote, draft, setDraft, draftImages, setDraftImages, suggestion, sessionId }: ChatInputProps) {
   const { t } = useTranslation();
   const localInput = useState('');
   const localImages = useState<ImageInfo[]>([]);
@@ -90,6 +92,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, running, cw
     onChange: setInput,
     textareaRef,
     extraCommands: localCommands,
+    selfSessionId: sessionId,
   });
 
   const handleSend = useCallback(() => {

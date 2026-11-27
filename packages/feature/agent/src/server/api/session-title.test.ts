@@ -142,6 +142,19 @@ describe('session title API and projections', () => {
       activeSessions.delete(sessionId);
     }
   });
+  it('stores the running preview as typed, not as the resolved prompt', async () => {
+    const { footerHeader } = await import('../../shared/commandPrompt');
+    const { sessionId } = identity();
+    const resolved = `[session·@Payments fix] status?\n\n${footerHeader('read', 'en')}\n- session-run: /x/SKILL.md\n\n${footerHeader('targets', 'en')}\n- @Payments fix: {"cwd":"/w","sessionId":"s"}`;
+    await recent.updateGlobalState(root, sessionId, 'loading', undefined, resolved);
+    activeSessions.add(sessionId);
+    try {
+      const snapshot = await recent.getGlobalSessionsSnapshot();
+      expect(snapshot.find((s) => s.sessionId === sessionId)?.lastUserMessage).toBe('@Payments fix status?');
+    } finally {
+      activeSessions.delete(sessionId);
+    }
+  });
   it('keeps a long-running session in the snapshot after newer sessions push it past the limit', async () => {
     const runningId = 'long-running-session';
     await recent.updateGlobalState(root, runningId, 'loading', 'Long task', 'Started long ago');
@@ -280,6 +293,48 @@ describe('session title API and projections', () => {
     expect((await (await detailPOST(request(identity))).json()).title).toBe('Unified name');
     expect((await (await titlePOST(request({ ...identity, customTitle: null }))).json()).title).toBe(fallback);
   });
+  it('ticks "can be @-mentioned" without renaming: the session joins the session Bots by its current title', async () => {
+    const { GET: botsGET, DELETE: botsDELETE } = await import('./session-bots');
+    type Listed = { sessionId: string; name: string | null; problem: string | null; engine: string | null };
+    const listed = async () => ((await (await botsGET(new Request('http://localhost/api/session-bots'))).json()) as Listed[])
+      .find((b) => b.sessionId === 'title-api-session');
+    // Favorites play no part: unpinned, and still a Bot once ticked.
+    writeFileSync(join(root, 'cockpit', 'pinned-sessions.json'), '[]');
+    expect((await titlePOST(request({ ...identity(), customTitle: null }))).status).toBe(200);
+    expect(await listed()).toBeUndefined();
+    const ticked = await (await titlePOST(request({ ...identity(), mentionable: true }))).json();
+    expect(ticked).toMatchObject({ customTitle: null, mentionable: true });
+    expect(await listed()).toMatchObject({ name: ticked.title, problem: null, engine: 'claude' });
+    // Reading the title reports membership too, so the dialog opens with the box ticked.
+    expect(await (await titlePOST(request(identity()))).json()).toMatchObject({ mentionable: true });
+    // A rename and the flag in one save; a rejected name changes neither.
+    expect((await titlePOST(request({ ...identity(), customTitle: 'Has @ sign', mentionable: false }))).status).toBe(400);
+    expect((await listed())?.name).toBe(ticked.title);
+    expect(await (await titlePOST(request({ ...identity(), customTitle: 'Payments', mentionable: true }))).json())
+      .toMatchObject({ title: 'Payments', customTitle: 'Payments', mentionable: true });
+    expect((await listed())?.name).toBe('Payments');
+    // Removing from the Bots panel leaves the session and its title alone.
+    const removed = await botsDELETE(new Request('http://localhost/api/session-bots', { method: 'DELETE', body: JSON.stringify(identity()) }));
+    expect(removed.status).toBe(200);
+    expect(await listed()).toBeUndefined();
+    expect(await (await titlePOST(request(identity()))).json()).toMatchObject({ title: 'Payments' });
+    expect((await titlePOST(request({ ...identity(), mentionable: 'yes' }))).status).toBe(400);
+  });
+
+  it('refuses to save session Bots over a registry that does not parse, and leaves it as is', async () => {
+    const registry = join(root, 'cockpit', 'session-bots.json');
+    const corrupt = '[{"cwd":"/a","sessionId":"keep-me"},]';
+    writeFileSync(registry, corrupt);
+    try {
+      expect((await titlePOST(request({ ...identity(), mentionable: true }))).status).toBeGreaterThanOrEqual(500);
+      expect(readFileSync(registry, 'utf8')).toBe(corrupt);
+      const { GET: botsGET } = await import('./session-bots');
+      expect((await botsGET(new Request('http://localhost/api/session-bots'))).status).toBeGreaterThanOrEqual(500);
+    } finally {
+      writeFileSync(registry, '[]');
+    }
+  });
+
   it('rejects invalid input or unknown sessions without creating a title', async () => {
     expect((await titlePOST(request({ ...identity(), customTitle: ' \n ' }))).status).toBe(400);
     expect((await titlePOST(request({ cwd: root, sessionId: 'missing', customTitle: 'Name' }))).status).toBe(404);

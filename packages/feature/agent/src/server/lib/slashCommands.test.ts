@@ -386,4 +386,156 @@ describe('resolveCommandPrompt', () => {
     expect(out.startsWith('[subagent·cr] the diff')).toBe(true);
     expect(out).toContain('Read these skill files first, then act accordingly:');
   });
+
+  describe('@<session Bot title>', () => {
+    const favorites = [
+      { title: 'Login fix', cwd: '/work/app', sessionId: 'sess-login' },
+      { title: 'Login', cwd: '/work/app', sessionId: 'sess-short' },
+      { title: '修复 支付', cwd: '/work/pay', sessionId: 'sess-pay' },
+      { title: 'Review', cwd: '/work/a', sessionId: 'sess-a' },
+      { title: 'review', cwd: '/work/b', sessionId: 'sess-b' },
+      { title: 'product launch', cwd: '/work/c', sessionId: 'sess-c' },
+    ];
+    const resolve = (prompt: string, lang = 'en') => resolveCommandPrompt(prompt, lang, undefined, undefined, favorites);
+
+    it('tags the longest matching title, lists session-run to read and the target to address', () => {
+      const out = resolve('@Login fix which files changed? --wait\nkeep it short');
+      const skillFile = path.join(cockpitHome, 'skills', 'session-run', 'SKILL.md');
+      expect(out.split('\n').slice(0, 2)).toEqual(['[session·@Login fix] which files changed? --wait', 'keep it short']);
+      expect(out).toContain(`- session-run: ${skillFile}`);
+      expect(out).toContain('- @Login fix: {"cwd":"/work/app","sessionId":"sess-login"}');
+      expect(fs.existsSync(path.join(cockpitHome, 'skills', 'session-run', 'wait.md'))).toBe(true);
+      // No Bot machinery for a message that names no Bot.
+      expect(out).not.toContain('bot-run');
+      expect(out).not.toContain('bot-turn');
+    });
+
+    it('matches CJK titles with spaces', () => {
+      expect(resolve('@修复 支付 看下进度').split('\n')[0]).toBe('[session·@修复 支付] 看下进度');
+    });
+
+    it('lets a directory Bot win over a session whose title starts with its name', () => {
+      expect(resolve('@product launch plan').split('\n')[0]).toBe('[subagent·@product] launch plan');
+    });
+
+    it('sends nothing for a title two favorites share, and says why in the message', () => {
+      const out = resolve('@review the diff', 'zh');
+      expect(out.split('\n')[0]).toBe('@review the diff');
+      expect(out).toContain('@review → 有 2 个会话 Bot 用了这个标题（a, b），没有发出；请先给其中一个改名');
+      expect(out).not.toContain('session-run');
+    });
+
+    it('refuses a line addressing the session it is sent in, and says why', () => {
+      const out = resolveCommandPrompt('@Login fix check this', 'zh', undefined, undefined, favorites, 'sess-login');
+      expect(out.split('\n')[0]).toBe('@Login fix check this');
+      expect(out).toContain('@Login fix → 这就是当前会话，不能 @ 自己；没有发出');
+      expect(out).not.toContain('session-run');
+      // Any other session is still addressable from it.
+      expect(resolveCommandPrompt('@Login go', 'en', undefined, undefined, favorites, 'sess-login').split('\n')[0])
+        .toBe('[session·@Login] go');
+    });
+
+    it('leaves @ lines that name no session Bot as prose', () => {
+      expect(resolve('@types/node is missing')).toBe('@types/node is missing');
+      expect(resolve('@Loginx task')).toBe('@Loginx task');
+    });
+
+    it('mixes a session Bot line with an @bot line', () => {
+      const out = resolve('@finance budget\n\n@Login check auth');
+      expect(out).toContain('[subagent·@finance] budget');
+      expect(out).toContain('[session·@Login] check auth');
+      expect(out).toContain('- bot-run: ');
+      expect(out).toContain('- session-run: ');
+      expect(out).toContain('- @Login: {"cwd":"/work/app","sessionId":"sess-short"}');
+    });
+  });
+
+  // Everything resolveCommandPrompt writes must read back as what the user typed.
+  describe('parseCommandPrompt round trip', () => {
+    const sessions = [{ title: 'Payments fix', cwd: '/work/pay', sessionId: 'sess-pay' }];
+    const typed = async (prompt: string, lang = 'en', cwd?: string) => {
+      const { parseCommandPrompt, typedPromptText } = await import('../../shared/commandPrompt');
+      const stored = resolveCommandPrompt(prompt, lang, undefined, cwd, sessions);
+      return { stored, parsed: parseCommandPrompt(stored), text: typedPromptText(stored) };
+    };
+
+    it.each([
+      ['/qa define the sidebar', '/qa define the sidebar'],
+      ['/@cr the diff', '/@cr the diff'],
+      ['@product hi', '@product hi'],
+      ['@Payments fix 看一下进展呢', '@Payments fix 看一下进展呢'],
+      ['intro line\n/qa a\n\n@finance budget\n\n@Payments fix go\noutro', 'intro line\n/qa a\n\n@finance budget\n\n@Payments fix go\noutro'],
+    ])('%s', async (prompt, expected) => {
+      for (const lang of ['en', 'zh']) {
+        const { stored, parsed, text } = await typed(prompt, lang);
+        expect(stored).not.toBe(prompt);
+        expect(text).toBe(expected);
+        expect(parsed!.references.length).toBeGreaterThan(0);
+        expect(parsed!.notes).toEqual([]);
+      }
+    });
+
+    it('lists what was folded: skills to read, paths handed on, sessions addressed', async () => {
+      const { parsed } = await typed('@product hi\n\n@Payments fix go');
+      const kinds = parsed!.references.map((r) => `${r.kind}:${r.name}`);
+      expect(kinds).toEqual(expect.arrayContaining(['read:bot-run', 'read:session-run', 'handoff:bot-turn', 'handoff:@product', 'targets:@Payments fix']));
+      expect(parsed!.references.find((r) => r.kind === 'targets')!.detail).toBe('{"cwd":"/work/pay","sessionId":"sess-pay"}');
+    });
+
+    it('a Bot running here reads back as @name', async () => {
+      const { text } = await typed('@product hi', 'en', path.dirname(productManifest));
+      expect(text).toBe('@product hi');
+    });
+
+    it('keeps "not recognised" notes apart so they can be shown', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const { parsed, text } = await typed('@cr old spelling', 'zh');
+        expect(text).toBe('@cr old spelling');
+        expect(parsed!.references).toEqual([]);
+        expect(parsed!.notes).toEqual(['@cr → the subagent form for a skill is now /@cr']);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('reads back session titles containing ] or ": "', async () => {
+      const { typedPromptText } = await import('../../shared/commandPrompt');
+      const bots = [{ title: 'API [v2]', cwd: '/w/a', sessionId: 'a' }, { title: 'Ops: deploy', cwd: '/w/b', sessionId: 'b' }];
+      for (const prompt of ['@API [v2] status?', '@Ops: deploy go', '@API [v2]']) {
+        expect(typedPromptText(resolveCommandPrompt(prompt, 'en', undefined, undefined, bots))).toBe(prompt);
+      }
+    });
+
+    it('never treats a pasted SKILL.md or a quoted header as a resolved message', async () => {
+      const { parseCommandPrompt, footerHeader } = await import('../../shared/commandPrompt');
+      const pasted = 'Please review this skill:\n\n---\nname: cr\ndescription: x\n---\n\n# body\n\nmore';
+      expect(parseCommandPrompt(pasted)).toBeNull();
+      const quoted = `why does it say this?\n\n${footerHeader('read', 'zh')}\n- cr：/x/SKILL.md`;
+      expect(parseCommandPrompt(quoted)).toBeNull();
+    });
+
+    it('keeps a quoted footer header that is part of the user\'s own text', async () => {
+      const { typedPromptText, footerHeader } = await import('../../shared/commandPrompt');
+      const prompt = `/qa explain this line\n\n${footerHeader('read', 'zh')}\n\nwhy is it written like that?`;
+      expect(typedPromptText(resolveCommandPrompt(prompt, 'zh'))).toBe(
+        `/qa explain this line\n\n${footerHeader('read', 'zh')}\n\nwhy is it written like that?`,
+      );
+    });
+
+    it('folds an inlined SKILL.md at the end of the footer (a builtin that could not be written)', async () => {
+      const { parseCommandPrompt, footerHeader } = await import('../../shared/commandPrompt');
+      const stored = `[subagent·@product] hi\n\n${footerHeader('handoff', 'en')}\n- @product: /b/BOT.md\n\n---\nname: bot-run\ndescription: x\n---\n\n# Running\n\nsteps`;
+      const parsed = parseCommandPrompt(stored)!;
+      expect(parsed.lines).toEqual([{ command: '@product', text: 'hi' }]);
+      expect(parsed.references.map((r) => `${r.kind}:${r.name}`)).toEqual(['handoff:@product', 'inline:bot-run']);
+    });
+
+    it('leaves ordinary messages alone, including ones that look like tags', async () => {
+      const { parseCommandPrompt } = await import('../../shared/commandPrompt');
+      for (const text of ['hello', '[1] first point\n[2] second', '[main·x] typed by hand']) {
+        expect(parseCommandPrompt(text)).toBeNull();
+      }
+    });
+  });
 });

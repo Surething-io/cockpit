@@ -30,6 +30,8 @@ export const SCHEDULED_TASKS_FILE = join(COCKPIT_DIR, 'scheduled-tasks.json');
 export const SETTINGS_FILE = join(COCKPIT_DIR, 'settings.json');
 export const SKILLS_FILE = join(COCKPIT_DIR, 'skills.json');
 export const BOTS_FILE = join(COCKPIT_DIR, 'bot.json');
+// Sessions ticked "can be @-mentioned": addressable as `@<title>` and listed with the Bots.
+export const SESSION_BOTS_FILE = join(COCKPIT_DIR, 'session-bots.json');
 // Where Bots live under the user's data dir. `/bot` creates new ones here, and
 // it is also where a built-in is copied to the first time the user opens it
 // (see BUILTIN_BOTS_SRC_DIR below). Per-COCKPIT_HOME and user-owned, which is

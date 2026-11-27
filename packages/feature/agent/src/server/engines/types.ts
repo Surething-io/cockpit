@@ -110,4 +110,15 @@ export interface EngineSpec {
    *  registry side-effects. May mutate params (e.g. resolve model). */
   preflight?(params: DispatchParams): Promise<{ ok: true } | { ok: false; status: number; error: string }>;
   runner: EngineRunner;
+  /** Answer the title dialog's "suggest a title" prompt (engines/shared/titleSuggestion) on
+   *  this engine, with the session's own model, WITHOUT creating or touching a session.
+   *  Returns the raw reply; the caller cleans it. */
+  suggestTitle?(req: TitleSuggestionRequest): Promise<string>;
+}
+
+export interface TitleSuggestionRequest {
+  cwd: string;
+  sessionId: string;
+  prompt: string;
+  signal: AbortSignal;
 }

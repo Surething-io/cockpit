@@ -249,6 +249,13 @@
   "sessions": {
     "recentSessions": "Recent Sessions",
     "favorites": "Favorite Sessions",
+    "titleSingleLine": "The title must be a single line, with no line breaks or \\n",
+    "titleNoAt": "The title must not contain @",
+    "titleNotMentionable": "This title cannot be used with @: {{reason}}. Rename it first",
+    "mentionable": "Can be @-mentioned",
+    "mentionableHint": "Adds this session to the Bots list; any session can then hand it a task with \"@title task\"",
+    "suggestTitle": "Suggest a title with AI",
+    "titleSuggestFailed": "Could not suggest a title: {{reason}}",
     "noFavorites": "No favorite sessions yet. Click the star in the tab bar to add.",
     "addFavorite": "Add to favorites",
     "removeFavorite": "Remove from favorites",
@@ -606,6 +613,16 @@
     "closeEsc": "Close (Esc)"
   },
   "chat": {
+    "commandRefs_one": "{{count}} reference attached",
+    "commandRefs_other": "{{count}} references attached",
+    "commandRef_read": "read",
+    "commandRef_handoff": "hand on",
+    "commandRef_handoffMixed": "hand on",
+    "commandRef_targets": "target",
+    "commandRef_inline": "inlined",
+    "originSent": "@-mention from {{project}}",
+    "originDelegated": "Delegated from {{project}}",
+    "originUnknown": "another session",
     "decisionContextAttached": "{{count}} related decisions attached",
     "codexInput": {
       "queued": "Additional message waiting to send",
@@ -1383,6 +1400,13 @@
     "unstagedFileMessage": "Explain the git working tree changes to {{path}}"
   },
   "bots": {
+    "sessionBadge": "Session",
+    "sessionGroup": "Session Bots",
+    "sessionGroupHint": "Sessions ticked \"Can be @-mentioned\" in their title dialog; @-mentioning one sends the task into that session",
+    "sessionGone": "The session no longer exists",
+    "sessionNameInvalid": "Its title cannot be a name (multi-line or contains @); rename it to @-mention it",
+    "sessionUsage": "Write \"@{{name}} <task>\" in any session to send the task into this one",
+    "removeSession": "Remove from Bots",
     "title": "Bots",
     "search": "Search bots",
     "addExisting": "Add bot",

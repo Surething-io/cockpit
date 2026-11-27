@@ -20,6 +20,7 @@
  * Only the model maps are touched here. `sessions[]` stays the tab list's business — a
  * delegated session is not an open tab, and adding it would make it one.
  */
+import { open } from 'node:fs/promises';
 import { getSessionFilePath, mutateJsonFile, readJsonFile } from '@cockpit/shared-utils';
 
 /**
@@ -85,4 +86,57 @@ export async function recordSessionModel(
   } catch (error) {
     console.error(`[engine:${engine}] failed to record session model for ${sessionId}:`, error);
   }
+}
+
+/** How far back from a transcript's end to look; the model is recorded on every turn. */
+const NATIVE_MODEL_TAIL_BYTES = 1024 * 1024;
+
+/**
+ * The model a Claude or Codex session last ran on, from its OWN transcript — for sessions
+ * the map above has never recorded (started in a CLI, or delegated with an explicit model
+ * and never opened in the picker). Claude stamps `message.model` on every assistant entry
+ * (`<synthetic>` marks Cockpit-written rows, not a model); Codex writes `payload.model` on
+ * every `turn_context`. Only the tail is read: the latest turn is what counts.
+ */
+export async function readNativeSessionModel(engine: string, transcriptPath: string): Promise<string | undefined> {
+  if (engine !== 'claude' && engine !== 'codex') return undefined;
+  let tail: string;
+  try {
+    const handle = await open(transcriptPath, 'r');
+    try {
+      const { size } = await handle.stat();
+      const length = Math.min(size, NATIVE_MODEL_TAIL_BYTES);
+      const buffer = Buffer.alloc(length);
+      await handle.read(buffer, 0, length, size - length);
+      tail = buffer.toString('utf8');
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return undefined;
+  }
+  const lines = tail.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].includes('"model"')) continue;
+    let entry: { type?: string; message?: { model?: unknown }; payload?: { model?: unknown } };
+    try { entry = JSON.parse(lines[i]); } catch { continue; } // the first line may be cut
+    const model = engine === 'claude'
+      ? (entry.type === 'assistant' ? entry.message?.model : undefined)
+      : (entry.type === 'turn_context' ? entry.payload?.model : undefined);
+    if (typeof model === 'string' && model.trim() && model !== '<synthetic>') return model.trim();
+  }
+  return undefined;
+}
+
+/**
+ * The model a title suggestion should use for a Claude or Codex session: the one the picker
+ * recorded, else the one its transcript shows it last ran on. Undefined only when neither
+ * exists (a session with no turn yet), which leaves the CLI's default.
+ */
+export async function suggestionModel(engine: 'claude' | 'codex', cwd: string, sessionId: string): Promise<string | undefined> {
+  const recorded = await readSessionModel(engine, cwd, sessionId);
+  if (recorded) return recorded;
+  const { resolveSessionPath } = await import('../api/session/sessionStore');
+  const store = await resolveSessionPath(cwd, sessionId);
+  return store?.engine === engine ? readNativeSessionModel(engine, store.sessionPath) : undefined;
 }

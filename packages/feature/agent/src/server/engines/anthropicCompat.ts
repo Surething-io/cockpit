@@ -5,6 +5,8 @@ import { runPiAgentPromise, type PiAgentConfig } from '../../effect/piAgentLive'
 import { readPiModel } from '../../effect/piSessionLive';
 import type { ApiKeyStore } from './credentials';
 import type { DispatchParams, EngineSpec } from './types';
+import { openAiCompatibleTitle } from './shared/titleSuggestion';
+import { readSessionModel } from './sessionModel';
 
 /** Per-engine slice of settings.json. The API key is NOT here — see credentials.ts. */
 export interface EngineModelSettings {
@@ -155,6 +157,20 @@ export function makeAnthropicCompatSpec(p: AnthropicCompatProvider): EngineSpec 
         await runPiAgentPromise(ctx, buildConfig(p, apiKey, endpoints));
       },
       resolveTitle: (cwd, sessionId) => getSessionTitle(cwd, sessionId),
+    },
+    // Same key, endpoint and model resolution as a turn on this session, as one plain
+    // completion: no Pi session is opened, so nothing is written.
+    async suggestTitle({ cwd, sessionId, prompt, signal }) {
+      const apiKey = await p.apiKey.read();
+      if (!apiKey) throw new Error(`${p.label} API key is not configured.`);
+      const settings = await readSettings();
+      const saved = settings.engines?.[p.name] ?? {};
+      const endpoints = resolveEndpoints(p, saved, settings.language);
+      // The picker's choice wins, as it does on the session's next turn (the composer sends
+      // it); then the model the transcript last ran on; then the engine's defaults.
+      const picked = await readSessionModel(p.name, cwd, sessionId);
+      const model = resolveModel(picked, await readPiModel(cwd, sessionId, p.name), saved.builtinModel, p.defaultModel);
+      return openAiCompatibleTitle({ baseUrl: endpoints.openAiBaseUrl, apiKey, model, prompt, signal });
     },
   };
 }

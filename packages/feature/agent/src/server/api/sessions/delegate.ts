@@ -1,11 +1,12 @@
 /**
  * POST /api/sessions/delegate
- * Body: { cwd, engine?, model?, title?, prompt? | briefPath? }
+ * Body: { cwd, engine?, model?, title?, prompt? | briefPath?, sessionId? }
  * Header (optional): x-cockpit-run-id: $COCKPIT_RUN_ID — identifies the calling session,
  *   which is also where an omitted `engine` comes from (the child inherits the caller's)
  *
  * Starts a new session in `cwd` on `engine` and returns a receipt immediately; it does not
- * wait for the task. Nothing is stored server-side: the receipt is the record.
+ * wait for the task. With `sessionId`, the task goes into that existing session instead
+ * (an `@<favorite>` line, see the session-run skill), on its own engine and model. Nothing is stored server-side: the receipt is the record.
  * Backs the /dl skill. See DelegationService.
  */
 import { Effect } from 'effect';

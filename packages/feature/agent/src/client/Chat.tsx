@@ -52,6 +52,7 @@ import { COLUMN_HEADER_ROW } from './columnHeaderRow';
 import type { ApiKeyEngine, UserMessageIndexEntry } from './effect/agentClient';
 import { CommentsListModal, useHasComments } from '@cockpit/feature-comments';
 import { stripDecisionContext } from '../shared/decisionContext';
+import { humanUserText } from '../shared/commandPrompt';
 import { useTranslation } from 'react-i18next';
 
 // Migrated from src/components/project/Chat.tsx.
@@ -572,7 +573,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       let lastUserMessage: string | undefined;
       for (let i = messages.length - 1; i >= 0; i--) {
         if (messages[i].role === 'user' && messages[i].content) {
-          lastUserMessage = stripDecisionContext(messages[i].content).slice(0, 100);
+          lastUserMessage = humanUserText(stripDecisionContext(messages[i].content)).slice(0, 100);
           break;
         }
       }
@@ -1014,6 +1015,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
               draftImages={draftImages}
               setDraftImages={setDraftImages}
               suggestion={promptSuggestion}
+              sessionId={loadedSessionId || sessionId || undefined}
             />
           );
           return composerSlot ? createPortal(composer, composerSlot) : composer;

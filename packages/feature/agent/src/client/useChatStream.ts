@@ -365,7 +365,17 @@ export function useChatStream(
       if (!turnId) return;
       if (turnId === launchTurnIdRef.current) {
         const timestamp = typeof event._ts === 'number' ? new Date(event._ts).toISOString() : undefined;
-        setMessages((prev) => prev.map((message) => message.liveRunId === turnId ? { ...message, turnStartedAt: timestamp } : message));
+        // The run carries the prompt as the server resolved it (`/skill`, `@bot`, `@session`
+        // lines rewritten, footer appended) — the same text the transcript will hold. Adopt it,
+        // so the bubble renders now exactly as it will after a reload (MessageBubble parses it
+        // back to the typed form), instead of switching looks once history loads.
+        const resolved = (event.message as { content?: unknown } | undefined)?.content;
+        const adopt = typeof resolved === 'string' && resolved ? resolved : null;
+        setMessages((prev) => prev.map((message) => message.liveRunId !== turnId ? message : {
+          ...message,
+          turnStartedAt: timestamp,
+          ...(adopt && message.role === 'user' ? { content: adopt } : {}),
+        }));
         return;
       }
       const text = (event.message as { content?: unknown } | undefined)?.content;

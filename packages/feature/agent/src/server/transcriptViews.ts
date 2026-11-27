@@ -14,6 +14,7 @@ import type { CodexSessionEntry, TranscriptSnapshot, TranscriptStats, Transcript
 import { generateCodexTitle, generateTitle } from './sessionTitle';
 import { codexPromptText } from '../shared/codexPrompt';
 import { stripDecisionContext } from '../shared/decisionContext';
+import { humanUserText } from '../shared/commandPrompt';
 
 /**
  * Dictionaries keyed by transcript content (session ids, model names, dates) must never
@@ -43,8 +44,9 @@ export function isCodexSubagent(entry: CodexSessionEntry): boolean {
 
 /** Strip <command-*> / <local-command-*> tags and their content. */
 export function filterCommandTags(text: string): string {
-  // Decision-mode context is Cockpit's own preamble, never the user's words.
-  let filtered = stripDecisionContext(text).replace(/<command-[^>]*>[\s\S]*?<\/command-[^>]*>/g, '');
+  // Decision-mode context is Cockpit's own preamble, never the user's words; nor is a
+  // resolved command's footer or another session's origin line (shared/commandPrompt).
+  let filtered = humanUserText(stripDecisionContext(text)).replace(/<command-[^>]*>[\s\S]*?<\/command-[^>]*>/g, '');
   filtered = filtered.replace(/<local-command-[^>]*>[\s\S]*?<\/local-command-[^>]*>/g, '');
   return filtered.trim();
 }
@@ -66,7 +68,10 @@ export function previewMessages(snap: Pick<TranscriptSnapshot, 'format' | 'userT
     if (snap.format === 'codex') {
       const prompt = codexPromptText(turn.listText ?? turn.blocks.join(''), turn.images);
       if (prompt === null) continue;
-      out.push(prompt);
+      // As a person reads it (origin line and resolved-command footer gone), but NOT through
+      // filterCommandTags: Codex writes no `<command-*>` tags, so such text is the user's own.
+      const shown = humanUserText(prompt).trim();
+      if (shown) out.push(shown);
       continue;
     } else {
       text = turn.blocks.find((b) => b) ?? '';

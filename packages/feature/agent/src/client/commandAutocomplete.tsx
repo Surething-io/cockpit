@@ -11,7 +11,7 @@ import {
   type RefObject,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { loadBots, onBotsChanged, onSkillsChanged, type BotInfo } from '@cockpit/shared-api';
+import { loadBots, loadSessionBots, onBotsChanged, onSkillsChanged, type BotInfo } from '@cockpit/shared-api';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { loadSkills as loadSkillsEff, loadSlashCommands } from './effect/agentClient';
 
@@ -36,11 +36,18 @@ export interface CommandInfo {
   description: string;
   // `'global' | 'project'` (`.claude/commands/*.md`) used to be valid sources;
   // that mechanism was retired with Claude Code's commands convention.
-  source: 'builtin' | 'skill' | 'bot';
+  source: 'builtin' | 'skill' | 'bot' | 'session';
   // Only present when source === 'skill'
   skillPath?: string;
   argumentHint?: string;
+  /** Only for source === 'session': titles may repeat, so rows need their own key. */
+  sessionKey?: string;
+  /** Only for source === 'session': the session it addresses. */
+  sessionId?: string;
 }
+
+/** A session Bot's project, shown beside its name so two same-named sessions can be told apart. */
+const projectName = (cwd: string) => cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd;
 
 interface SkillInfo {
   id: string;
@@ -65,6 +72,9 @@ interface UseCommandAutocompleteOptions {
    * never reaches that interception, so a listed `/plan` would be a dead item).
    */
   extraCommands?: CommandInfo[];
+  /** The session this composer sends into: it is left out of the `@` menu, since a session
+   *  cannot @-mention itself (the server refuses that line too). */
+  selfSessionId?: string;
 }
 
 export interface CommandAutocomplete {
@@ -94,11 +104,13 @@ export function useCommandAutocomplete({
   onChange,
   textareaRef,
   extraCommands,
+  selfSessionId,
 }: UseCommandAutocompleteOptions): CommandAutocomplete {
   const [caret, setCaret] = useState(value.length);
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [skills, setSkills] = useState<CommandInfo[]>([]);
   const [bots, setBots] = useState<CommandInfo[]>([]);
+  const [sessionBots, setSessionBots] = useState<CommandInfo[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   // Start dismissed when the host opens with pre-filled text (editing an
   // existing scheduled task whose message is exactly `/qa` would otherwise pop
@@ -146,8 +158,13 @@ export function useCommandAutocomplete({
     return onSkillsChanged(loadSkills);
   }, [loadSkills]);
 
+  // Same rule as session Bots below: refreshes overlap, only the latest may land, or a
+  // read that started before a change and finished after it would put back the old list.
+  const botsRequest = useRef(0);
   const refreshBots = useCallback(async () => {
+    const request = ++botsRequest.current;
     const exit = await BrowserRuntime.runPromiseExit(loadBots());
+    if (request !== botsRequest.current) return;
     if (exit._tag === 'Success') {
       setBots(exit.value.flatMap((bot: BotInfo) =>
         bot.valid ? [{ name: `@${bot.name}`, description: bot.description, source: 'bot' as const }] : []));
@@ -173,21 +190,71 @@ export function useCommandAutocomplete({
   // The command being typed on the active line: a `/`, `/@`, or `@` marker followed by
   // a partial verb with nothing after it yet (a trailing space starts the body
   // and dismisses the menu). `@` selects Bots; `/` and `/@` select skills.
+  //
+  // `@` also selects favorited sessions, whose titles are free text (spaces, CJK), so
+  // for `@` the whole rest of the line is the query (`text`). A favorite row stays
+  // listed while that text is still part of its title; once the line runs past the
+  // title (the task has started), nothing matches and the menu closes by itself.
   const commandQuery = useMemo(() => {
     // Verb char class kept in sync with the server (slashCommands' COMMAND_LINE_RE).
     const m = activeLine.text.match(/^\s*(\/@|\/|@)([a-zA-Z0-9-]*)$/);
-    return m ? { marker: m[1], verb: m[2].toLowerCase() } : null;
+    if (m) return { marker: m[1], verb: m[2].toLowerCase(), text: m[2] };
+    const at = activeLine.text.match(/^\s*@(\S.*)$/);
+    return at ? { marker: '@', verb: null, text: at[1] } : null;
   }, [activeLine.text]);
+
+  // Session Bots (sessions ticked "can be @-mentioned") are named by their CURRENT title,
+  // which can change on any rename anywhere — so they are re-read each time an `@` menu
+  // opens, as well as on the Bots bus. A local read is a few milliseconds.
+  // Refreshes overlap (menu open + bus event); only the latest may land, or an older
+  // response finishing last would put back a list from before the change.
+  const sessionBotsRequest = useRef(0);
+  const refreshSessionBots = useCallback(async () => {
+    const request = ++sessionBotsRequest.current;
+    const exit = await BrowserRuntime.runPromiseExit(loadSessionBots());
+    if (request !== sessionBotsRequest.current) return;
+    if (exit._tag === 'Success') {
+      // Only a session whose title is a valid name has one; others are listed in the Bots
+      // panel (with the reason) but cannot be typed.
+      setSessionBots(exit.value.flatMap((bot) => bot.name && bot.engine
+        ? [{
+          name: `@${bot.name}`,
+          description: projectName(bot.cwd),
+          source: 'session' as const,
+          sessionKey: `${bot.cwd}\n${bot.sessionId}`,
+          sessionId: bot.sessionId,
+        }]
+        : []));
+    } else {
+      console.error('Failed to load session Bots:', exit.cause);
+    }
+  }, []);
+  useEffect(() => onBotsChanged(refreshSessionBots), [refreshSessionBots]);
+  const atMenu = commandQuery?.marker === '@';
+  useEffect(() => {
+    if (atMenu) void refreshSessionBots();
+  }, [atMenu, refreshSessionBots]);
 
   // Command filtering: useMemo derived computation, eliminates setState churn per keystroke.
   // Commands first, then skills — grouped display preserves the two sections.
   const items = useMemo(() => {
     if (!commandQuery) return [];
-    const { verb } = commandQuery;
-    const match = (cmd: CommandInfo) => cmd.name.slice(1).toLowerCase().startsWith(verb);
-    if (commandQuery.marker === '@') return bots.filter(match);
+    const { verb, text } = commandQuery;
+    const match = (cmd: CommandInfo) => verb !== null && cmd.name.slice(1).toLowerCase().startsWith(verb);
+    if (commandQuery.marker === '@') {
+      // Directory Bots first, then session Bots: the order the server resolves a line in.
+      const query = text.toLowerCase();
+      // A complete title followed by a space is a picked target (it is exactly what
+      // selecting a row inserts): the task starts here, so close rather than keep
+      // offering longer titles that contain it and swallowing the next Enter.
+      if (/\s$/.test(query) && sessionBots.some((f) => f.name.slice(1).toLowerCase() === query.trimEnd())) return [];
+      // The composer's own session is never a target (the server refuses it too).
+      const titled = sessionBots.filter((f) => f.sessionId !== selfSessionId).filter((f) => f.name.slice(1).toLowerCase().includes(query));
+      const prefix = titled.filter((f) => f.name.slice(1).toLowerCase().startsWith(query));
+      return [...bots.filter(match), ...prefix, ...titled.filter((f) => !prefix.includes(f))];
+    }
     return [...(extraCommands ?? []).filter(match), ...commands.filter(match), ...skills.filter(match)];
-  }, [commandQuery, extraCommands, commands, skills, bots]);
+  }, [commandQuery, extraCommands, commands, skills, bots, sessionBots, selfSessionId]);
 
   const isOpen = !dismissed && !!commandQuery && items.length > 0;
 
@@ -304,6 +371,8 @@ export function CommandAutocompleteMenu({ ac, className = '' }: CommandAutocompl
         return 'Skill';
       case 'bot':
         return 'Bot';
+      case 'session':
+        return t('bots.sessionBadge');
     }
   };
 
@@ -315,6 +384,8 @@ export function CommandAutocompleteMenu({ ac, className = '' }: CommandAutocompl
         return 'bg-purple-9/15 text-purple-11 dark:bg-purple-9/25 dark:text-purple-11';
       case 'bot':
         return 'bg-teal-9/15 text-teal-11 dark:bg-teal-9/25 dark:text-teal-11';
+      case 'session':
+        return 'bg-amber-9/15 text-amber-11 dark:bg-amber-9/25 dark:text-amber-11';
     }
   };
 
@@ -328,10 +399,12 @@ export function CommandAutocompleteMenu({ ac, className = '' }: CommandAutocompl
       {items.map((cmd, index) => {
         const prev = index > 0 ? items[index - 1] : null;
         const isFirstSkill = cmd.source === 'skill' && (!prev || prev.source !== 'skill');
-        const isFirstBot = cmd.source === 'bot' && (!prev || prev.source !== 'bot');
+        // Directory Bots and session Bots are ONE list, under one header.
+        const isBotLike = (c: CommandInfo | null) => c?.source === 'bot' || c?.source === 'session';
+        const isFirstBot = isBotLike(cmd) && !isBotLike(prev);
         const isFirstCommand = cmd.source === 'builtin' && index === 0;
         return (
-          <div key={cmd.name}>
+          <div key={cmd.sessionKey ?? cmd.name}>
             {isFirstCommand && (
               <div className="px-4 py-1 text-[10px] uppercase tracking-wider text-muted-foreground bg-muted/40">
                 Commands

@@ -6,7 +6,7 @@ import {
   normalizeCodexSessionId, withFileLock, writeJsonFile,
 } from '@cockpit/shared-utils';
 import { FSError, ValidationError } from '@cockpit/effect-core';
-import { normalizeSessionTitle, type SessionTitleInfo } from '../shared/sessionTitle';
+import { normalizeSessionTitle, titleNameProblem, type SessionTitleInfo } from '../shared/sessionTitle';
 
 type TitleRecord = { customTitle: string | null; defaultTitle?: string; revision: number };
 export interface TitleFile {
@@ -111,6 +111,13 @@ export const writeSessionTitle = (
 ): Effect.Effect<TitleRecord, FSError | ValidationError> => Effect.gen(function* () {
   if (value !== null && typeof value !== 'string') {
     return yield* Effect.fail(new ValidationError({ field: 'customTitle', reason: 'must be a string or null' }));
+  }
+  const problem = typeof value === 'string' ? titleNameProblem(value) : null;
+  if (problem === 'multiline') {
+    return yield* Effect.fail(new ValidationError({ field: 'customTitle', reason: 'must be a single line: no line breaks or \\n' }));
+  }
+  if (problem === 'at') {
+    return yield* Effect.fail(new ValidationError({ field: 'customTitle', reason: 'must not contain @' }));
   }
   const customTitle = value === null ? null : normalizeSessionTitle(value as string);
   if (customTitle === '') return yield* Effect.fail(new ValidationError({ field: 'customTitle', reason: 'must not be empty' }));

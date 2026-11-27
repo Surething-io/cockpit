@@ -61,5 +61,11 @@ export {
   type BotInfo,
   type AddBotResult,
 } from './botsRegistryClient';
+export {
+  loadSessionBots,
+  removeSessionBot,
+  forgetSessionBots,
+  type SessionBotInfo,
+} from './sessionBotsClient';
 export { notifyBotsChanged, onBotsChanged } from './botsBus';
 export { failureMessage } from './httpJson';

@@ -13,6 +13,7 @@ import {
   normalizeCodexSessionId,
 } from '@cockpit/shared-utils';
 import { detectBotName } from '../../shared/botSession';
+import { humanUserText } from '../../shared/commandPrompt';
 import type { GlobalSessionInfo, GlobalSessionRecord, SessionPullRequest, SessionStatus } from '../../shared/sessionDto';
 
 import { existsSync } from 'fs';
@@ -127,7 +128,10 @@ export async function updateGlobalState(
       lastActive: Date.now(),
       status,
       title: truncate(title || existing?.title),
-      lastUserMessage: truncate(lastUserMessage || existing?.lastUserMessage, MAX_LAST_MESSAGE_LEN),
+      // The preview a person reads: the typed form, not the resolved prompt the model got
+      // (`[session·@…]` tags, skill footer, another session's origin line). Bot detection
+      // below still reads the raw text — its `Task: @bot` line is what it keys on.
+      lastUserMessage: truncate((lastUserMessage && humanUserText(lastUserMessage)) || existing?.lastUserMessage, MAX_LAST_MESSAGE_LEN),
       // Carried like title/lastUserMessage: status-only updates (the client's
       // /api/global-state PATCH) pass no engine and must not erase it.
       engine: engine || existing?.engine,
@@ -242,11 +246,16 @@ export async function getDefaultSessionTitle(cwd: string, sessionId: string): Pr
   return snap ? defaultSessionTitle(snap) : UNTITLED_SESSION;
 }
 
-/** Effective Cockpit title; callers that need the native fallback use getDefaultSessionTitle. */
-export async function getSessionTitle(cwd: string, sessionId: string): Promise<string> {
+/** Effective title plus whether the user chose it (`customTitle`). */
+export async function getSessionTitleInfo(cwd: string, sessionId: string): Promise<SessionTitleInfo> {
   const store = await resolveSessionPath(cwd, sessionId);
   const fallback = await getDefaultSessionTitle(cwd, sessionId);
-  return (await Effect.runPromise(readSessionTitle(cwd, sessionId, fallback, titleStore(store?.engine ?? 'claude')))).title;
+  return Effect.runPromise(readSessionTitle(cwd, sessionId, fallback, titleStore(store?.engine ?? 'claude')));
+}
+
+/** Effective Cockpit title; callers that need the native fallback use getDefaultSessionTitle. */
+export async function getSessionTitle(cwd: string, sessionId: string): Promise<string> {
+  return (await getSessionTitleInfo(cwd, sessionId)).title;
 }
 
 /**

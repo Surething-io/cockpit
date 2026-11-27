@@ -6,7 +6,8 @@
  * frame/tab with no server round-trip. Each registry gets its own channel so
  * a Bot change never reloads skill autocomplete and vice versa.
  *
- * `inFlightPrefix` names the registry's GET (see `shareInFlight`). A change
+ * `inFlightPrefix` names the registry's GET(s) (see `shareInFlight`) — a list when one
+ * channel covers several reads (the Bots channel also announces session Bots). A change
  * carries the sender's timestamp, and on receipt any read of that prefix that
  * started *before* the change is no longer joinable, so listeners refreshing on
  * the event never get a pre-change document — yet all of them still share the
@@ -24,7 +25,7 @@ export interface ChangeBus {
 const open = (channel: string): BroadcastChannel | null =>
   typeof window === "undefined" || typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(channel)
 
-export const createChangeBus = (channel: string, inFlightPrefix?: string): ChangeBus => ({
+export const createChangeBus = (channel: string, inFlightPrefix?: string | ReadonlyArray<string>): ChangeBus => ({
   notify: () => {
     const ch = open(channel)
     if (!ch) return
@@ -41,7 +42,7 @@ export const createChangeBus = (channel: string, inFlightPrefix?: string): Chang
       if (event.data?.type !== "changed") return
       if (inFlightPrefix) {
         const at = typeof event.data.at === "number" ? event.data.at : Date.now()
-        forgetInFlight(inFlightPrefix, at)
+        for (const prefix of typeof inFlightPrefix === "string" ? [inFlightPrefix] : inFlightPrefix) forgetInFlight(prefix, at)
       }
       callback()
     }

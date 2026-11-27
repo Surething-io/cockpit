@@ -5,6 +5,8 @@ import {
 } from '../sessionRunHub';
 import { snapshotOnRunStart, snapshotOnRunEvent } from '../snapshot/hook';
 import { resolveCommandPrompt } from '../lib/slashCommands';
+import { loadMentionableSessions, mayMentionSession } from '../lib/sessionBots';
+import { Effect } from 'effect';
 import { randomUUID } from 'crypto';
 import type { DispatchParams, DispatchOutcome, RunCtx, RunEvent, EngineSpec } from './types';
 import { formatProviderError } from './shared/providerError';
@@ -48,8 +50,15 @@ export async function dispatchChat(
   // HERE instead of being delegated — the decision needs the session's
   // directory, which only exists at this level.
   const rawPrompt = body.prompt;
+  // `@<session title>` lines need the session Bots' current titles. A read failure must not
+  // block the send: the lines are then left as prose, and the reason is in the log.
+  const sessionBots = typeof rawPrompt === 'string' && mayMentionSession(rawPrompt)
+    ? await Effect.runPromise(loadMentionableSessions.pipe(
+      Effect.catchAll((error) => Effect.logWarning('Cannot load session Bots for @ mentions', error).pipe(Effect.as([]))),
+    ))
+    : [];
   const prompt =
-    typeof rawPrompt === 'string' ? resolveCommandPrompt(rawPrompt, language, request, cwd) : rawPrompt;
+    typeof rawPrompt === 'string' ? resolveCommandPrompt(rawPrompt, language, request, cwd, sessionBots, sessionId) : rawPrompt;
 
   // Allow images-only (no text).
   const hasContent = (prompt && typeof prompt === 'string') || (images && images.length > 0);

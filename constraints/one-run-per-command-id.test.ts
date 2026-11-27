@@ -5,13 +5,18 @@
  * that is still running) retires the old run first — kills it and waits until
  * it has left the registry, escalating to SIGKILL — and only then spawns. If
  * the old run outlives that, the rerun is refused rather than started beside
- * it.
+ * it. The rerunning connection stops listening to the old run before it is
+ * retired, so the old run's exit never reaches that tab.
  *
  * Why: exec overwrote the registry entry of a still-running command. The old
  * process kept running, unreachable from the UI (stop / delete could no longer
  * find it) and its exit was ignored. A double-clicked rerun did this every time
  * (the second click saw no pid and skipped the interrupt), and so did a rerun of
  * anything that ignores SIGINT (a shell, an editor, a dev server).
+ * Retiring then exposed the next bug: the old run's `exit` was still sent to the
+ * tab that had just started the rerun, which took it for the new run's exit —
+ * the PTY bubble showed finished and blank while the new shell ran unseen, and
+ * every further rerun repeated it.
  *
  * COCKPIT_HOME is redirected to a temp dir BEFORE importing, because paths.ts
  * resolves COCKPIT_DIR once at module load.
@@ -94,5 +99,29 @@ describe('OneRunPerCommandId', () => {
     expect(spawnAt.length).toBeGreaterThan(0);
     // The guard is checked before the spawn code it gates.
     for (const s of spawnAt) expect(retireAt).toBeLessThan(s);
+  });
+
+  it('the exec handler stops forwarding the old run to its connection before retiring it', () => {
+    const file = join(__dirname, '../src/lib/effect/terminalHandler.ts');
+    const text = readFileSync(file, 'utf8');
+    const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+    const execAt = text.indexOf('type === "exec"');
+    expect(execAt, 'exec branch found').toBeGreaterThan(-1);
+    let retireAt = -1;
+    let detachAt = -1;
+    const visit = (n: ts.Node): void => {
+      if (ts.isCallExpression(n)) {
+        const e = n.expression;
+        if (ts.isIdentifier(e) && e.text === 'retireRunningCommand' && retireAt < 0) retireAt = n.getStart();
+        // registry.detach(commandId) with no owner argument: drop whatever this connection listens to
+        if (ts.isPropertyAccessExpression(e) && e.name.text === 'detach' && n.arguments.length === 1
+          && retireAt < 0 && n.getStart() > execAt) detachAt = n.getStart();
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+    expect(retireAt, 'retireRunningCommand is called').toBeGreaterThan(-1);
+    expect(detachAt, 'registry.detach(commandId) precedes retireRunningCommand').toBeGreaterThan(-1);
+    expect(detachAt).toBeLessThan(retireAt);
   });
 });

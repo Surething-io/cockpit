@@ -151,8 +151,12 @@ function resolveCommandShell(): string {
 interface CleanupRegistry {
   /** Register a cleanup for the given commandId on the Scope; any previous cleanup runs first. */
   attach: (commandId: string, cleanup: () => void) => Effect.Effect<void>
-  /** Eagerly release the cleanup associated with a commandId. */
-  detach: (commandId: string) => Effect.Effect<void>
+  /**
+   * Eagerly release the cleanup associated with a commandId. With `only`, release
+   * it only while it is still that cleanup — a run's own exit must not tear down
+   * the listeners a rerun has since attached under the same id.
+   */
+  detach: (commandId: string, only?: () => void) => Effect.Effect<void>
 }
 
 const makeCleanupRegistry = (): Effect.Effect<CleanupRegistry, never, Scope.Scope> =>
@@ -171,10 +175,10 @@ const makeCleanupRegistry = (): Effect.Effect<CleanupRegistry, never, Scope.Scop
           if (old) old()
           map.set(commandId, cleanup)
         }),
-      detach: (commandId) =>
+      detach: (commandId, only) =>
         Effect.sync(() => {
           const old = map.get(commandId)
-          if (old) {
+          if (old && (!only || old === only)) {
             old()
             map.delete(commandId)
           }
@@ -200,6 +204,12 @@ const attachPipeListeners = (
       Effect.runFork(send({ type: "stderr", commandId, data: data.toString() }))
     }
     const pid = child.pid
+    const cleanup = () => {
+      child.stdout?.off("data", onStdout)
+      child.stderr?.off("data", onStderr)
+      child.off("close", onClose)
+      child.off("error", onError)
+    }
     const onClose = async (code: number | null) => {
       const exitCode = code ?? 0
       Effect.runFork(send({ type: "exit", commandId, code: exitCode }))
@@ -212,7 +222,7 @@ const attachPipeListeners = (
           )
         )
       }
-      Effect.runFork(registry.detach(commandId))
+      Effect.runFork(registry.detach(commandId, cleanup))
     }
     const onError = async (error: Error) => {
       Effect.runFork(send({ type: "error", commandId, error: error.message }))
@@ -221,7 +231,7 @@ const attachPipeListeners = (
       } catch {
         /* swallow */
       }
-      Effect.runFork(registry.detach(commandId))
+      Effect.runFork(registry.detach(commandId, cleanup))
     }
 
     child.stdout?.on("data", onStdout)
@@ -229,12 +239,7 @@ const attachPipeListeners = (
     child.on("close", onClose)
     child.on("error", onError)
 
-    yield* registry.attach(commandId, () => {
-      child.stdout?.off("data", onStdout)
-      child.stderr?.off("data", onStderr)
-      child.off("close", onClose)
-      child.off("error", onError)
-    })
+    yield* registry.attach(commandId, cleanup)
   })
 
 const attachPtyListeners = (
@@ -248,6 +253,10 @@ const attachPtyListeners = (
       Effect.runFork(send({ type: "stdout", commandId, data }))
     })
     const ptyPid = pty.pid
+    const cleanup = () => {
+      dataDisposable.dispose()
+      exitDisposable.dispose()
+    }
     const exitDisposable = pty.onExit(async ({ exitCode }) => {
       Effect.runFork(send({ type: "exit", commandId, code: exitCode }))
       try {
@@ -259,13 +268,10 @@ const attachPtyListeners = (
           )
         )
       }
-      Effect.runFork(registry.detach(commandId))
+      Effect.runFork(registry.detach(commandId, cleanup))
     })
 
-    yield* registry.attach(commandId, () => {
-      dataDisposable.dispose()
-      exitDisposable.dispose()
-    })
+    yield* registry.attach(commandId, cleanup)
   })
 
 // ─────────────────────────────────────────────────────────
@@ -357,7 +363,12 @@ const dispatchMessage = (
       // clicked rerun, or one that ignored the client's SIGINT) must retire the old
       // process first — otherwise it is orphaned: still running, unreachable from the UI.
       // Started before any spawn code below can run.
-      const retiring = getRunningCommand(commandId) ? retireRunningCommand(commandId) : null
+      // Stop forwarding the old run to THIS connection before retiring it: its exit
+      // would otherwise reach the client after the rerun was already marked running,
+      // flipping the bubble back to finished while the new process runs unseen.
+      const retiring = getRunningCommand(commandId)
+        ? (Effect.runSync(registry.detach(commandId)), retireRunningCommand(commandId))
+        : null
 
       const spawnRun = () => {
         try {

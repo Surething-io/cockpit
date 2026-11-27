@@ -277,7 +277,7 @@ export function hostnameOfHostHeader(host: string | undefined): string | null {
   return colon >= 0 ? h.slice(0, colon) : h;
 }
 
-function isLoopbackHostname(name: string): boolean {
+export function isLoopbackHostname(name: string): boolean {
   return (
     name === 'localhost' ||
     name.endsWith('.localhost') ||

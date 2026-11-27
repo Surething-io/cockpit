@@ -33,60 +33,26 @@ Cockpit listens on `127.0.0.1:3457`. You can leave your router's port forwarding
 
 ## Run Cockpit in Docker
 
-You need Docker and `docker compose`. Create a dedicated directory and save the following files as `Dockerfile` and `compose.yaml`.
-
-```dockerfile
-FROM node:24
-
-RUN npm install -g --no-audit --no-fund @surething/cockpit@latest
-
-RUN install -d -o node -g node /home/node/projects
-USER node
-WORKDIR /home/node/projects
-CMD ["cockpit", ".", "--port", "3457", "--no-open"]
-```
-
-```yaml
-services:
-  cockpit:
-    build: .
-    init: true
-    restart: unless-stopped
-    env_file: cockpit.env
-    environment:
-      COCKPIT_HOST: 127.0.0.1
-    volumes:
-      - cockpit-home:/home/node
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    network_mode: service:cockpit
-    env_file: tunnel.env
-    command: ["tunnel", "--no-autoupdate", "run"]
-
-volumes:
-  cockpit-home:
-```
-
-The containers share a network namespace, so the connector can reach Cockpit at `127.0.0.1:3457`. Compose does not publish a host port. The `cockpit-home` named volume holds projects, `~/.cockpit`, and any agent credentials stored in the home directory. Recreating the containers keeps this volume.
-
-In the same directory, generate the Cockpit token and create the connector environment file. Add `TUNNEL_TOKEN=YOUR_CONNECTOR_TOKEN` to `tunnel.env` with the token from the Cloudflare dashboard. Keep both files on your machine.
+You need Docker and `docker compose`. Clone the Cockpit repository and open its [Cloudflare Tunnel example](https://github.com/Surething-io/cockpit/tree/main/examples/cloudflare-tunnel). If you already have a checkout, open `examples/cloudflare-tunnel` in it.
 
 ```bash
-if [ ! -e cockpit.env ]; then
-  (umask 077; token=$(openssl rand -hex 32) && printf 'COCKPIT_TOKEN=%s\n' "$token" > cockpit.env)
-fi
-(umask 077; touch tunnel.env)
+git clone --depth 1 https://github.com/Surething-io/cockpit.git
+cd cockpit/examples/cloudflare-tunnel
+(umask 077; [ -e .env ] || cp .env.example .env)
+openssl rand -hex 32
 ```
 
-Add `*.env` to `.dockerignore` and keep both credential files out of Git. Start the services.
+Copy the generated value into `COCKPIT_TOKEN` in `.env` and set `TUNNEL_TOKEN` to the connector token from Cloudflare. Compose requires both values. Keep `.env` on your machine. The example excludes it from Git and the Docker build context.
+
+By default, the image installs the latest published Cockpit package. To build a specific release, set `COCKPIT_VERSION` in `.env`. Start both services.
 
 ```bash
 docker compose up -d --build
 docker compose ps
 docker compose logs --tail=50 cockpit cloudflared
 ```
+
+The containers share a network namespace, so the connector reaches Cockpit at `127.0.0.1:3457` without publishing a host port. The `cockpit-home` named volume holds projects, `~/.cockpit`, and agent credentials stored in the home directory across container recreations.
 
 Run `docker compose exec cockpit bash` to clone projects or sign in to an agent inside the container. Install additional system tools or agent CLIs in the Dockerfile.
 
@@ -99,8 +65,8 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://cockpit.example.com/api/health
 ```
 
 1. Open `https://cockpit.example.com/?token=YOUR_ACCESS_TOKEN` in your desktop browser. Cockpit sets a login cookie and removes the token from the URL.
-2. Click **Open on phone** in the desktop top bar and scan the QR code. If a session is open, the phone goes straight to it. The QR icon is hidden on `localhost`.
-3. Open a chat and terminal on the phone to check the WebSocket connection. The QR code includes the shared access token, so treat it like a password.
+2. Open a project in the desktop workspace. Click **Open on phone** in the project top bar and scan the QR code. If a session is open, the phone goes straight to it. The QR icon is hidden on `localhost`.
+3. Open a chat on the phone. To test the terminal WebSocket, tap **Desktop** from the mobile session list and open the terminal in the desktop workspace. The QR code includes the shared access token, so treat it like a password.
 
 To require an email-based identity check before the Cockpit token, configure a [Cloudflare Access self-hosted application](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/) on the same subdomain. A phone opening the QR link for the first time must also pass Access. Anonymous requests can be redirected or denied by Access before reaching Cockpit.
 
@@ -108,6 +74,6 @@ To require an email-based identity check before the Cockpit token, configure a [
 
 - **502 from Cloudflare**. Check that Cockpit is running and the tunnel origin is `http://127.0.0.1:3457`. In Docker, check `docker compose ps` and the logs of both services.
 - **Pause remote access**. Stop `cloudflared` on your computer, or run `docker compose stop` in Docker. The named volume keeps your projects and sessions. Run `docker compose up -d` to start the containers again.
-- **Update the Docker setup**. Run `docker compose build --pull --no-cache cockpit`, then `docker compose up -d --force-recreate` to recreate both containers so the connector moves into Cockpit's new network namespace. Keep the existing volume and token files.
+- **Update the Docker setup**. Run `docker compose build --pull --no-cache cockpit`, then `docker compose up -d --force-recreate` to recreate both containers so the connector moves into Cockpit's new network namespace. If you pinned `COCKPIT_VERSION`, change it in `.env` before building. Keep the existing volume and `.env` file.
 
 If you need Cockpit while your computer is off, see [Server Deployment](/en/docs/get-started/server-deployment/).

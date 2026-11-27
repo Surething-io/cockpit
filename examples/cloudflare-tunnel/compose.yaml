@@ -1,0 +1,24 @@
+services:
+  cockpit:
+    build:
+      context: .
+      args:
+        COCKPIT_VERSION: ${COCKPIT_VERSION:-latest}
+    init: true
+    restart: unless-stopped
+    environment:
+      COCKPIT_HOST: "127.0.0.1"
+      COCKPIT_TOKEN: "${COCKPIT_TOKEN:?Set COCKPIT_TOKEN in .env}"
+    volumes:
+      - cockpit-home:/home/node
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    network_mode: service:cockpit
+    environment:
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN:?Set TUNNEL_TOKEN in .env}"
+    command: ["tunnel", "--no-autoupdate", "run"]
+
+volumes:
+  cockpit-home:

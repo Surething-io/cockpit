@@ -33,54 +33,18 @@ Cockpit 的监听地址保持为 `127.0.0.1:3457`。路由器无需为 Tunnel �
 
 ## 在 Docker 里运行
 
-需要 Docker 和 `docker compose`。新建一个独立目录，在里面保存下面的 `Dockerfile` 和 `compose.yaml`。
-
-```dockerfile
-FROM node:24
-
-RUN npm install -g --no-audit --no-fund @surething/cockpit@latest
-
-RUN install -d -o node -g node /home/node/projects
-USER node
-WORKDIR /home/node/projects
-CMD ["cockpit", ".", "--port", "3457", "--no-open"]
-```
-
-```yaml
-services:
-  cockpit:
-    build: .
-    init: true
-    restart: unless-stopped
-    env_file: cockpit.env
-    environment:
-      COCKPIT_HOST: 127.0.0.1
-    volumes:
-      - cockpit-home:/home/node
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    network_mode: service:cockpit
-    env_file: tunnel.env
-    command: ["tunnel", "--no-autoupdate", "run"]
-
-volumes:
-  cockpit-home:
-```
-
-两个容器共享网络命名空间，所以连接器可以用 `127.0.0.1:3457` 访问 Cockpit。Compose 无需向宿主机发布端口。命名卷 `cockpit-home` 保存项目目录、`~/.cockpit` 和用户目录下的 Agent 凭据，重建容器时沿用同一卷。
-
-在同一目录生成 Cockpit 令牌和连接器环境文件，再用编辑器把控制台给出的连接器令牌写入 `tunnel.env`，格式为 `TUNNEL_TOKEN=你的连接器令牌`。这两个文件都应留在本机。
+需要 Docker 和 `docker compose`。克隆 Cockpit 仓库，进入其中的 [Cloudflare Tunnel 示例](https://github.com/Surething-io/cockpit/tree/main/examples/cloudflare-tunnel)。如果已经克隆过仓库，直接进入其中的 `examples/cloudflare-tunnel`。
 
 ```bash
-if [ ! -e cockpit.env ]; then
-  (umask 077; token=$(openssl rand -hex 32) && printf 'COCKPIT_TOKEN=%s\n' "$token" > cockpit.env)
-fi
-(umask 077; touch tunnel.env)
+git clone --depth 1 https://github.com/Surething-io/cockpit.git
+cd cockpit/examples/cloudflare-tunnel
+(umask 077; [ -e .env ] || cp .env.example .env)
+openssl rand -hex 32
 ```
 
-将 `*.env` 加入 `.dockerignore`，并确保这两个凭据文件不会被 Git 跟踪。然后启动服务。
+把生成的随机值填入 `.env` 的 `COCKPIT_TOKEN`，再把 Cloudflare 控制台给出的连接器令牌填入 `TUNNEL_TOKEN`。两个值都要填写。`.env` 留在本机，示例已将它排除在 Git 和 Docker 构建上下文之外。
+
+镜像默认安装最新发布的 Cockpit。需要固定版本时，在 `.env` 中设置 `COCKPIT_VERSION`。然后启动两个服务。
 
 ```bash
 docker compose up -d --build
@@ -88,7 +52,9 @@ docker compose ps
 docker compose logs --tail=50 cockpit cloudflared
 ```
 
-若要在容器内克隆项目或登录所用的 Agent，可运行 `docker compose exec cockpit bash`。需要额外的系统工具或 Agent CLI 时，把安装步骤加到 Dockerfile。
+两个容器共享网络命名空间，连接器通过 `127.0.0.1:3457` 访问 Cockpit，宿主机无需开放端口。命名卷 `cockpit-home` 保存项目目录、`~/.cockpit` 和家目录里的 Agent 凭据，重建容器时会沿用。
+
+要在容器内克隆项目或登录 Agent，可以运行 `docker compose exec cockpit bash`。需要额外的系统工具或 Agent CLI 时，把安装步骤加到 Dockerfile。
 
 ## 登录和手机扫码
 
@@ -99,8 +65,8 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://cockpit.example.com/api/health
 ```
 
 1. 在电脑浏览器用 `https://cockpit.example.com/?token=你的访问令牌` 首次登录。Cockpit 会写入 Cookie 并清理地址栏。
-2. 在桌面顶栏点 **在手机上打开**，用手机扫二维码。打开了会话时，手机会直接进入该会话。通过 `localhost` 打开时，二维码入口会隐藏。
-3. 在手机上打开聊天和终端，验证 WebSocket 连通。二维码包含共享访问令牌，请按密码保管。
+2. 在桌面工作区打开一个项目，再在项目顶栏点 **在手机上打开**，用手机扫二维码。打开了会话时，手机会直接进入该会话。通过 `localhost` 打开时，二维码入口会隐藏。
+3. 在手机上打开聊天。要验证终端 WebSocket，从手机版会话列表点 **桌面版**，再打开桌面工作区的终端。二维码包含共享访问令牌，请按密码保管。
 
 如需在 Token 前加上按邮箱的访问控制，可给同一子域名配置 [Cloudflare Access 自托管应用](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/)。手机首次扫码时也要先通过 Access 登录。启用后，未登录的请求可能先被 Access 重定向或拒绝。
 
@@ -108,6 +74,6 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://cockpit.example.com/api/health
 
 - **显示 502**：检查 Cockpit 是否在运行，以及 Tunnel 的源站是否填的是 `http://127.0.0.1:3457`。Docker 用户还可以检查 `docker compose ps` 和两项服务的日志。
 - **想暂时关闭访问**：停止本机 `cloudflared`，或在 Docker 目录运行 `docker compose stop`。项目和会话仍在命名卷里。下次运行 `docker compose up -d` 即可。
-- **想更新 Docker 实例**：运行 `docker compose build --pull --no-cache cockpit`，再用 `docker compose up -d --force-recreate` 重建两个容器，确保连接器加入新的网络命名空间。沿用原有卷和令牌文件。
+- **想更新 Docker 实例**：运行 `docker compose build --pull --no-cache cockpit`，再用 `docker compose up -d --force-recreate` 重建两个容器，确保连接器加入新的网络命名空间。如果固定了 `COCKPIT_VERSION`，构建前先修改 `.env` 里的版本号。沿用原有卷和 `.env` 文件。
 
 如果希望电脑关机后仍能远程使用，见 [服务端部署](/zh/docs/get-started/server-deployment/)。

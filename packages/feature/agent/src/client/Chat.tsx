@@ -372,7 +372,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
 
   // Claude and Pi accept further messages once the
   // session id is known (injection addresses the run by it). Every send gate reads this.
-  const acceptsMidRunInput = (isClaudeEngine || isCodexEngine || isPiProvider(engine)) && !!(loadedSessionId || sessionId);
+  const acceptsMidRunInput = (isClaudeEngine || isCodexEngine || engine === 'grok' || isPiProvider(engine)) && !!(loadedSessionId || sessionId);
 
   // ! prefix: first line is command, subsequent lines are user notes, supports images
   /**

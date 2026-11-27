@@ -14,7 +14,7 @@ import { historyWindow } from '../server/historyWindow';
 import { addRunListener, markRunIdle, releaseRun, startRun } from '../server/sessionRunHub';
 import { Effect } from 'effect';
 import { dispatchChat } from '../server/engines/orchestrator';
-import { makePiRunInput } from '../effect/piRunInputLive';
+import { makeRunInput } from '../effect/runInputLive';
 
 // Exercise the production SDK adapter and registry; replace only the external CLI.
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
@@ -92,7 +92,7 @@ describe.skipIf(!browser)('history and live replay in a browser', () => {
     let beforeSettlement: number;
     try {
       await dispatchChat({ name: 'ollama', runner: { run: ctx => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
-        const input = yield* makePiRunInput(ctx, pending => Effect.sync(() => ctx.emit({ type: 'error',
+        const input = yield* makeRunInput(ctx, pending => Effect.sync(() => ctx.emit({ type: 'error',
           error: 'Input did not complete because the run was cancelled.', undeliveredInputs: pending })));
         yield* input.next;
         ctx.emit({ type: 'system', subtype: 'input_started', inputId: stoppedId });

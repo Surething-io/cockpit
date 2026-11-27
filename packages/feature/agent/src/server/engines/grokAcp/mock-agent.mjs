@@ -7,6 +7,7 @@ const send = (frame) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0',
 const reply = (id, result) => send({ id, result });
 let authenticated = false;
 let activePromptId;
+let promptCount = 0;
 let sessionId = 'grok-test-session';
 let sessionDir;
 const update = (value) => send({ method: 'session/update', params: { sessionId, update: value } });
@@ -50,6 +51,19 @@ for await (const line of createInterface({ input: process.stdin })) {
     reply(id, {});
   } else if (method === 'session/prompt') {
     activePromptId = params._meta.promptId;
+    if (scenario === 'inject') {
+      // Hold the first prompt open long enough for the runner to admit mid-run input, and
+      // answer every prompt by notification AND by RPC reply: the late reply must not
+      // complete the prompt that follows it on this connection.
+      const n = ++promptCount;
+      const promptId = params._meta.promptId;
+      update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `Answer ${n}: ${params.prompt[0].text}` } });
+      setTimeout(() => {
+        extension({ sessionUpdate: 'turn_completed', prompt_id: promptId, stop_reason: 'end_turn' });
+        reply(id, { stopReason: 'end_turn' });
+      }, n === 1 ? 400 : 100);
+      continue;
+    }
     if (scenario === 'native-context') {
       appendFileSync(join(sessionDir, 'chat_history.jsonl'), [
         { type: 'user', prompt_index: 0, content: [{ type: 'text', text: params.prompt[0].text }] },

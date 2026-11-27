@@ -1,21 +1,22 @@
 // One scoped owner for input admission, FIFO delivery and atomic run closure.
+// Engine-neutral: Pi and Grok both drain it one prompt at a time.
 import { Chunk, Effect, Option, Queue, type Scope } from 'effect';
 import type { InjectedInput, RunCtx } from '../server/engines/types';
 
-export interface PiRunInput {
-  /** Called only after Pi becomes idle; an empty queue seals admission in the same tick. */
+export interface RunInput {
+  /** Called only after the engine becomes idle; an empty queue seals admission in the same tick. */
   readonly next: Effect.Effect<Option.Option<InjectedInput>>;
   /** Release ownership only after prompt, recovery and persistence have completed. */
   readonly complete: Effect.Effect<void>;
-  /** Pi persisted this input natively; a Stop no longer makes it recovery material. */
+  /** The engine persisted this input; a Stop no longer makes it recovery material. */
   readonly delivered: (inputId: string) => Effect.Effect<void>;
 }
 
 /** Register before SDK initialization and retain accepted input until it is consumed or failed. */
-export const makePiRunInput = (
+export const makeRunInput = (
   ctx: RunCtx,
   undelivered: (inputs: InjectedInput[]) => Effect.Effect<void>,
-): Effect.Effect<PiRunInput, never, Scope.Scope> => Effect.gen(function* () {
+): Effect.Effect<RunInput, never, Scope.Scope> => Effect.gen(function* () {
   const queue = yield* Queue.unbounded<InjectedInput>();
   let state: 'accepting' | 'closed' = 'accepting';
   let current: InjectedInput | undefined;

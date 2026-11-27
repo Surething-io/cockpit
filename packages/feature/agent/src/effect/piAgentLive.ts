@@ -8,7 +8,7 @@ import type { ImageContent } from '@earendil-works/pi-ai';
 import { getPiSessionsDir, PI_AGENT_DIR, sanitizedSpawnEnv, type PiEngine } from '@cockpit/shared-utils';
 import type { RunCtx } from '../server/engines/types';
 import { piRunEvents, createPiRunUsage } from '../server/engines/piEvents';
-import { makePiRunInput } from './piRunInputLive';
+import { makeRunInput } from './runInputLive';
 import { findPiSession } from './piSessionLive';
 import { openPiSessionForWrite } from './piSessionWriteLive';
 import type { PiModelOverride } from '../server/engines/shared/piModelCapabilities';
@@ -37,7 +37,7 @@ export const runPiAgent = (ctx: RunCtx, config: PiAgentConfig): Effect.Effect<vo
   return Effect.scoped(Effect.gen(function* () {
     const cwd = ctx.cwd || process.cwd();
     let sessionManager: SessionManager | undefined;
-    const inputs = yield* makePiRunInput(ctx, (pending) => Effect.gen(function* () {
+    const inputs = yield* makeRunInput(ctx, (pending) => Effect.gen(function* () {
       const reason = ctx.signal.aborted ? 'the run was cancelled' : 'the run failed';
       const text = `Input did not complete because ${reason}:\n${pending.map((input) => input.text || '[image input]').join('\n')}`;
       yield* Effect.sync(() => ctx.emit({ type: 'error', error: `Input did not complete because ${reason}.`, undeliveredInputs: pending }));

@@ -38,7 +38,7 @@ modules) and the bundled ESM production server without requiring Pi via CJS.
 ## Integration
 
 - `effect/piAgentLive.ts`: scoped SDK lifetime, cancellation and queued input.
-- `effect/piRunInputLive.ts`: the single FIFO, input ownership and atomic closure.
+- `effect/runInputLive.ts`: the single FIFO, input ownership and atomic closure (shared with Grok).
 - `effect/piSessionLive.ts`: native discovery, selection and branch reading.
 - `effect/piSessionEditLive.ts`: native forks and complete-turn deletion.
 - `server/engines/piEvents.ts`: presentation and snapshot event projection.

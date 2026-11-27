@@ -1,14 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { Cause, Effect, Exit, Option, Queue } from 'effect';
+import { Cause, Effect, Exit, Option, Queue, type Scope } from 'effect';
 import { AgentError, CockpitConfig, FSError } from '@cockpit/effect-core';
 import { sanitizedSpawnEnv, getSessionFilePath, readJsonFile, mutateJsonFile } from '@cockpit/shared-utils';
 import { grokModelCatalog } from '../server/engines/grokAcp/models';
 import { GrokAcpClient, GrokRpcError, object, type AcpObject, type AcpNotification } from '../server/engines/grokAcp/client';
 import { GrokEventAdapter, grokCompletion, grokTranscriptEvent } from '../server/engines/grokAcp/events';
-import type { RunCtx, RunEvent } from '../server/engines/types';
+import type { InjectedInput, RunCtx, RunEvent } from '../server/engines/types';
 import { appendGrokTranscript } from './grokSessionLive';
+import { makeRunInput } from './runInputLive';
 import { prepareGrokContext, finishGrokContext } from './grokNativeSessionLive';
 
 const agentError = (cause: unknown): AgentError => new AgentError({ provider: 'grok', kind: 'protocol', cause });
@@ -25,9 +26,26 @@ export async function runGrokTurn(ctx: RunCtx, options?: GrokRunOptions): Promis
   }
 }
 
-/** One cold ACP connection per turn, with native Grok session context on resume. */
+/**
+ * One cold ACP connection per run, with native Grok session context on resume.
+ *
+ * ACP takes one `session/prompt` at a time, so input sent mid-run is admitted into a
+ * FIFO and prompted on the same connection once the current prompt (and any background
+ * wake) has completed — the same contract Pi has, rather than rejecting the send.
+ */
 export function runGrok(ctx: RunCtx, options: GrokRunOptions = {}): Effect.Effect<void, AgentError | FSError> {
   return Effect.scoped(Effect.gen(function* () {
+    // Registered before any setup so input sent during initialization is admitted too.
+    const transcript: { id?: string } = {};
+    const inputs = yield* makeRunInput(ctx, (pending) => Effect.gen(function* () {
+      const reason = ctx.signal.aborted ? 'the run was cancelled' : 'the run failed';
+      yield* Effect.sync(() => ctx.emit({ type: 'error', error: `Input did not complete because ${reason}.`, undeliveredInputs: pending }));
+      if (!transcript.id) return;
+      const text = `Input did not complete because ${reason}:\n${pending.map((input) => input.text || '[image input]').join('\n')}`;
+      yield* appendGrokTranscript(ctx.cwd, transcript.id, { type: 'user', isMeta: true, message: { role: 'user', content: text } }).pipe(
+        Effect.catchAll((error) => Effect.logWarning('Cannot persist undelivered Grok input', error)),
+      );
+    }));
     const nativeResumeId = ctx.sessionId ? yield* prepareGrokContext(ctx.cwd, ctx.sessionId, ctx.params.noHistory === true) : undefined;
     if (ctx.sessionId && ctx.params.noHistory) {
       yield* Effect.addFinalizer(() => finishGrokContext(ctx.cwd, ctx.sessionId!).pipe(
@@ -159,29 +177,9 @@ export function runGrok(ctx: RunCtx, options: GrokRunOptions = {}): Effect.Effec
         grokReasoningEfforts: { ...current.grokReasoningEfforts, [sessionId]: reasoning ?? '' },
       })), catch: (cause) => new FSError({ path: preferencesPath, op: 'write', cause }),
     });
-    if (ctx.images?.length && object(capabilities.promptCapabilities).image !== true && !v2) {
-      return yield* Effect.fail(agentError(new Error('This Grok CLI does not support image prompts. Send text or update Grok Build.')));
-    }
+    const imagesSupported = v2 || object(capabilities.promptCapabilities).image === true;
+    transcript.id = sessionId;
     yield* appendGrokTranscript(ctx.cwd, sessionId, { type: 'system', subtype: 'init', engine: 'grok', model: targetModel });
-    const inputSourceId = yield* appendGrokTranscript(ctx.cwd, sessionId, { type: 'user', message: { role: 'user', content: [
-      ...(ctx.prompt ? [{ type: 'text', text: ctx.prompt }] : []),
-      ...(ctx.images ?? []).map((image) => ({ type: 'image', source: image })),
-    ] } });
-    if (typeof ctx.params.runId === 'string') ctx.emit({ type: 'system', subtype: 'input_binding', inputId: ctx.params.runId, sourceId: inputSourceId });
-    const promptId = randomUUID();
-    const prompt = [
-      ...(ctx.prompt ? [{ type: 'text', text: ctx.prompt }] : []),
-      ...(ctx.images ?? []).map((image) => ({ type: 'image', mimeType: image.media_type, data: image.data })),
-    ];
-    yield* Effect.forkScoped(Effect.tryPromise({
-      try: () => client.request('session/prompt', { sessionId: nativeSessionId, prompt, _meta: { promptId, requestId: promptId } }),
-      catch: agentError,
-    }).pipe(Effect.match({
-      onFailure: (error) => offer('$closed', { error: error.cause }),
-      onSuccess: (response) => { if (!v2 && typeof response.stopReason === 'string') offer('$complete', response); },
-    })));
-    const adapter = new GrokEventAdapter();
-    let foregroundComplete = false;
     let pendingBlocks: AcpObject[] = [];
     const flush = (usage?: AcpObject): Effect.Effect<void, FSError> => Effect.suspend(() => {
       if (!pendingBlocks.length && !usage) return Effect.void;
@@ -192,7 +190,6 @@ export function runGrok(ctx: RunCtx, options: GrokRunOptions = {}): Effect.Effec
       } }).pipe(Effect.asVoid);
     });
     yield* Effect.addFinalizer(() => flush().pipe(Effect.catchAll((error) => Effect.logWarning('Cannot save partial Grok output', error))));
-    const finish = (): void => { ctx.emit({ type: 'result', subtype: 'success', session_id: sessionId }); };
     const fail = (cause: unknown): Effect.Effect<never, AgentError | FSError> => flush().pipe(Effect.andThen(appendGrokTranscript(ctx.cwd, sessionId, {
       type: 'user', isMeta: true, message: { role: 'user', content: `Grok error: ${cause instanceof Error ? cause.message : String(cause)}` },
     })), Effect.flatMap(() => Effect.fail(agentError(cause))));
@@ -213,38 +210,80 @@ export function runGrok(ctx: RunCtx, options: GrokRunOptions = {}): Effect.Effec
         yield* appendGrokTranscript(ctx.cwd, sessionId, record);
       }
     });
-    while (true) {
-      const { method, params } = yield* Queue.take(queue);
-      if (typeof params.sessionId === 'string' && params.sessionId !== nativeSessionId) continue;
-      if (method === '$closed') return yield* fail(params.error);
-      if (method === '$notice') {
-        yield* emit({ type: 'assistant', message: { content: [{ type: 'text', text: String(params.text) }] } });
-        continue;
+    /** One `session/prompt`, returning once it and any background wake it owns have completed. */
+    const promptOnce = (input: InjectedInput): Effect.Effect<void, AgentError | FSError, Scope.Scope> => Effect.gen(function* () {
+      if (input.images?.length && !imagesSupported) {
+        return yield* Effect.fail(agentError(new Error('This Grok CLI does not support image prompts. Send text or update Grok Build.')));
       }
-      const update = object(params.update);
-      const completionId = update.prompt_id ?? update.promptId ?? params.promptId;
-      const isWake = typeof completionId === 'string' && completionId.startsWith('task-completed-');
-      const completion = method === '$complete' ? params
-        : (method === 'session/update' || /^_?x\.ai\/(session_notification|session\/update|session\/prompt_complete)$/.test(method))
-          ? grokCompletion(params, isWake && foregroundComplete && adapter.waitingForBackground ? completionId : promptId, v2) : null;
-      if (completion) {
-        const reason = completion.stop_reason ?? completion.stopReason;
-        if (reason === 'error' || completion.error) return yield* fail(new Error(String(completion.agent_result ?? completion.agentResult ?? completion.error ?? 'Grok prompt failed')));
-        foregroundComplete = true;
-        if (isWake || v2) adapter.finishWake();
-        if (!adapter.waitingForBackground) { finish(); return; }
-        continue;
+      if (input.inputId) ctx.emit({ type: 'system', subtype: 'input_started', inputId: input.inputId });
+      const inputSourceId = yield* appendGrokTranscript(ctx.cwd, sessionId, { type: 'user', message: { role: 'user', content: [
+        ...(input.text ? [{ type: 'text', text: input.text }] : []),
+        ...(input.images ?? []).map((image) => ({ type: 'image', source: image })),
+      ] } });
+      if (input.inputId) {
+        ctx.emit({ type: 'system', subtype: 'input_binding', inputId: input.inputId, sourceId: inputSourceId });
+        yield* inputs.delivered(input.inputId);
       }
-      if (method === 'session/update' || /^_?x\.ai\/(session_notification|session\/update)$/.test(method)) {
-        for (const event of adapter.update(update)) yield* emit(event);
-        if (update.sessionUpdate === 'response_completed') {
-          const usage = object(update.usage);
-          ctx.emit({ type: 'usage_update', output_tokens: usage.output_tokens });
-          yield* flush(usage);
+      const promptId = randomUUID();
+      const prompt = [
+        ...(input.text ? [{ type: 'text', text: input.text }] : []),
+        ...(input.images ?? []).map((image) => ({ type: 'image', mimeType: image.media_type, data: image.data })),
+      ];
+      yield* Effect.forkScoped(Effect.tryPromise({
+        try: () => client.request('session/prompt', { sessionId: nativeSessionId, prompt, _meta: { promptId, requestId: promptId } }),
+        catch: agentError,
+      }).pipe(Effect.match({
+        onFailure: (error) => offer('$closed', { error: error.cause }),
+        // Tagged with its prompt: a reply that lands after its turn already completed by
+        // notification must not complete the NEXT prompt on this connection.
+        onSuccess: (response) => { if (!v2 && typeof response.stopReason === 'string') offer('$complete', { ...response, $promptId: promptId }); },
+      })));
+      const adapter = new GrokEventAdapter();
+      let foregroundComplete = false;
+      while (true) {
+        const { method, params } = yield* Queue.take(queue);
+        if (typeof params.sessionId === 'string' && params.sessionId !== nativeSessionId) continue;
+        if (method === '$closed') return yield* fail(params.error);
+        if (method === '$notice') {
+          yield* emit({ type: 'assistant', message: { content: [{ type: 'text', text: String(params.text) }] } });
+          continue;
         }
-        if (foregroundComplete && !adapter.waitingForBackground) { finish(); return; }
+        if (method === '$complete' && params.$promptId !== promptId) continue;
+        const update = object(params.update);
+        const completionId = update.prompt_id ?? update.promptId ?? params.promptId;
+        const isWake = typeof completionId === 'string' && completionId.startsWith('task-completed-');
+        const completion = method === '$complete' ? params
+          : (method === 'session/update' || /^_?x\.ai\/(session_notification|session\/update|session\/prompt_complete)$/.test(method))
+            ? grokCompletion(params, isWake && foregroundComplete && adapter.waitingForBackground ? completionId : promptId, v2) : null;
+        if (completion) {
+          const reason = completion.stop_reason ?? completion.stopReason;
+          if (reason === 'error' || completion.error) return yield* fail(new Error(String(completion.agent_result ?? completion.agentResult ?? completion.error ?? 'Grok prompt failed')));
+          foregroundComplete = true;
+          if (isWake || v2) adapter.finishWake();
+          if (!adapter.waitingForBackground) return;
+          continue;
+        }
+        if (method === 'session/update' || /^_?x\.ai\/(session_notification|session\/update)$/.test(method)) {
+          for (const event of adapter.update(update)) yield* emit(event);
+          if (update.sessionUpdate === 'response_completed') {
+            const usage = object(update.usage);
+            ctx.emit({ type: 'usage_update', output_tokens: usage.output_tokens });
+            yield* flush(usage);
+          }
+          if (foregroundComplete && !adapter.waitingForBackground) return;
+        }
       }
+    });
+    let next = yield* inputs.next;
+    while (Option.isSome(next)) {
+      if (ctx.signal.aborted) return;
+      yield* promptOnce(next.value);
+      yield* flush();
+      yield* inputs.complete;
+      next = yield* inputs.next;
     }
+    if (ctx.signal.aborted) return;
+    ctx.emit({ type: 'result', subtype: 'success', session_id: sessionId });
   })).pipe(
     // Retry a failed finalizer merge on success so a durable-write failure reaches the caller.
     Effect.tap(() => ctx.sessionId && ctx.params.noHistory ? finishGrokContext(ctx.cwd, ctx.sessionId) : Effect.void),

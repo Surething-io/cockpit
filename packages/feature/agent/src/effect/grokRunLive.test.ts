@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import type { RunCtx, RunEvent } from '../server/engines/types';
+import type { InjectedInput, RunCtx, RunEvent } from '../server/engines/types';
 
 describe('Grok CLI subscription ACP runner', () => {
   let home: string;
@@ -77,6 +77,41 @@ describe('Grok CLI subscription ACP runner', () => {
     expect(frames).toContainEqual(expect.objectContaining({ method: 'session/set_model', params: {
       sessionId: 'grok-test-session', modelId: 'custom-grok-model', _meta: { reasoningEffort: 'low' },
     } }));
+  });
+
+  it('prompts input sent mid-run on the same connection once the current prompt completes', async () => {
+    const test = setup('inject', true);
+    const admission: { sink: ((input: InjectedInput) => boolean) | null } = { sink: null };
+    test.ctx.acceptInput = (sink) => { admission.sink = sink; };
+    const running = test.run();
+    await vi.waitFor(async () => expect(await readFile(test.trace, 'utf8')).toContain('session/prompt'));
+    expect(admission.sink?.({ text: 'Follow up', inputId: 'follow-up' })).toBe(true);
+    await running;
+    const frames = (await readFile(test.trace, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+    expect(frames.filter((frame) => frame.method === 'session/prompt').map((frame) => frame.params.prompt[0].text)).toEqual(['Read hello.ts', 'Follow up']);
+    expect(new Set(frames.map((frame) => frame.pid)).size).toBe(1);
+    // The first prompt's late RPC reply did not end the second prompt early.
+    expect(JSON.stringify(test.events)).toContain('Answer 2: Follow up');
+    expect(test.events.filter((event) => event.type === 'result')).toHaveLength(1);
+    expect(test.events.at(-1)).toMatchObject({ type: 'result', subtype: 'success' });
+    expect(test.events).toContainEqual(expect.objectContaining({ subtype: 'input_started', inputId: 'follow-up' }));
+    const parsed = await parseTranscriptFile(grokSessionPath(home, 'grok-test-session'));
+    expect(test.events).toContainEqual(expect.objectContaining({
+      subtype: 'input_binding', inputId: 'follow-up', sourceId: parsed.messages.findLast((row) => row.role === 'user')?.sourceId,
+    }));
+    expect(parsed.messages.findLast((row) => row.role === 'user')).toMatchObject({ content: 'Follow up' });
+    // Admission is sealed once the queue drains; later sends open a fresh run.
+    expect(admission.sink).toBeNull();
+  });
+
+  it('reports input admitted behind a failing prompt as undelivered', async () => {
+    const test = setup('error');
+    const admission: { sink: ((input: InjectedInput) => boolean) | null } = { sink: null };
+    test.ctx.acceptInput = (sink) => { admission.sink = sink; if (sink) sink({ text: 'Queued', inputId: 'queued' }); };
+    await expect(test.run()).rejects.toThrow('Subscription quota exhausted');
+    expect(test.events).toContainEqual(expect.objectContaining({
+      type: 'error', undeliveredInputs: expect.arrayContaining([expect.objectContaining({ inputId: 'queued', text: 'Queued' })]),
+    }));
   });
 
   it.each(['error', 'disconnect'])('reports %s instead of waiting forever or reporting success', async (scenario) => {
